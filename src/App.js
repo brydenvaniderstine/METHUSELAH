@@ -16,6 +16,7 @@ const CSS = `
   --accent-red: #ff2a2a;
   --accent-green: #00ff66;
   --accent-amber: #ffb300;
+  --accent-blue: #00aaff;
   --font-mono: 'Space Mono', 'Courier New', Courier, ui-monospace, SFMono-Regular, monospace;
 }
 
@@ -55,8 +56,8 @@ body::before {
 
 .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .header-top-row { display: flex; gap: 12px; align-items: center; }
-.live-badge { display: flex; align-items: center; gap: 6px; font-size: 9px; letter-spacing: 2px; color: var(--accent-green); }
-.blink { width: 7px; height: 7px; background: var(--accent-green); border-radius: 50%; animation: pulse 1.5s infinite; }
+.live-badge { display: flex; align-items: center; gap: 6px; font-size: 9px; letter-spacing: 2px; }
+.blink { width: 7px; height: 7px; border-radius: 50%; animation: pulse 1.5s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; box-shadow: 0 0 8px currentColor; } 50% { opacity: 0.15; box-shadow: none; } }
 .clock { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; }
 
@@ -68,6 +69,7 @@ body::before {
 .ble-btn:hover:not(:disabled) { border-color: var(--accent-amber); color: var(--accent-amber); }
 .ble-btn:disabled { opacity: 0.5; cursor: wait; }
 .ble-btn.live { border-color: var(--accent-green); color: var(--accent-green); }
+.ble-btn.roche { border-color: var(--accent-blue); color: var(--accent-blue); }
 
 .telemetry-grid {
   display: grid; grid-template-columns: repeat(3, 1fr);
@@ -80,6 +82,7 @@ body::before {
 .tel-bar-wrap { height: 2px; background: var(--line); margin: 8px 0; }
 .tel-bar { height: 100%; transition: width 1s ease, background 0.5s; }
 .tel-status { font-size: 9px; font-weight: 700; letter-spacing: 1px; }
+.tel-source { font-size: 8px; color: var(--accent-blue); letter-spacing: 1px; margin-top: 4px; }
 
 .command-wrap {
   display: flex; flex-direction: column; justify-content: center; align-items: center;
@@ -118,6 +121,7 @@ body::before {
 .log-line { font-size: 9px; color: var(--text-dim); display: flex; gap: 12px; animation: fadeIn 0.3s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
 .log-time { color: var(--accent-amber); min-width: 80px; flex-shrink: 0; }
+.log-roche { color: var(--accent-blue); }
 
 .auth-overlay {
   position: fixed; inset: 0; background: var(--bg); z-index: 10000;
@@ -135,8 +139,17 @@ body::before {
 .auth-error { font-size: 9px; color: var(--accent-red); letter-spacing: 2px; animation: fadeIn 0.2s ease; }
 `;
 
-// ─── METRIC COMPONENT ───────────────────────────────────────────────────────
-function Metric({ label, val, unit, pct, color, status }) {
+// ─── ROCHE CONFIG (IEEE-11073 Standard) ──────────────────────────────────────
+const ROCHE_CONFIG = {
+  SERVICE:        '00001808-0000-1000-8000-00805f9b34fb',
+  CHARACTERISTIC: '00002a18-0000-1000-8000-00805f9b34fb',
+  NAME_PREFIX:    'meter+'
+};
+
+const MASTER_KEY = "METHUSELAH_V1";
+
+// ─── METRIC COMPONENT ─────────────────────────────────────────────────────────
+function Metric({ label, val, unit, pct, color, status, isReal }) {
   return (
     <div className="tel-block">
       <div className="tel-label">{label}</div>
@@ -144,55 +157,31 @@ function Metric({ label, val, unit, pct, color, status }) {
         {val} <span className="tel-unit">{unit}</span>
       </div>
       <div className="tel-bar-wrap">
-        <div
-          className="tel-bar"
-          style={{
-            width: `${Math.max(5, Math.min(100, pct))}%`,
-            background: color,
-          }}
-        />
+        <div className="tel-bar" style={{ width: `${Math.max(5, Math.min(100, pct))}%`, background: color }} />
       </div>
-      <div className="tel-status" style={{ color }}>
-        {status}
-      </div>
+      <div className="tel-status" style={{ color }}>{status}</div>
+      {isReal && <div className="tel-source">● ROCHE INTERCEPT</div>}
     </div>
   );
 }
 
-// ─── CONSTANTS ───────────────────────────────────────────────────────────────
-const MASTER_KEY = "METHUSELAH_V1";
-const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-const CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-const DEVICE_NAME = "METHUSELAH_NODE_01";
-
-// ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
+// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function MethuselahFinal() {
-  const ts = () =>
-    new Date().toLocaleTimeString([], {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
+  const ts = () => new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-  const [locked, setLocked] = useState(true);
-  const [input, setInput] = useState("");
-  const [authError, setAuthError] = useState(false);
-  const [clock, setClock] = useState(ts());
-  const [telemetry, setTelemetry] = useState({
-    hrv: 45,
-    glucose: 95,
-    lactate: 1.1,
-  });
-  const [executed, setExecuted] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
-  const [bleStatus, setBleStatus] = useState("DISCONNECTED");
-  const [logs, setLogs] = useState([
-    { time: ts(), msg: "SYS_INIT // METHUSELAH HARDENED v1.0.3" },
-  ]);
+  const [locked,      setLocked]      = useState(true);
+  const [input,       setInput]       = useState("");
+  const [authError,   setAuthError]   = useState(false);
+  const [clock,       setClock]       = useState(ts());
+  const [telemetry,   setTelemetry]   = useState({ hrv: 45, glucose: 5.4, lactate: 1.1, isRealData: false });
+  const [history,     setHistory]     = useState({ hrv: [45], glucose: [5.4], lactate: [1.1] });
+  const [executed,    setExecuted]    = useState(false);
+  const [isScanning,  setIsScanning]  = useState(false);
+  const [bleStatus,   setBleStatus]   = useState("DISCONNECTED");
+  const [rocheDevice, setRocheDevice] = useState(null);
+  const [logs,        setLogs]        = useState([{ time: ts(), msg: "SYS_INIT // METHUSELAH v1.0.4", type: "" }]);
 
-  const addLog = (msg) =>
-    setLogs((prev) => [{ time: ts(), msg }, ...prev].slice(0, 12));
+  const addLog = (msg, type = "") => setLogs(prev => [{ time: ts(), msg, type }, ...prev].slice(0, 12));
 
   // CSS injection
   useEffect(() => {
@@ -210,112 +199,170 @@ export default function MethuselahFinal() {
 
   // Boot log
   useEffect(() => {
-    if (!locked) addLog("ACCESS GRANTED // TELEMETRY SIMULATION ACTIVE");
+    if (!locked) addLog("ACCESS GRANTED // TELEMETRY ACTIVE", "event");
   }, [locked]);
 
-  // Telemetry simulation — pauses when BLE is live
+  // Simulation — pauses when Roche is live
   useEffect(() => {
-    if (locked || bleStatus === "LIVE") return;
+    if (locked || bleStatus === "ROCHE_LIVE") return;
     const t = setInterval(() => {
-      setTelemetry((p) => ({
-        hrv: Math.max(25, Math.min(95, p.hrv + (Math.random() - 0.5) * 5)),
-        glucose: Math.max(
-          75,
-          Math.min(140, p.glucose + (Math.random() - 0.5) * 6)
-        ),
-        lactate: Math.max(
-          0.6,
-          Math.min(4.5, p.lactate + (Math.random() - 0.5) * 0.3)
-        ),
+      setTelemetry(p => ({
+        ...p,
+        hrv:     Math.max(25,  Math.min(95,  p.hrv     + (Math.random() - 0.5) * 5)),
+        glucose: Math.max(3.5, Math.min(14,  p.glucose  + (Math.random() - 0.5) * 0.3)),
+        lactate: Math.max(0.6, Math.min(4.5, p.lactate  + (Math.random() - 0.5) * 0.3)),
       }));
     }, 3000);
     return () => clearInterval(t);
   }, [locked, bleStatus]);
 
-  // Auth handler
+  // Auth
   const handleKeyDown = (e) => {
     if (e.key !== "Enter") return;
-    if (input === MASTER_KEY) {
-      setLocked(false);
-      setAuthError(false);
-    } else {
-      setAuthError(true);
-      setInput("");
+    if (input === MASTER_KEY) { setLocked(false); setAuthError(false); }
+    else { setAuthError(true); setInput(""); }
+  };
+
+  // ── IEEE-11073 SFLOAT DECODER ─────────────────────────────────────────────
+  const decodeSFLOAT = (view, offset) => {
+    const bytes = view.getUint16(offset, true);
+    const mantissa = bytes & 0x0FFF;
+    let exponent = bytes >> 12;
+    if (exponent >= 8) exponent -= 16;
+    const signedMantissa = mantissa >= 2048 ? mantissa - 4096 : mantissa;
+    return signedMantissa * Math.pow(10, exponent);
+  };
+
+  // ── ROCHE BLE BRIDGE ─────────────────────────────────────────────────────
+  const handleHardwareConnect = async () => {
+    if (isScanning || bleStatus === "ROCHE_LIVE") return;
+    setIsScanning(true);
+    setBleStatus("SCANNING...");
+    addLog("INITIATING ROCHE HANDSHAKE...", "event");
+
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ namePrefix: ROCHE_CONFIG.NAME_PREFIX }],
+        optionalServices: [ROCHE_CONFIG.SERVICE]
+      });
+
+      device.addEventListener('gattserverdisconnected', () => {
+        setBleStatus("DISCONNECTED");
+        setTelemetry(p => ({ ...p, isRealData: false }));
+        addLog("ROCHE NODE DISCONNECTED // REVERTING TO SIMULATION", "event");
+      });
+
+      setBleStatus("CONNECTING...");
+      const server = await device.gatt.connect();
+
+      let service, char;
+      try {
+        service = await server.getPrimaryService(ROCHE_CONFIG.SERVICE);
+        char    = await service.getCharacteristic(ROCHE_CONFIG.CHARACTERISTIC);
+      } catch {
+        throw new Error("UUID_MISMATCH: Glucose service not found on device.");
+      }
+
+      await char.startNotifications();
+      setBleStatus("ROCHE_LIVE");
+      setRocheDevice(device.name);
+      addLog(`ROCHE INTERCEPT ACTIVE // ${device.name}`, "event");
+
+      char.addEventListener('characteristicvaluechanged', (e) => {
+        const data  = e.target.value;
+        const flags = data.getUint8(0);
+
+        // Dynamic offset calculation
+        let offset = 1;  // After flags byte
+        offset += 2;     // Sequence Number (always present)
+        offset += 7;     // Base Time (always present)
+        if (flags & 0x01) offset += 2; // Time Offset (conditional)
+        if (flags & 0x04) offset += 2; // Sensor Status Annunciation (conditional)
+
+        // Bounds check
+        if (offset + 2 > data.byteLength) {
+          addLog("SYS_WARN: PACKET TOO SHORT // REJECTED", "event");
+          return;
+        }
+
+        const mmolValue = decodeSFLOAT(data, offset);
+
+        // Physiological sanity check
+        if (mmolValue < 1.0 || mmolValue > 33.3) {
+          addLog(`SYS_WARN: VALUE OUT OF RANGE (${mmolValue.toFixed(1)}) // REJECTED`, "event");
+          return;
+        }
+
+        const finalVal = parseFloat(mmolValue.toFixed(1));
+
+        setTelemetry(prev => ({ ...prev, glucose: finalVal, isRealData: true }));
+        setHistory(h => ({ ...h, glucose: [...h.glucose, finalVal].slice(-20) }));
+        addLog(`ROCHE INTERCEPT: ${finalVal} mmol/L`, "roche");
+      });
+
+    } catch (error) {
+      setBleStatus("DISCONNECTED");
+      addLog(`BRIDGE FAILED: ${error.message}`, "event");
+    } finally {
+      setIsScanning(false);
     }
   };
 
-  // ── BLE BRIDGE ────────────────────────────────────────────────────────────
-  // V1 STUB: Simulates scan and fallback. Replace with production bridge when
-  // METHUSELAH_NODE_01 hardware arrives. Full bridge code documented in think
-  // tank session — navigator.bluetooth.requestDevice + UUID match + NaN guard.
-  const connectBLE = async () => {
-    if (bleStatus === "LIVE" || isScanning) return;
-    setIsScanning(true);
-    setBleStatus("SCANNING...");
-    addLog(`SCANNING FOR ${DEVICE_NAME}...`);
-    setTimeout(() => {
-      setIsScanning(false);
-      setBleStatus("DISCONNECTED");
-      addLog("HARDWARE NOT DETECTED // SIMULATION ACTIVE");
-    }, 2000);
-  };
-
-  // ── LOGIC ENGINE — TRIPLE THRESHOLD (Attia / Huberman / San Millán) ───────
+  // ── LOGIC ENGINE — TRIPLE THRESHOLD ──────────────────────────────────────
+  // Normalization: 5.8 mmol/L = 105 mg/dL
   let logic = {
-    cmd: "HOMEOSTASIS OPTIMAL",
-    rat: "All biological vectors within nominal range. No corrective intervention required.",
-    color: "var(--text-main)",
+    cmd:    "HOMEOSTASIS OPTIMAL",
+    rat:    "All biological vectors within nominal range. No corrective intervention required.",
+    color:  "var(--text-main)",
     border: "var(--line-bright)",
-    level: "optimal",
+    level:  "optimal",
   };
 
-  if (telemetry.glucose > 105) {
+  if (telemetry.glucose > 5.8) {
     logic = {
-      cmd: "INITIATE 24-HOUR WATER FAST.",
-      rat: `GLYCEMIC FRICTION DETECTED (${Math.round(
-        telemetry.glucose
-      )} MG/DL). INSULIN SENSITIVITY RESET REQUIRED. HEPATIC GLYCOGEN DEPLETION PROTOCOL ENGAGED. — ATTIA / SINCLAIR`,
-      color: "var(--accent-red)",
+      cmd:    "INITIATE 24-HOUR WATER FAST.",
+      rat:    `GLYCEMIC FRICTION DETECTED (${telemetry.glucose.toFixed(1)} MMOL/L). INSULIN SENSITIVITY RESET REQUIRED. — ATTIA / SINCLAIR`,
+      color:  "var(--accent-red)",
       border: "var(--accent-red)",
-      level: "critical",
+      level:  "critical",
     };
   } else if (telemetry.hrv < 40) {
     logic = {
-      cmd: "EXECUTE 45-MIN ZONE 2 OUTPUT.",
-      rat: `AUTONOMIC STRESS DETECTED (${Math.round(
-        telemetry.hrv
-      )} MS HRV). PARASYMPATHETIC ACTIVATION REQUIRED TO RESTORE SYSTEMIC BALANCE. — HUBERMAN / GALPIN`,
-      color: "var(--text-main)",
+      cmd:    "EXECUTE 45-MIN ZONE 2 OUTPUT.",
+      rat:    `AUTONOMIC STRESS DETECTED (${Math.round(telemetry.hrv)} MS HRV). PARASYMPATHETIC ACTIVATION REQUIRED. — HUBERMAN / GALPIN`,
+      color:  "var(--text-main)",
       border: "var(--accent-amber)",
-      level: "warn",
+      level:  "warn",
     };
   } else if (telemetry.lactate > 2.0) {
     logic = {
-      cmd: "INITIATE ACTIVE RECOVERY PROTOCOL.",
-      rat: `LACTATE CLEARANCE DELAYED (${telemetry.lactate.toFixed(
-        1
-      )} MMOL/L). TISSUE OXYGENATION REQUIRED TO CLEAR ACIDIC BACKLOG. — SAN MILLÁN / ATTIA`,
-      color: "var(--text-main)",
+      cmd:    "INITIATE ACTIVE RECOVERY PROTOCOL.",
+      rat:    `LACTATE CLEARANCE DELAYED (${telemetry.lactate.toFixed(1)} MMOL/L). TISSUE OXYGENATION REQUIRED. — SAN MILLÁN / ATTIA`,
+      color:  "var(--text-main)",
       border: "var(--accent-amber)",
-      level: "warn",
+      level:  "warn",
     };
   }
 
-  // Dynamic progress bar ranges
-  const glucosePct = ((telemetry.glucose - 75) / 65) * 100;
-  const hrvPct = ((telemetry.hrv - 25) / 70) * 100;
-  const lactatePct = ((telemetry.lactate - 0.6) / 3.9) * 100;
+  // Dynamic progress bars scaled for mmol/L
+  const glucosePct = ((telemetry.glucose - 3.5) / (14 - 3.5))   * 100;
+  const hrvPct     = ((telemetry.hrv - 25)       / (95 - 25))    * 100;
+  const lactatePct = ((telemetry.lactate - 0.6)  / (4.5 - 0.6)) * 100;
 
   const handleExecute = () => {
     setExecuted(true);
-    addLog("PROTOCOL LOGGED: " + logic.cmd);
+    addLog("PROTOCOL LOGGED: " + logic.cmd, "event");
     setTimeout(() => {
       setExecuted(false);
-      addLog("DE-ESCALATION CONFIRMED // RETURNING TO HOMEOSTASIS");
+      addLog("DE-ESCALATION CONFIRMED // RETURNING TO HOMEOSTASIS", "event");
     }, 2500);
   };
 
-  // ── AUTH GATE ─────────────────────────────────────────────────────────────
+  const bleColor = bleStatus === "ROCHE_LIVE" ? "var(--accent-blue)"
+    : bleStatus === "SCANNING..." || bleStatus === "CONNECTING..." ? "var(--accent-amber)"
+    : "var(--text-dim)";
+
+  // ── AUTH GATE ────────────────────────────────────────────────────────────
   if (locked) {
     return (
       <>
@@ -327,48 +374,42 @@ export default function MethuselahFinal() {
             className="auth-input"
             type="password"
             value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              setAuthError(false);
-            }}
+            onChange={e => { setInput(e.target.value); setAuthError(false); }}
             onKeyDown={handleKeyDown}
             placeholder="********"
           />
           <div className="auth-hint">INPUT MASTER KEY → PRESS ENTER</div>
-          {authError && (
-            <div className="auth-error">⚠ ACCESS DENIED // INVALID KEY</div>
-          )}
+          {authError && <div className="auth-error">⚠ ACCESS DENIED // INVALID KEY</div>}
         </div>
       </>
     );
   }
 
-  // ── MAIN DASHBOARD ────────────────────────────────────────────────────────
+  // ── MAIN DASHBOARD ───────────────────────────────────────────────────────
   return (
     <div className="shell">
+
       {/* HEADER */}
       <div className="header">
         <div className="brand-wrap">
           <div className="brand">METHUSELAH</div>
           <div className="brand-sub">
-            Biological Logic Engine // v1.0.3 // Node_01 // Oliver_BC
+            Biological Logic Engine // v1.0.4 // Node_01 // Oliver_BC
+            {rocheDevice && ` // ${rocheDevice}`}
           </div>
         </div>
         <div className="header-right">
           <div className="header-top-row">
-            <div className="live-badge">
-              <div className="blink" /> LIVE FEED
+            <div className="live-badge" style={{ color: bleColor }}>
+              <div className="blink" style={{ background: bleColor }} />
+              {bleStatus === "ROCHE_LIVE" ? "ROCHE LIVE" : bleStatus === "DISCONNECTED" ? "SIMULATION" : bleStatus}
             </div>
             <button
-              className={`ble-btn ${bleStatus === "LIVE" ? "live" : ""}`}
-              onClick={connectBLE}
-              disabled={isScanning}
+              className={`ble-btn ${bleStatus === "ROCHE_LIVE" ? "roche" : ""}`}
+              onClick={handleHardwareConnect}
+              disabled={isScanning || bleStatus === "ROCHE_LIVE"}
             >
-              {isScanning
-                ? "SCANNING..."
-                : bleStatus === "LIVE"
-                ? "NODE CONNECTED"
-                : "CONNECT HARDWARE"}
+              {isScanning ? "SCANNING..." : bleStatus === "ROCHE_LIVE" ? "NODE CONNECTED" : "CONNECT HARDWARE"}
             </button>
           </div>
           <div className="clock">{clock}</div>
@@ -379,52 +420,42 @@ export default function MethuselahFinal() {
       <div className="telemetry-grid">
         <Metric
           label="Glycemic Load"
-          val={Math.round(telemetry.glucose)}
-          unit="mg/dL"
+          val={telemetry.glucose.toFixed(1)}
+          unit="mmol/L"
           pct={glucosePct}
-          color={
-            telemetry.glucose > 105
-              ? "var(--accent-red)"
-              : "var(--accent-green)"
-          }
-          status={telemetry.glucose > 105 ? "▲ VOLATILE" : "● STABLE"}
+          color={telemetry.glucose > 5.8 ? "var(--accent-red)" : "var(--accent-green)"}
+          status={telemetry.glucose > 5.8 ? "▲ VOLATILE" : "● STABLE"}
+          isReal={telemetry.isRealData}
         />
         <Metric
           label="Systemic Friction (HRV)"
           val={Math.round(telemetry.hrv)}
           unit="ms"
           pct={hrvPct}
-          color={
-            telemetry.hrv < 40 ? "var(--accent-amber)" : "var(--accent-green)"
-          }
+          color={telemetry.hrv < 40 ? "var(--accent-amber)" : "var(--accent-green)"}
           status={telemetry.hrv < 40 ? "▼ SUPPRESSED" : "● OPTIMAL"}
+          isReal={false}
         />
         <Metric
           label="Mito Clearance"
           val={telemetry.lactate.toFixed(1)}
           unit="mmol/L"
           pct={lactatePct}
-          color={
-            telemetry.lactate > 2.0
-              ? "var(--accent-amber)"
-              : "var(--accent-green)"
-          }
+          color={telemetry.lactate > 2.0 ? "var(--accent-amber)" : "var(--accent-green)"}
           status={telemetry.lactate > 2.0 ? "▲ DELAYED" : "● EFFICIENT"}
+          isReal={false}
         />
       </div>
 
       {/* COMMAND GATE */}
       <div className="command-wrap" style={{ borderColor: logic.border }}>
-        <div className="corner tl" />
-        <div className="corner tr" />
-        <div className="corner bl" />
-        <div className="corner br" />
+        <div className="corner tl" /><div className="corner tr" />
+        <div className="corner bl" /><div className="corner br" />
         <div className="cmd-meta">
           PROTOCOL // {logic.level.toUpperCase()} // {clock}
+          {telemetry.isRealData && " // ROCHE INTERCEPT ACTIVE"}
         </div>
-        <div className="cmd-text" style={{ color: logic.color }}>
-          {logic.cmd}
-        </div>
+        <div className="cmd-text" style={{ color: logic.color }}>{logic.cmd}</div>
         <div className="cmd-rationale">{logic.rat}</div>
         {logic.level !== "optimal" ? (
           <button
@@ -444,10 +475,11 @@ export default function MethuselahFinal() {
         {logs.map((l, i) => (
           <div key={i} className="log-line">
             <span className="log-time">[{l.time}]</span>
-            <span>{l.msg}</span>
+            <span className={l.type === "roche" ? "log-roche" : ""}>{l.msg}</span>
           </div>
         ))}
       </div>
+
     </div>
   );
 }
