@@ -139,16 +139,15 @@ body::before {
 .auth-error { font-size: 9px; color: var(--accent-red); letter-spacing: 2px; animation: fadeIn 0.2s ease; }
 `;
 
-// ─── ROCHE CONFIG (IEEE-11073 Standard) ──────────────────────────────────────
 const ROCHE_CONFIG = {
   SERVICE:        '00001808-0000-1000-8000-00805f9b34fb',
   CHARACTERISTIC: '00002a18-0000-1000-8000-00805f9b34fb',
+  RACP:           '00002a52-0000-1000-8000-00805f9b34fb',
   NAME_PREFIX:    'meter+'
 };
 
 const MASTER_KEY = "METHUSELAH_V1";
 
-// ─── METRIC COMPONENT ─────────────────────────────────────────────────────────
 function Metric({ label, val, unit, pct, color, status, isReal }) {
   return (
     <div className="tel-block">
@@ -165,7 +164,6 @@ function Metric({ label, val, unit, pct, color, status, isReal }) {
   );
 }
 
-// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 export default function MethuselahFinal() {
   const ts = () => new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -179,11 +177,10 @@ export default function MethuselahFinal() {
   const [isScanning,  setIsScanning]  = useState(false);
   const [bleStatus,   setBleStatus]   = useState("DISCONNECTED");
   const [rocheDevice, setRocheDevice] = useState(null);
-  const [logs,        setLogs]        = useState([{ time: ts(), msg: "SYS_INIT // METHUSELAH v1.0.4", type: "" }]);
+  const [logs,        setLogs]        = useState([{ time: ts(), msg: "SYS_INIT // METHUSELAH v1.0.5", type: "" }]);
 
   const addLog = (msg, type = "") => setLogs(prev => [{ time: ts(), msg, type }, ...prev].slice(0, 12));
 
-  // CSS injection
   useEffect(() => {
     const s = document.createElement("style");
     s.textContent = CSS;
@@ -191,18 +188,15 @@ export default function MethuselahFinal() {
     return () => document.head.removeChild(s);
   }, []);
 
-  // Live clock
   useEffect(() => {
     const t = setInterval(() => setClock(ts()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // Boot log
   useEffect(() => {
     if (!locked) addLog("ACCESS GRANTED // TELEMETRY ACTIVE", "event");
   }, [locked]);
 
-  // Simulation — pauses when Roche is live
   useEffect(() => {
     if (locked || bleStatus === "ROCHE_LIVE") return;
     const t = setInterval(() => {
@@ -216,14 +210,12 @@ export default function MethuselahFinal() {
     return () => clearInterval(t);
   }, [locked, bleStatus]);
 
-  // Auth
   const handleKeyDown = (e) => {
     if (e.key !== "Enter") return;
     if (input === MASTER_KEY) { setLocked(false); setAuthError(false); }
     else { setAuthError(true); setInput(""); }
   };
 
-  // ── IEEE-11073 SFLOAT DECODER ─────────────────────────────────────────────
   const decodeSFLOAT = (view, offset) => {
     const bytes = view.getUint16(offset, true);
     const mantissa = bytes & 0x0FFF;
@@ -233,7 +225,7 @@ export default function MethuselahFinal() {
     return signedMantissa * Math.pow(10, exponent);
   };
 
-  // ── ROCHE BLE BRIDGE ─────────────────────────────────────────────────────
+  // ── ROCHE BLE BRIDGE v1.0.5 — WITH RACP TRIGGER ──────────────────────────
   const handleHardwareConnect = async () => {
     if (isScanning || bleStatus === "ROCHE_LIVE") return;
     setIsScanning(true);
@@ -255,31 +247,33 @@ export default function MethuselahFinal() {
       setBleStatus("CONNECTING...");
       const server = await device.gatt.connect();
 
-      let service, char;
+      let service, char, racpChar;
       try {
-        service = await server.getPrimaryService(ROCHE_CONFIG.SERVICE);
-        char    = await service.getCharacteristic(ROCHE_CONFIG.CHARACTERISTIC);
+        service   = await server.getPrimaryService(ROCHE_CONFIG.SERVICE);
+        char      = await service.getCharacteristic(ROCHE_CONFIG.CHARACTERISTIC);
+        racpChar  = await service.getCharacteristic(ROCHE_CONFIG.RACP);
       } catch {
         throw new Error("UUID_MISMATCH: Glucose service not found on device.");
       }
 
+      // Subscribe to measurement notifications
       await char.startNotifications();
-      setBleStatus("ROCHE_LIVE");
-      setRocheDevice(device.name);
-      addLog(`ROCHE INTERCEPT ACTIVE // ${device.name}`, "event");
+      addLog("NOTIFICATION CHANNEL OPEN // AWAITING RACP TRIGGER", "event");
 
+      // Subscribe to RACP response notifications
+      await racpChar.startNotifications();
+
+      // Measurement data handler
       char.addEventListener('characteristicvaluechanged', (e) => {
         const data  = e.target.value;
         const flags = data.getUint8(0);
 
-        // Dynamic offset calculation
-        let offset = 1;  // After flags byte
-        offset += 2;     // Sequence Number (always present)
-        offset += 7;     // Base Time (always present)
-        if (flags & 0x01) offset += 2; // Time Offset (conditional)
-        if (flags & 0x04) offset += 2; // Sensor Status Annunciation (conditional)
+        let offset = 1;
+        offset += 2;
+        offset += 7;
+        if (flags & 0x01) offset += 2;
+        if (flags & 0x04) offset += 2;
 
-        // Bounds check
         if (offset + 2 > data.byteLength) {
           addLog("SYS_WARN: PACKET TOO SHORT // REJECTED", "event");
           return;
@@ -287,18 +281,23 @@ export default function MethuselahFinal() {
 
         const mmolValue = decodeSFLOAT(data, offset);
 
-        // Physiological sanity check
         if (mmolValue < 1.0 || mmolValue > 33.3) {
           addLog(`SYS_WARN: VALUE OUT OF RANGE (${mmolValue.toFixed(1)}) // REJECTED`, "event");
           return;
         }
 
         const finalVal = parseFloat(mmolValue.toFixed(1));
-
         setTelemetry(prev => ({ ...prev, glucose: finalVal, isRealData: true }));
         setHistory(h => ({ ...h, glucose: [...h.glucose, finalVal].slice(-20) }));
         addLog(`ROCHE INTERCEPT: ${finalVal} mmol/L`, "roche");
       });
+
+      // RACP TRIGGER — "Report All Records"
+      await racpChar.writeValueWithResponse(new Uint8Array([0x01, 0x01]));
+
+      setBleStatus("ROCHE_LIVE");
+      setRocheDevice(device.name);
+      addLog(`RACP TRIGGERED // VAULT OPEN // ${device.name}`, "event");
 
     } catch (error) {
       setBleStatus("DISCONNECTED");
@@ -308,8 +307,7 @@ export default function MethuselahFinal() {
     }
   };
 
-  // ── LOGIC ENGINE — TRIPLE THRESHOLD ──────────────────────────────────────
-  // Normalization: 5.8 mmol/L = 105 mg/dL
+  // ── LOGIC ENGINE ──────────────────────────────────────────────────────────
   let logic = {
     cmd:    "HOMEOSTASIS OPTIMAL",
     rat:    "All biological vectors within nominal range. No corrective intervention required.",
@@ -344,7 +342,6 @@ export default function MethuselahFinal() {
     };
   }
 
-  // Dynamic progress bars scaled for mmol/L
   const glucosePct = ((telemetry.glucose - 3.5) / (14 - 3.5))   * 100;
   const hrvPct     = ((telemetry.hrv - 25)       / (95 - 25))    * 100;
   const lactatePct = ((telemetry.lactate - 0.6)  / (4.5 - 0.6)) * 100;
@@ -362,7 +359,6 @@ export default function MethuselahFinal() {
     : bleStatus === "SCANNING..." || bleStatus === "CONNECTING..." ? "var(--accent-amber)"
     : "var(--text-dim)";
 
-  // ── AUTH GATE ────────────────────────────────────────────────────────────
   if (locked) {
     return (
       <>
@@ -378,23 +374,20 @@ export default function MethuselahFinal() {
             onKeyDown={handleKeyDown}
             placeholder="********"
           />
-          <div className="auth-hint">INPUT MASTER KEY → PRESS ENTER</div>
+          <div className="auth-hint">INPUT MASTER KEY → PRESS RETURN</div>
           {authError && <div className="auth-error">⚠ ACCESS DENIED // INVALID KEY</div>}
         </div>
       </>
     );
   }
 
-  // ── MAIN DASHBOARD ───────────────────────────────────────────────────────
   return (
     <div className="shell">
-
-      {/* HEADER */}
       <div className="header">
         <div className="brand-wrap">
           <div className="brand">METHUSELAH</div>
           <div className="brand-sub">
-            Biological Logic Engine // v1.0.4 // Node_01 // Oliver_BC
+            Biological Logic Engine // v1.0.5 // Node_01 // Oliver_BC
             {rocheDevice && ` // ${rocheDevice}`}
           </div>
         </div>
@@ -416,7 +409,6 @@ export default function MethuselahFinal() {
         </div>
       </div>
 
-      {/* TELEMETRY GRID */}
       <div className="telemetry-grid">
         <Metric
           label="Glycemic Load"
@@ -447,7 +439,6 @@ export default function MethuselahFinal() {
         />
       </div>
 
-      {/* COMMAND GATE */}
       <div className="command-wrap" style={{ borderColor: logic.border }}>
         <div className="corner tl" /><div className="corner tr" />
         <div className="corner bl" /><div className="corner br" />
@@ -470,7 +461,6 @@ export default function MethuselahFinal() {
         )}
       </div>
 
-      {/* SYSTEM LOG */}
       <div className="sys-log">
         {logs.map((l, i) => (
           <div key={i} className="log-line">
@@ -479,7 +469,6 @@ export default function MethuselahFinal() {
           </div>
         ))}
       </div>
-
     </div>
   );
 }
