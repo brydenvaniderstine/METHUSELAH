@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { connectRoche } from "./ble";
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
@@ -139,13 +140,6 @@ body::before {
 .auth-error { font-size: 9px; color: var(--accent-red); letter-spacing: 2px; animation: fadeIn 0.2s ease; }
 `;
 
-const ROCHE_CONFIG = {
-  SERVICE:        '00001808-0000-1000-8000-00805f9b34fb',
-  CHARACTERISTIC: '00002a18-0000-1000-8000-00805f9b34fb',
-  RACP:           '00002a52-0000-1000-8000-00805f9b34fb',
-  NAME_PREFIX:    'meter+'
-};
-
 const MASTER_KEY = "METHUSELAH_V1";
 
 function Metric({ label, val, unit, pct, color, status, isReal }) {
@@ -225,80 +219,43 @@ export default function MethuselahFinal() {
     return signedMantissa * Math.pow(10, exponent);
   };
 
-  // ── ROCHE BLE BRIDGE v1.0.5 — WITH RACP TRIGGER ──────────────────────────
+  // ── ROCHE BLE BRIDGE v1.1.0 — CAPACITOR NATIVE / WEB BT ADAPTER ─────────
   const handleHardwareConnect = async () => {
     if (isScanning || bleStatus === "ROCHE_LIVE") return;
     setIsScanning(true);
-    setBleStatus("SCANNING...");
-    addLog("INITIATING ROCHE HANDSHAKE...", "event");
 
     try {
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ namePrefix: ROCHE_CONFIG.NAME_PREFIX }],
-        optionalServices: [ROCHE_CONFIG.SERVICE]
+      await connectRoche({
+        onData: (data) => {
+          const flags = data.getUint8(0);
+          let offset = 1;
+          offset += 2;  // sequence number
+          offset += 7;  // base time
+          if (flags & 0x01) offset += 2;  // time offset
+          if (flags & 0x04) offset += 2;  // type/location
+
+          if (offset + 2 > data.byteLength) {
+            addLog("SYS_WARN: PACKET TOO SHORT // REJECTED", "event");
+            return;
+          }
+
+          const mmolValue = decodeSFLOAT(data, offset);
+
+          if (mmolValue < 1.0 || mmolValue > 33.3) {
+            addLog(`SYS_WARN: VALUE OUT OF RANGE (${mmolValue.toFixed(1)}) // REJECTED`, "event");
+            return;
+          }
+
+          const finalVal = parseFloat(mmolValue.toFixed(1));
+          setTelemetry(prev => ({ ...prev, glucose: finalVal, isRealData: true }));
+          setHistory(h => ({ ...h, glucose: [...h.glucose, finalVal].slice(-20) }));
+          addLog(`ROCHE INTERCEPT: ${finalVal} mmol/L`, "roche");
+        },
+        onLog:        addLog,
+        onStatus:     setBleStatus,
+        onDevice:     setRocheDevice,
+        onDisconnect: () => setTelemetry(p => ({ ...p, isRealData: false })),
       });
-
-      device.addEventListener('gattserverdisconnected', () => {
-        setBleStatus("DISCONNECTED");
-        setTelemetry(p => ({ ...p, isRealData: false }));
-        addLog("ROCHE NODE DISCONNECTED // REVERTING TO SIMULATION", "event");
-      });
-
-      setBleStatus("CONNECTING...");
-      const server = await device.gatt.connect();
-
-      let service, char, racpChar;
-      try {
-        service   = await server.getPrimaryService(ROCHE_CONFIG.SERVICE);
-        char      = await service.getCharacteristic(ROCHE_CONFIG.CHARACTERISTIC);
-        racpChar  = await service.getCharacteristic(ROCHE_CONFIG.RACP);
-      } catch {
-        throw new Error("UUID_MISMATCH: Glucose service not found on device.");
-      }
-
-      // Subscribe to measurement notifications
-      await char.startNotifications();
-      addLog("NOTIFICATION CHANNEL OPEN // AWAITING RACP TRIGGER", "event");
-
-      // Subscribe to RACP response notifications
-      await racpChar.startNotifications();
-
-      // Measurement data handler
-      char.addEventListener('characteristicvaluechanged', (e) => {
-        const data  = e.target.value;
-        const flags = data.getUint8(0);
-
-        let offset = 1;
-        offset += 2;
-        offset += 7;
-        if (flags & 0x01) offset += 2;
-        if (flags & 0x04) offset += 2;
-
-        if (offset + 2 > data.byteLength) {
-          addLog("SYS_WARN: PACKET TOO SHORT // REJECTED", "event");
-          return;
-        }
-
-        const mmolValue = decodeSFLOAT(data, offset);
-
-        if (mmolValue < 1.0 || mmolValue > 33.3) {
-          addLog(`SYS_WARN: VALUE OUT OF RANGE (${mmolValue.toFixed(1)}) // REJECTED`, "event");
-          return;
-        }
-
-        const finalVal = parseFloat(mmolValue.toFixed(1));
-        setTelemetry(prev => ({ ...prev, glucose: finalVal, isRealData: true }));
-        setHistory(h => ({ ...h, glucose: [...h.glucose, finalVal].slice(-20) }));
-        addLog(`ROCHE INTERCEPT: ${finalVal} mmol/L`, "roche");
-      });
-
-      // RACP TRIGGER — "Report All Records"
-      await racpChar.writeValueWithResponse(new Uint8Array([0x01, 0x01]));
-
-      setBleStatus("ROCHE_LIVE");
-      setRocheDevice(device.name);
-      addLog(`RACP TRIGGERED // VAULT OPEN // ${device.name}`, "event");
-
     } catch (error) {
       setBleStatus("DISCONNECTED");
       addLog(`BRIDGE FAILED: ${error.message}`, "event");
