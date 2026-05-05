@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 
+
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
 
@@ -23,8 +24,8 @@ const CSS = `
 html, body, #root {
   height: 100%; width: 100%;
   background: var(--bg); color: var(--text-main);
-  font-family: var(--font-mono); font-size: 12px;
-  text-transform: uppercase; overflow: hidden;
+  font-family: var(--font-mono); font-size: 11px;
+  text-transform: uppercase; overflow-y: auto;
 }
 
 body::after {
@@ -41,18 +42,18 @@ body::before {
 
 .shell {
   display: grid; grid-template-rows: auto auto 1fr auto;
-  height: 100%; width: 100%; max-width: 860px;
-  margin: 0 auto; padding: 20px; position: relative; z-index: 1; gap: 16px;
+  height: 100%; width: 100%; max-width: 100%;
+  margin: 0 auto; padding: 12px; position: relative; z-index: 1; gap: 16px;
 }
 
 .header {
-  display: flex; justify-content: space-between; align-items: flex-end;
-  border-bottom: 2px solid var(--text-main); padding-bottom: 10px;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  border-bottom: 2px solid var(--text-main); padding-bottom: 10px; overflow: hidden;
 }
 
 .brand-wrap { display: flex; flex-direction: column; gap: 2px; }
-.brand { font-size: 22px; font-weight: 700; letter-spacing: 4px; }
-.brand-sub { font-size: 9px; color: var(--text-dim); letter-spacing: 3px; }
+.brand { font-size: 13px; font-weight: 700; letter-spacing: 2px; }
+.brand-sub { font-size: 8px; color: var(--text-dim); letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45vw; }
 
 .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .header-top-row { display: flex; gap: 12px; align-items: center; }
@@ -72,12 +73,12 @@ body::before {
 .ble-btn.roche { border-color: var(--accent-blue); color: var(--accent-blue); }
 
 .telemetry-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr);
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 2px; background: var(--line); border: 1px solid var(--line-bright);
 }
-.tel-block { background: var(--panel); padding: 14px 16px; position: relative; overflow: hidden; }
+.tel-block { background: var(--panel); padding: 8px; position: relative; overflow: hidden; }
 .tel-label { font-size: 9px; color: var(--text-dim); letter-spacing: 1.5px; margin-bottom: 6px; }
-.tel-value { font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.tel-value { font-size: 18px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
 .tel-unit { font-size: 10px; color: var(--text-dim); }
 .tel-bar-wrap { height: 2px; background: var(--line); margin: 8px 0; }
 .tel-bar { height: 100%; transition: width 1s ease, background 0.5s; }
@@ -86,8 +87,8 @@ body::before {
 
 .command-wrap {
   display: flex; flex-direction: column; justify-content: center; align-items: center;
-  border: 2px solid var(--line-bright); padding: 32px 40px; text-align: center;
-  background: var(--panel); position: relative; overflow: hidden; transition: border-color 0.5s;
+  border: 2px solid var(--line-bright); padding: 16px 12px; text-align: center;
+  background: var(--panel); position: relative; overflow-y: auto; transition: border-color 0.5s;
 }
 .command-wrap::before {
   content: 'METHUSELAH // CORE // LOGIC';
@@ -101,12 +102,12 @@ body::before {
 .br { bottom: 4px; right: 4px; border-left: 0; border-top: 0; }
 
 .cmd-meta { font-size: 9px; color: var(--text-dim); margin-bottom: 16px; letter-spacing: 2px; }
-.cmd-text { font-size: 24px; font-weight: 700; margin-bottom: 12px; transition: color 0.5s; max-width: 500px; }
-.cmd-rationale { font-size: 10px; color: var(--text-mid); line-height: 1.7; max-width: 480px; margin-bottom: 24px; letter-spacing: 0.5px; }
+.cmd-text { font-size: 16px; font-weight: 700; margin-bottom: 12px; transition: color 0.5s; max-width: 100%; }
+.cmd-rationale { font-size: 10px; color: var(--text-mid); line-height: 1.7; max-width: 100%; margin-bottom: 24px; letter-spacing: 0.5px; }
 
 .btn-execute {
-  background: var(--text-main); color: var(--bg); border: none; padding: 14px 40px;
-  font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: 3px;
+  background: var(--text-main); color: var(--bg); border: none; padding: 12px 20px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 3px;
   cursor: pointer; box-shadow: 4px 4px 0 var(--accent-amber);
   transition: transform 0.08s, box-shadow 0.08s;
 }
@@ -114,7 +115,7 @@ body::before {
 .btn-execute:active { transform: translate(4px,4px); box-shadow: none; }
 .btn-execute.done { background: var(--line-bright); color: var(--text-dim); box-shadow: none; cursor: not-allowed; transform: none; }
 
-.optimal-label { color: var(--accent-green); font-weight: 700; letter-spacing: 3px; font-size: 12px; animation: breathe 3s infinite; }
+.optimal-label { color: var(--accent-green); font-weight: 700; letter-spacing: 3px; font-size: 11px; animation: breathe 3s infinite; }
 @keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 .sys-log { height: 80px; overflow-y: auto; border-top: 1px solid var(--line-bright); padding-top: 10px; display: flex; flex-direction: column; gap: 2px; }
@@ -125,26 +126,20 @@ body::before {
 
 .auth-overlay {
   position: fixed; inset: 0; background: var(--bg); z-index: 10000;
-  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 24px;
-  font-family: 'Space Mono', 'Courier New', Courier, monospace;
+  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px;
+  font-family: 'Space Mono', 'Courier New', Courier, monospace; padding: 12px; box-sizing: border-box; overflow: hidden;
 }
 .auth-title { font-size: 13px; color: var(--accent-amber); letter-spacing: 4px; font-weight: 700; }
 .auth-input {
   background: transparent; border: 1px solid var(--line-bright); color: var(--accent-green);
-  font-family: var(--font-mono); font-size: 20px; padding: 12px; text-align: center;
-  letter-spacing: 8px; width: 300px; outline: none; transition: border-color 0.2s;
+  font-family: var(--font-mono); font-size: 14px; padding: 10px; text-align: center;
+  letter-spacing: 4px; width: 80vw; max-width: 300px; outline: none; transition: border-color 0.2s;
 }
 .auth-input:focus { border-color: var(--accent-green); }
 .auth-hint { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
+.auth-decrypt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 3px; font-weight: 700; padding: 12px 32px; background: var(--text-main); color: var(--bg); border: none; cursor: pointer; box-shadow: 3px 3px 0 var(--accent-amber); margin-top: 8px; text-transform: uppercase; }
 .auth-error { font-size: 9px; color: var(--accent-red); letter-spacing: 2px; animation: fadeIn 0.2s ease; }
 `;
-
-const ROCHE_CONFIG = {
-  SERVICE:        '00001808-0000-1000-8000-00805f9b34fb',
-  CHARACTERISTIC: '00002a18-0000-1000-8000-00805f9b34fb',
-  RACP:           '00002a52-0000-1000-8000-00805f9b34fb',
-  NAME_PREFIX:    'meter+'
-};
 
 const MASTER_KEY = "METHUSELAH_V1";
 
@@ -225,80 +220,43 @@ export default function MethuselahFinal() {
     return signedMantissa * Math.pow(10, exponent);
   };
 
-  // ── ROCHE BLE BRIDGE v1.0.5 — WITH RACP TRIGGER ──────────────────────────
+  // ── ROCHE BLE BRIDGE v1.1.0 — CAPACITOR NATIVE / WEB BT ADAPTER ─────────
   const handleHardwareConnect = async () => {
     if (isScanning || bleStatus === "ROCHE_LIVE") return;
     setIsScanning(true);
-    setBleStatus("SCANNING...");
-    addLog("INITIATING ROCHE HANDSHAKE...", "event");
 
     try {
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ namePrefix: ROCHE_CONFIG.NAME_PREFIX }],
-        optionalServices: [ROCHE_CONFIG.SERVICE]
+      await connectRoche({
+        onData: (data) => {
+          const flags = data.getUint8(0);
+          let offset = 1;
+          offset += 2;  // sequence number
+          offset += 7;  // base time
+          if (flags & 0x01) offset += 2;  // time offset
+          if (flags & 0x04) offset += 2;  // type/location
+
+          if (offset + 2 > data.byteLength) {
+            addLog("SYS_WARN: PACKET TOO SHORT // REJECTED", "event");
+            return;
+          }
+
+          const mmolValue = decodeSFLOAT(data, offset);
+
+          if (mmolValue < 1.0 || mmolValue > 33.3) {
+            addLog(`SYS_WARN: VALUE OUT OF RANGE (${mmolValue.toFixed(1)}) // REJECTED`, "event");
+            return;
+          }
+
+          const finalVal = parseFloat(mmolValue.toFixed(1));
+          setTelemetry(prev => ({ ...prev, glucose: finalVal, isRealData: true }));
+          setHistory(h => ({ ...h, glucose: [...h.glucose, finalVal].slice(-20) }));
+          addLog(`ROCHE INTERCEPT: ${finalVal} mmol/L`, "roche");
+        },
+        onLog:        addLog,
+        onStatus:     setBleStatus,
+        onDevice:     setRocheDevice,
+        onDisconnect: () => setTelemetry(p => ({ ...p, isRealData: false })),
       });
-
-      device.addEventListener('gattserverdisconnected', () => {
-        setBleStatus("DISCONNECTED");
-        setTelemetry(p => ({ ...p, isRealData: false }));
-        addLog("ROCHE NODE DISCONNECTED // REVERTING TO SIMULATION", "event");
-      });
-
-      setBleStatus("CONNECTING...");
-      const server = await device.gatt.connect();
-
-      let service, char, racpChar;
-      try {
-        service   = await server.getPrimaryService(ROCHE_CONFIG.SERVICE);
-        char      = await service.getCharacteristic(ROCHE_CONFIG.CHARACTERISTIC);
-        racpChar  = await service.getCharacteristic(ROCHE_CONFIG.RACP);
-      } catch {
-        throw new Error("UUID_MISMATCH: Glucose service not found on device.");
-      }
-
-      // Subscribe to measurement notifications
-      await char.startNotifications();
-      addLog("NOTIFICATION CHANNEL OPEN // AWAITING RACP TRIGGER", "event");
-
-      // Subscribe to RACP response notifications
-      await racpChar.startNotifications();
-
-      // Measurement data handler
-      char.addEventListener('characteristicvaluechanged', (e) => {
-        const data  = e.target.value;
-        const flags = data.getUint8(0);
-
-        let offset = 1;
-        offset += 2;
-        offset += 7;
-        if (flags & 0x01) offset += 2;
-        if (flags & 0x04) offset += 2;
-
-        if (offset + 2 > data.byteLength) {
-          addLog("SYS_WARN: PACKET TOO SHORT // REJECTED", "event");
-          return;
-        }
-
-        const mmolValue = decodeSFLOAT(data, offset);
-
-        if (mmolValue < 1.0 || mmolValue > 33.3) {
-          addLog(`SYS_WARN: VALUE OUT OF RANGE (${mmolValue.toFixed(1)}) // REJECTED`, "event");
-          return;
-        }
-
-        const finalVal = parseFloat(mmolValue.toFixed(1));
-        setTelemetry(prev => ({ ...prev, glucose: finalVal, isRealData: true }));
-        setHistory(h => ({ ...h, glucose: [...h.glucose, finalVal].slice(-20) }));
-        addLog(`ROCHE INTERCEPT: ${finalVal} mmol/L`, "roche");
-      });
-
-      // RACP TRIGGER — "Report All Records"
-      await racpChar.writeValueWithResponse(new Uint8Array([0x01, 0x01]));
-
-      setBleStatus("ROCHE_LIVE");
-      setRocheDevice(device.name);
-      addLog(`RACP TRIGGERED // VAULT OPEN // ${device.name}`, "event");
-
     } catch (error) {
       setBleStatus("DISCONNECTED");
       addLog(`BRIDGE FAILED: ${error.message}`, "event");
@@ -366,7 +324,7 @@ export default function MethuselahFinal() {
         <div className="auth-overlay">
           <div className="auth-title">METHUSELAH // ACCESS REQUIRED</div>
           <input
-            autoFocus
+            
             className="auth-input"
             type="password"
             value={input}
@@ -375,6 +333,7 @@ export default function MethuselahFinal() {
             placeholder="********"
           />
           <div className="auth-hint">INPUT MASTER KEY → PRESS RETURN</div>
+          <button className="auth-decrypt" onClick={() => { if (input === "METHUSELAH_V1") { setLocked(false); setAuthError(false); } else { setAuthError(true); setInput(""); } }}>DECRYPT</button>
           {authError && <div className="auth-error">⚠ ACCESS DENIED // INVALID KEY</div>}
         </div>
       </>
