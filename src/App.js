@@ -53,7 +53,7 @@ body::before {
 
 .brand-wrap { display: flex; flex-direction: column; gap: 2px; }
 .brand { font-size: 13px; font-weight: 700; letter-spacing: 2px; }
-.brand-sub { font-size: 9px; color: var(--text-dim); letter-spacing: 3px; }
+.brand-sub { font-size: 8px; color: var(--text-dim); letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45vw; }
 
 .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .header-top-row { display: flex; gap: 12px; align-items: center; }
@@ -324,7 +324,7 @@ export default function MethuselahFinal() {
         <div className="auth-overlay">
           <div className="auth-title">METHUSELAH // ACCESS REQUIRED</div>
           <input
-            autoFocus
+            
             className="auth-input"
             type="password"
             value={input}
