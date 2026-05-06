@@ -260,7 +260,7 @@ export default function MethuselahFinal() {
 
   let logic = {
     cmd:    "HOMEOSTASIS OPTIMAL",
-    rat:    "All biological vectors within nominal range. No corrective intervention required.",
+    rat:    "BASELINE STABLE. // ACTIVE",
     color:  "var(--text-main)",
     border: "var(--line-bright)",
     level:  "optimal",
