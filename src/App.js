@@ -306,7 +306,7 @@ export default function MethuselahFinal() {
           <button className="auth-decrypt" onClick={() => {
             if (input === MASTER_KEY) { setLocked(false); setAuthError(false); }
             else { setAuthError(true); setInput(""); }
-          }}>DECRYPT</button>
+          }}>ENTER</button>
           {authError && <div className="auth-error">⚠ ACCESS DENIED // INVALID KEY</div>}
         </div>
       ) : (
