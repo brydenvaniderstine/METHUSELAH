@@ -40,7 +40,7 @@ body::before {
 }
 
 .shell {
-  display: grid; grid-template-rows: auto auto 1fr auto;
+  display: grid; grid-template-rows: auto auto auto 1fr;
   height: 100%; width: 100%; max-width: 100%;
   margin: 0 auto; padding: 12px; position: relative; z-index: 1; gap: 16px;
 }
@@ -119,7 +119,7 @@ body::before {
 .optimal-label { color: var(--accent-green); font-weight: 700; letter-spacing: 3px; font-size: 11px; animation: breathe 3s infinite; }
 @keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-.sys-log { height: 72px; overflow-y: auto; border-top: 1px solid var(--line-bright); padding-top: 8px; display: flex; flex-direction: column-reverse; gap: 2px; }
+.sys-log { height: 100%; min-height: 80px; overflow-y: auto; border-top: 1px solid var(--line-bright); padding-top: 8px; display: flex; flex-direction: column-reverse; gap: 2px; }
 .log-line { font-size: 9px; color: var(--text-dim); display: flex; gap: 12px; animation: slideIn 0.25s ease; }
 @keyframes slideIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
