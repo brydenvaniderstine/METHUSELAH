@@ -40,7 +40,7 @@ body::before {
 }
 
 .shell {
-  display: grid; grid-template-rows: auto auto auto auto;
+  display: grid; grid-template-rows: auto auto 1fr auto;
   height: 100%; width: 100%; max-width: 100%;
   margin: 0 auto; padding: 12px; position: relative; z-index: 1; gap: 16px;
 }
@@ -89,7 +89,7 @@ body::before {
   display: flex; flex-direction: column; justify-content: center; align-items: center;
   border: 2px solid var(--line-bright); padding: 24px 16px; text-align: center;
   background: var(--panel); position: relative; overflow: visible; transition: border-color 0.5s;
-  height: auto;
+  max-height: 200px;
 }
 .command-wrap::before {
   content: 'METHUSELAH // CORE // LOGIC';
@@ -235,7 +235,7 @@ export default function MethuselahFinal() {
 
   let logic = {
     cmd:    "BIOLOGY OPTIMAL.",
-    rat:    "BASELINE STABLE. // ACTIVE",
+    rat:    "",
     color:  "var(--text-main)",
     border: "var(--line-bright)",
     level:  "optimal",
