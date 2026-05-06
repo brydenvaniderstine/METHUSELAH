@@ -24,7 +24,7 @@ html, body, #root {
   height: 100%; width: 100%;
   background: var(--bg); color: var(--text-main);
   font-family: var(--font-mono); font-size: 11px;
-  text-transform: uppercase; overflow-y: auto;
+  text-transform: uppercase; overflow: hidden;
 }
 
 body::after {
@@ -40,7 +40,7 @@ body::before {
 }
 
 .shell {
-  display: flex; flex-direction: column; height: 100%;
+  display: flex; flex-direction: column;
   height: 100%; width: 100%; max-width: 100%;
   margin: 0 auto; padding: 12px; position: relative; z-index: 1; gap: 16px;
 }
