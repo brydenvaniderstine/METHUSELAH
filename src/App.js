@@ -197,7 +197,7 @@ export default function MethuselahFinal() {
   const [isScanning,  setIsScanning]  = useState(false);
   const [bleStatus,   setBleStatus]   = useState("DISCONNECTED");
   const [rocheDevice, setRocheDevice] = useState(null);
-  const [logs,        setLogs]        = useState([{ time: ts(), msg: "SYS_INIT // METHUSELAH v1.0.5", type: "" }]);
+  const [logs,        setLogs]        = useState([{ time: ts(), msg: "BIOLOGICAL SYSTEMS ONLINE // STANDING BY", type: "" }]);
   const logRef = useRef(null);
 
   const addLog = (msg, type = "") => setLogs(prev => [{ time: ts(), msg, type }, ...prev].slice(0, 12));
@@ -220,7 +220,7 @@ export default function MethuselahFinal() {
   }, []);
 
   useEffect(() => {
-    if (!locked) addLog("ACCESS GRANTED // TELEMETRY ACTIVE", "event");
+    if (!locked) { addLog("TELEMETRY STREAM ACTIVE // OLIVER_BC", "event"); addLog("READY // 3 VECTORS ENGAGED", "event"); }
   }, [locked]);
 
   useEffect(() => {
@@ -254,7 +254,7 @@ export default function MethuselahFinal() {
   const handleHardwareConnect = async () => {
     if (isScanning || bleStatus === "ROCHE_LIVE") return;
     setIsScanning(true);
-    addLog("HARDWARE CONNECT // NOT AVAILABLE ON WEB", "event");
+    addLog("HARDWARE BRIDGE // NATIVE DEVICE REQUIRED", "event");
     setTimeout(() => setIsScanning(false), 1500);
   };
 
@@ -301,7 +301,7 @@ export default function MethuselahFinal() {
     addLog("PROTOCOL LOGGED: " + logic.cmd, "event");
     setTimeout(() => {
       setExecuted(false);
-      addLog("DE-ESCALATION CONFIRMED // RETURNING TO HOMEOSTASIS", "event");
+      addLog("PROTOCOL COMPLETE // RETURNING TO BASELINE", "event");
     }, 2500);
   };
 
