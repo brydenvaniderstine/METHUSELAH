@@ -144,25 +144,6 @@ body::before {
 .auth-decrypt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 3px; font-weight: 700; padding: 12px 32px; background: var(--text-main); color: var(--bg); border: none; cursor: pointer; box-shadow: 3px 3px 0 var(--accent-amber); margin-top: 8px; text-transform: uppercase; }
 .auth-error { font-size: 9px; color: var(--accent-red); letter-spacing: 2px; animation: fadeIn 0.2s ease; }
 
-.splash {
-  position: fixed; inset: 0; background: var(--bg); z-index: 20000;
-  display: flex; align-items: center; justify-content: center;
-  animation: splashFade 0.6s ease 1.2s forwards;
-}
-.splash-mem {
-  font-size: 180px; color: var(--text-main); line-height: 1;
-  font-family: 'Arial Hebrew', serif;
-  animation: memPulse 1.2s ease forwards;
-}
-@keyframes memPulse {
-  0% { opacity: 0; transform: scale(0.85); }
-  40% { opacity: 1; transform: scale(1.02); }
-  100% { opacity: 1; transform: scale(1); }
-}
-@keyframes splashFade {
-  0% { opacity: 1; }
-  100% { opacity: 0; pointer-events: none; }
-}
 `;
 
 const MASTER_KEY = "METHUSELAH_V1";
@@ -186,7 +167,6 @@ function Metric({ label, val, unit, pct, color, status, isReal }) {
 export default function MethuselahFinal() {
   const ts = () => new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-  const [splash,      setSplash]      = useState(true);
   const [locked,      setLocked]      = useState(true);
   const [input,       setInput]       = useState("");
   const [authError,   setAuthError]   = useState(false);
@@ -207,11 +187,6 @@ export default function MethuselahFinal() {
     s.textContent = CSS;
     document.head.appendChild(s);
     return () => document.head.removeChild(s);
-  }, []);
-
-  useEffect(() => {
-    const t = setTimeout(() => setSplash(false), 1900);
-    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -316,12 +291,6 @@ export default function MethuselahFinal() {
   return (
     <>
       <style>{CSS}</style>
-
-      {splash && (
-        <div className="splash">
-          <div className="splash-mem">מ</div>
-        </div>
-      )}
 
       {locked ? (
         <div className="auth-overlay">
