@@ -89,7 +89,7 @@ body::before {
   display: flex; flex-direction: column; justify-content: center; align-items: center;
   border: 2px solid var(--line-bright); padding: 20px 16px; text-align: center;
   background: var(--panel); position: relative; overflow: visible; transition: border-color 0.5s;
-  min-height: 0;
+  min-height: 0; max-height: 280px;
 }
 .command-wrap::before {
   content: 'METHUSELAH // CORE // LOGIC';
@@ -347,7 +347,7 @@ export default function MethuselahFinal() {
             <div className="brand-wrap">
               <div className="brand">METHUSELAH</div>
               <div className="brand-sub">
-                Biological Logic Engine // v1.0.5 // Node_01 // Oliver_BC
+                v1.0.6
                 {rocheDevice && ` // ${rocheDevice}`}
               </div>
             </div>
