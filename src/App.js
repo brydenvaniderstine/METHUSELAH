@@ -40,7 +40,7 @@ body::before {
 }
 
 .shell {
-  display: grid; grid-template-rows: auto auto 1fr auto;
+  display: grid; grid-template-rows: auto auto auto auto;
   height: 100%; width: 100%; max-width: 100%;
   margin: 0 auto; padding: 12px; position: relative; z-index: 1; gap: 16px;
 }
@@ -87,9 +87,9 @@ body::before {
 
 .command-wrap {
   display: flex; flex-direction: column; justify-content: center; align-items: center;
-  border: 2px solid var(--line-bright); padding: 20px 16px; text-align: center;
+  border: 2px solid var(--line-bright); padding: 24px 16px; text-align: center;
   background: var(--panel); position: relative; overflow: visible; transition: border-color 0.5s;
-  min-height: 0; max-height: 280px;
+  height: auto;
 }
 .command-wrap::before {
   content: 'METHUSELAH // CORE // LOGIC';
@@ -146,7 +146,7 @@ body::before {
 
 `;
 
-const MASTER_KEY = "METHUSELAH_V1";
+const MASTER_KEY = "v1";
 
 function Metric({ label, val, unit, pct, color, status, isReal }) {
   return (
@@ -386,7 +386,7 @@ export default function MethuselahFinal() {
                 {executed ? "PROTOCOL LOGGED" : "EXECUTE PROTOCOL"}
               </button>
             ) : (
-              <div className="optimal-label">// AWAITING SYSTEM DRIFT //</div>
+            <div className="optimal-label">BASELINE STABLE. // ACTIVE</div>
             )}
           </div>
 
