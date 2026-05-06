@@ -244,7 +244,7 @@ export default function MethuselahFinal() {
   if (telemetry.glucose > 5.8) {
     logic = {
       cmd:    "INITIATE 24-HOUR WATER FAST.",
-      rat:    `GLYCEMIC FRICTION DETECTED (${telemetry.glucose.toFixed(1)} MMOL/L). INSULIN SENSITIVITY RESET REQUIRED. — ATTIA / SINCLAIR`,
+      rat:    `GLYCEMIC FRICTION DETECTED (${telemetry.glucose.toFixed(1)} MMOL/L).`,
       color:  "var(--accent-red)",
       border: "var(--accent-red)",
       level:  "critical",
@@ -252,7 +252,7 @@ export default function MethuselahFinal() {
   } else if (telemetry.hrv < 40) {
     logic = {
       cmd:    "EXECUTE 45-MIN ZONE 2 OUTPUT.",
-      rat:    `AUTONOMIC STRESS DETECTED (${Math.round(telemetry.hrv)} MS HRV). PARASYMPATHETIC ACTIVATION REQUIRED. — HUBERMAN / GALPIN`,
+      rat:    `AUTONOMIC STRESS DETECTED (${Math.round(telemetry.hrv)} MS HRV).`,
       color:  "var(--text-main)",
       border: "var(--accent-amber)",
       level:  "warn",
@@ -260,7 +260,7 @@ export default function MethuselahFinal() {
   } else if (telemetry.lactate > 2.0) {
     logic = {
       cmd:    "INITIATE ACTIVE RECOVERY PROTOCOL.",
-      rat:    `LACTATE CLEARANCE DELAYED (${telemetry.lactate.toFixed(1)} MMOL/L). TISSUE OXYGENATION REQUIRED. — SAN MILLÁN / ATTIA`,
+      rat:    `LACTATE CLEARANCE DELAYED (${telemetry.lactate.toFixed(1)} MMOL/L).`,
       color:  "var(--text-main)",
       border: "var(--accent-amber)",
       level:  "warn",
