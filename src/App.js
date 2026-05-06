@@ -88,7 +88,7 @@ body::before {
 .command-wrap {
   display: flex; flex-direction: column; justify-content: center; align-items: center;
   border: 2px solid var(--line-bright); padding: 20px 16px; text-align: center;
-  background: var(--panel); position: relative; overflow: hidden; transition: border-color 0.5s;
+  background: var(--panel); position: relative; overflow: visible; transition: border-color 0.5s;
   min-height: 0;
 }
 .command-wrap::before {
