@@ -234,7 +234,7 @@ export default function MethuselahFinal() {
   };
 
   let logic = {
-    cmd:    "HOMEOSTASIS OPTIMAL",
+    cmd:    "BIOLOGY OPTIMAL.",
     rat:    "BASELINE STABLE. // ACTIVE",
     color:  "var(--text-main)",
     border: "var(--line-bright)",
