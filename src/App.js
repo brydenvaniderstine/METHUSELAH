@@ -40,7 +40,7 @@ body::before {
 }
 
 .shell {
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: column; height: 100%;
   height: 100%; width: 100%; max-width: 100%;
   margin: 0 auto; padding: 12px; position: relative; z-index: 1; gap: 16px;
 }
