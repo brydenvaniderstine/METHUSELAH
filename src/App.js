@@ -118,7 +118,7 @@ body::before {
 .optimal-label { color: var(--accent-green); font-weight: 700; letter-spacing: 3px; font-size: 11px; animation: breathe 3s infinite; }
 @keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-.sys-log { flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid var(--line-bright); padding-top: 8px; display: flex; flex-direction: column-reverse; gap: 2px; }
+.sys-log { flex: 1 1 0%; min-height: 0; overflow-y: auto; border-top: 1px solid var(--line-bright); padding-top: 8px; display: flex; flex-direction: column-reverse; gap: 2px; }
 .log-line { font-size: 9px; color: var(--text-dim); display: flex; gap: 12px; animation: slideIn 0.25s ease; }
 @keyframes slideIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
