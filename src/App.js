@@ -40,10 +40,18 @@ body::before {
 }
 
 .shell {
-  display: grid; grid-template-rows: auto auto auto 1fr; grid-template-columns: 100%;
-  height: 100vh; width: 100%; max-width: 100%;
-  margin: 0 auto; padding: 12px; position: relative; z-index: 1; gap: 16px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 12px;
+  position: relative;
+  z-index: 1;
+  gap: 16px;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .header {
@@ -89,7 +97,8 @@ body::before {
 .command-wrap {
   display: flex; flex-direction: column; justify-content: center; align-items: center;
   border: 2px solid var(--line-bright); padding: 24px 16px; text-align: center;
-  background: var(--panel); position: relative; overflow: visible; transition: border-color 0.5s; flex-shrink: 0;
+  background: var(--panel); position: relative; overflow: visible; transition: border-color 0.5s;
+  flex-shrink: 0;
 }
 .command-wrap::before {
   content: 'METHUSELAH // CORE // LOGIC';
@@ -119,7 +128,16 @@ body::before {
 .optimal-label { color: var(--accent-green); font-weight: 700; letter-spacing: 3px; font-size: 11px; animation: breathe 3s infinite; }
 @keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-.sys-log { min-height: 0; height: 100%; overflow-y: auto; border-top: 1px solid var(--line-bright); padding-top: 8px; display: flex; flex-direction: column-reverse; gap: 2px; }
+.sys-log {
+  flex: 1;
+  overflow-y: auto;
+  border-top: 1px solid var(--line-bright);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  min-height: 100px;
+}
 .log-line { font-size: 9px; color: var(--text-dim); display: flex; gap: 12px; animation: slideIn 0.25s ease; }
 @keyframes slideIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
