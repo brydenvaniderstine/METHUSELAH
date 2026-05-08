@@ -6,6 +6,8 @@ const config: CapacitorConfig = {
   webDir: 'build',
   ios: {
     contentInset: 'always',
+    allowsLinkPreview: false,
+    allowsLinkPreview: false,
     scrollEnabled: false,
   },
   server: {

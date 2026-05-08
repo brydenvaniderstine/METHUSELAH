@@ -22,6 +22,10 @@ const CSS = `
 }
 
 html, body, #root {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
   height: 100vh; width: 100%;
   background: var(--bg); color: var(--text-main);
   font-family: var(--font-mono); font-size: 11px;
@@ -97,7 +101,7 @@ body::before {
 
 .command-wrap {
   display: flex; flex-direction: column; justify-content: center; align-items: center;
-  border: 2px solid var(--line-bright); padding: 24px 16px; text-align: center;
+  border: 2px solid var(--line-bright); padding: 14px 16px; text-align: center;
   background: var(--panel); position: relative; overflow: visible; transition: border-color 0.5s;
   flex-shrink: 0;
 }
@@ -150,7 +154,8 @@ body::before {
 .auth-overlay {
   position: fixed; inset: 0; background: var(--bg); z-index: 10000;
   display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px;
-  font-family: 'Space Mono', 'Courier New', Courier, monospace; padding: 12px; box-sizing: border-box; overflow: hidden;
+  font-family: 'Space Mono', 'Courier New', Courier, monospace;
+  padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom); box-sizing: border-box; overflow: hidden;
 }
 .auth-title { font-size: 13px; color: var(--accent-amber); letter-spacing: 4px; font-weight: 700; }
 .auth-input {
@@ -160,7 +165,7 @@ body::before {
 }
 .auth-input:focus { border-color: var(--accent-green); }
 .auth-hint { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
-.auth-decrypt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 3px; font-weight: 700; padding: 12px 32px; background: var(--text-main); color: var(--bg); border: none; cursor: pointer; box-shadow: 3px 3px 0 var(--accent-amber); margin-top: 8px; text-transform: uppercase; }
+.auth-decrypt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 3px; font-weight: 700; padding: 12px; background: var(--text-main); color: var(--bg); border: none; cursor: pointer; box-shadow: 3px 3px 0 var(--accent-amber); margin-top: 8px; text-transform: uppercase; width: 80vw; max-width: 300px; }
 .auth-error { font-size: 9px; color: var(--accent-red); letter-spacing: 2px; animation: fadeIn 0.2s ease; }
 
 `;
@@ -391,7 +396,7 @@ export default function MethuselahFinal() {
               isReal={telemetry.isRealData}
             />
             <Metric
-              label="HRV // Systemic Friction"
+              label="HRV // FRICTION"
               val={Math.round(telemetry.hrv)}
               unit="ms"
               pct={hrvPct}
