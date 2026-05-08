@@ -329,7 +329,7 @@ export default function MethuselahFinal() {
           {authError && <div className="auth-error">⚠ ACCESS DENIED // INVALID KEY</div>}
         </div>
       ) : (
-        <div className="shell">
+        <div className="shell" style={{minHeight: "100vh", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden"}}>
           <div className="header">
             <div className="brand-wrap">
               <div className="brand">METHUSELAH</div>
