@@ -167,6 +167,23 @@ body::before {
 .auth-hint { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
 .auth-decrypt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 3px; font-weight: 700; padding: 12px; background: var(--text-main); color: var(--bg); border: none; cursor: pointer; box-shadow: 3px 3px 0 var(--accent-amber); margin-top: 8px; text-transform: uppercase; width: 80vw; max-width: 300px; }
 .auth-error { font-size: 9px; color: var(--accent-red); letter-spacing: 2px; animation: fadeIn 0.2s ease; }
+.oura-setup {
+  position: fixed; inset: 0; background: var(--bg); z-index: 10000;
+  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px;
+  font-family: var(--font-mono); padding: 24px; box-sizing: border-box;
+}
+.oura-title { font-size: 13px; color: var(--accent-amber); letter-spacing: 4px; font-weight: 700; text-align: center; }
+.oura-sub { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; text-align: center; line-height: 1.8; }
+.oura-input {
+  background: transparent; border: 1px solid var(--line-bright); color: var(--accent-green);
+  font-family: var(--font-mono); font-size: 11px; padding: 12px; text-align: center;
+  width: 80vw; max-width: 400px; outline: none; transition: border-color 0.2s; letter-spacing: 1px;
+}
+.oura-input:focus { border-color: var(--accent-green); }
+.oura-btn { font-family: var(--font-mono); font-size: 11px; letter-spacing: 3px; font-weight: 700; padding: 12px; background: var(--text-main); color: var(--bg); border: none; cursor: pointer; box-shadow: 3px 3px 0 var(--accent-amber); text-transform: uppercase; width: 80vw; max-width: 400px; }
+.oura-skip { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; cursor: pointer; text-decoration: underline; margin-top: 8px; background: none; border: none; font-family: var(--font-mono); text-transform: uppercase; }
+.oura-badge { font-size: 8px; color: var(--accent-blue); letter-spacing: 1px; margin-top: 4px; }
+
 
 `;
 
@@ -192,6 +209,10 @@ export default function MethuselahFinal() {
   const ts = () => new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   const [locked,      setLocked]      = useState(true);
+  const [showOuraSetup, setShowOuraSetup] = useState(false);
+  const [ouraToken,     setOuraToken]     = useState("");
+  const [ouraInput,     setOuraInput]     = useState("");
+  const [ouraStatus,    setOuraStatus]    = useState("DISCONNECTED");
   const [input,       setInput]       = useState("");
   const [authError,   setAuthError]   = useState(false);
   const [clock,       setClock]       = useState(ts());
@@ -205,6 +226,48 @@ export default function MethuselahFinal() {
   const logRef = useRef(null);
 
   const addLog = (msg, type = "") => setLogs(prev => [{ time: ts(), msg, type }, ...prev].slice(0, 12));
+
+  const fetchOuraHRV = async (token) => {
+    try {
+      const today = new Date();
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const fmt = (d) => d.toISOString().split('T')[0];
+      const res = await fetch(
+        `https://api.ouraring.com/v2/usercollection/sleep?start_date=${fmt(yesterday)}&end_date=${fmt(today)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await res.json();
+      if (data.data && data.data.length > 0) {
+        const mainSleep = data.data.find(s => s.type === 'long_sleep') || data.data[0];
+        if (mainSleep && mainSleep.average_hrv) {
+          const hrv = mainSleep.average_hrv;
+          setTelemetry(prev => ({ ...prev, hrv }));
+          setOuraStatus("OURA_LIVE");
+          addLog(`OURA INTERCEPT: ${hrv} MS HRV // LAST NIGHT`, "roche");
+          return true;
+        }
+      }
+      addLog("OURA // NO SLEEP DATA FOUND FOR LAST NIGHT", "event");
+      return false;
+    } catch (err) {
+      addLog("OURA BRIDGE FAILED // CHECK TOKEN", "event");
+      return false;
+    }
+  };
+
+  const handleOuraConnect = async () => {
+    if (!ouraInput.trim()) return;
+    const success = await fetchOuraHRV(ouraInput.trim());
+    if (success) {
+      localStorage.setItem('oura_token', ouraInput.trim());
+      setOuraToken(ouraInput.trim());
+      setShowOuraSetup(false);
+      addLog("OURA TOKEN SAVED // DATA SOVEREIGNTY CONFIRMED", "event");
+    } else {
+      addLog("OURA TOKEN INVALID // PLEASE RETRY", "event");
+    }
+  };
 
   useEffect(() => {
     const s = document.createElement("style");
@@ -339,6 +402,27 @@ export default function MethuselahFinal() {
     <>
       <style>{CSS}</style>
 
+      {showOuraSetup && !locked && (
+        <div className="oura-setup">
+          <div className="oura-title">OURA INTEGRATION</div>
+          <div className="oura-sub">
+            YOUR DATA. YOUR DEVICE. YOUR CONTROL.<br/>
+            PASTE YOUR PERSONAL ACCESS TOKEN BELOW.<br/>
+            STORED LOCALLY. NEVER TRANSMITTED.
+          </div>
+          <input
+            className="oura-input"
+            type="password"
+            value={ouraInput}
+            onChange={e => setOuraInput(e.target.value)}
+            placeholder="PASTE OURA TOKEN HERE"
+          />
+          <button className="oura-btn" onClick={handleOuraConnect}>CONNECT OURA</button>
+          <button className="oura-skip" onClick={() => setShowOuraSetup(false)}>SKIP FOR NOW</button>
+          <div className="oura-badge">● OURA RING // HRV VECTOR</div>
+        </div>
+      )}
+
       {locked ? (
         <div className="auth-overlay">
           <div className="auth-title">METHUSELAH // ACCESS REQUIRED</div>
@@ -371,7 +455,7 @@ export default function MethuselahFinal() {
               <div className="header-top-row">
                 <div className="live-badge" style={{ color: bleColor }}>
                   <div className="blink" style={{ background: bleColor }} />
-                  {bleStatus === "ROCHE_LIVE" ? "ROCHE LIVE" : bleStatus === "DISCONNECTED" ? "SIMULATION" : bleStatus}
+                  {bleStatus === "ROCHE_LIVE" ? "ROCHE LIVE" : ouraStatus === "OURA_LIVE" ? "OURA LIVE" : bleStatus === "DISCONNECTED" ? "SIMULATION" : bleStatus}
                 </div>
                 <button
                   className={bleBtnClass}
