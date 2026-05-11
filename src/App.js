@@ -299,7 +299,7 @@ export default function MethuselahFinal() {
 
   const handleKeyDown = (e) => {
     if (e.key !== "Enter") return;
-    if (input === MASTER_KEY) { setLocked(false); setAuthError(false); }
+    if (input === MASTER_KEY) { setLocked(false); setAuthError(false); const saved = localStorage.getItem("ouraToken"); if (saved) { setOuraToken(saved); fetchOuraHRV(saved); } else { setShowOuraSetup(true); } }
     else { setAuthError(true); setInput(""); }
   };
 
@@ -437,7 +437,7 @@ export default function MethuselahFinal() {
           />
           <div className="auth-hint">INPUT MASTER KEY → PRESS RETURN</div>
           <button className="auth-decrypt" onClick={() => {
-            if (input === MASTER_KEY) { setLocked(false); setAuthError(false); }
+            if (input === MASTER_KEY) { setLocked(false); setAuthError(false); const saved = localStorage.getItem("ouraToken"); if (saved) { setOuraToken(saved); fetchOuraHRV(saved); } else { setShowOuraSetup(true); } }
             else { setAuthError(true); setInput(""); }
           }}>ENTER</button>
           {authError && <div className="auth-error">⚠ ACCESS DENIED // INVALID KEY</div>}
