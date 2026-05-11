@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import { connectRoche } from "./ble";
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
@@ -314,6 +313,8 @@ export default function MethuselahFinal() {
   };
 
   const handleHardwareConnect = async () => {
+    // BLE path closed on web — ESP32S3 bridge handles hardware in v2
+    return;
     if (isScanning || bleStatus === "ROCHE_LIVE") return;
     setIsScanning(true);
     try {
