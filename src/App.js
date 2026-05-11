@@ -233,8 +233,8 @@ export default function MethuselahFinal() {
       yesterday.setDate(yesterday.getDate() - 1);
       const fmt = (d) => d.toISOString().split('T')[0];
       const res = await fetch(
-        `https://api.ouraring.com/v2/usercollection/sleep?start_date=${fmt(yesterday)}&end_date=${fmt(today)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        `/api/oura?token=${token}&start_date=${fmt(yesterday)}&end_date=${fmt(today)}`,
+        {}
       );
       const data = await res.json();
       if (data.data && data.data.length > 0) {
