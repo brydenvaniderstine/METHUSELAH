@@ -353,6 +353,11 @@ export default function MethuselahFinal() {
   const unlock = () => {
     setLocked(false);
     setAuthError(false);
+    const today = new Date().toISOString().split("T")[0];
+    const protocolDate = localStorage.getItem("protocolExecutedDate");
+    if (protocolDate === today) {
+      setExecState("satisfied");
+    }
     const saved = localStorage.getItem("oura_token");
     if (saved) {
       setOuraToken(saved);
@@ -362,7 +367,6 @@ export default function MethuselahFinal() {
     }
     const storedDate    = localStorage.getItem("glucoseDate");
     const storedReading = localStorage.getItem("glucoseReading");
-    const today = new Date().toISOString().split("T")[0];
     if (storedDate === today && storedReading) {
       setGlucoseReading(parseFloat(storedReading));
     }
@@ -406,7 +410,7 @@ export default function MethuselahFinal() {
     cmd:    "BIOLOGY OPTIMAL.",
     rat:    "",
     color:  "var(--text-main)",
-    border: "var(--line-bright)",
+    border: "var(--accent-green)",
     level:  "optimal",
   };
 
@@ -460,7 +464,12 @@ export default function MethuselahFinal() {
   const handleComplete = () => {
     setExecState("complete");
     addLog(`PROTOCOL COMPLETE // RETURNING TO BASELINE // ${ts()}`, "event");
-    setTimeout(() => setExecState("idle"), 3000);
+    setTimeout(() => {
+      const today = new Date().toISOString().split("T")[0];
+      localStorage.setItem("protocolExecutedDate", today);
+      setExecState("satisfied");
+      addLog(`PROTOCOL SATISFIED // SYSTEM STANDING DOWN // ${ts()}`, "event");
+    }, 3000);
   };
 
   const badgeColor = ouraStatus === "OURA_LIVE" ? "var(--accent-blue)" : "var(--text-dim)";
@@ -574,7 +583,7 @@ export default function MethuselahFinal() {
             />
           </div>
 
-          <div className="command-wrap" style={{ borderColor: logic.border }}>
+          <div className="command-wrap" style={{ borderColor: execState === "satisfied" ? "var(--accent-green)" : logic.border }}>
             <div className="corner tl" /><div className="corner tr" />
             <div className="corner bl" /><div className="corner br" />
             <div className="cmd-meta">PROTOCOL // {logic.level.toUpperCase()} // {clock}</div>
@@ -597,8 +606,13 @@ export default function MethuselahFinal() {
                   PROTOCOL COMPLETE
                 </button>
               </>
-            ) : (
+            ) : execState === "complete" ? (
               <div className="cmd-text" style={{ color: logic.color }}>PROTOCOL COMPLETE.</div>
+            ) : (
+              <>
+                <div className="cmd-text" style={{ color: "var(--accent-green)" }}>PROTOCOL EXECUTED TODAY.</div>
+                <div className="cmd-rationale" style={{ color: "var(--text-dim)" }}>RETURN TOMORROW FOR UPDATED TELEMETRY.</div>
+              </>
             )}
           </div>
 
