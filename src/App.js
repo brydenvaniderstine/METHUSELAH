@@ -63,7 +63,6 @@ body::before {
 
 .brand-wrap { display: flex; flex-direction: column; gap: 2px; }
 .brand { font-size: 13px; font-weight: 700; letter-spacing: 2px; }
-.brand-sub { font-size: 8px; color: var(--text-dim); letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45vw; }
 
 .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .header-top-row { display: flex; gap: 12px; align-items: center; }
@@ -71,17 +70,6 @@ body::before {
 .blink { width: 7px; height: 7px; border-radius: 50%; animation: pulse 1.5s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; box-shadow: 0 0 8px currentColor; } 50% { opacity: 0.15; box-shadow: none; } }
 .clock { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; }
-
-.ble-btn {
-  font-family: var(--font-mono); font-size: 8px; letter-spacing: 1px; padding: 3px 8px;
-  border: 1px solid var(--line); background: transparent; color: var(--text-dim);
-  cursor: pointer; text-transform: uppercase; transition: all 0.3s; opacity: 0.4;
-}
-.ble-btn:hover:not(:disabled) { border-color: var(--line-bright); color: var(--text-mid); opacity: 0.7; }
-.ble-btn:disabled { opacity: 0.2; cursor: not-allowed; }
-.ble-btn.live { border-color: var(--accent-green); color: var(--accent-green); opacity: 1; }
-.ble-btn.roche { border-color: var(--accent-blue); color: var(--accent-blue); opacity: 1; }
-.ble-btn.scanning { border-color: var(--accent-amber); color: var(--accent-amber); opacity: 1; }
 
 .telemetry-grid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -96,6 +84,15 @@ body::before {
 .tel-status { font-size: 9px; font-weight: 700; letter-spacing: 1px; }
 .tel-source { font-size: 8px; color: var(--accent-blue); letter-spacing: 1px; margin-top: 4px; }
 .tel-tap-hint { font-size: 8px; color: var(--text-dim); letter-spacing: 1px; margin-top: 4px; }
+
+@keyframes glucosePulse {
+  0%, 100% { border-color: #ffb300; }
+  50% { border-color: #333333; }
+}
+.glucose-pulse {
+  border: 1px solid #ffb300;
+  animation: glucosePulse 1s ease-in-out infinite;
+}
 
 .glucose-entry { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
 .glucose-input {
@@ -117,11 +114,6 @@ body::before {
   border: 2px solid var(--line-bright); padding: 14px 16px; text-align: center;
   background: var(--panel); position: relative; overflow: visible; transition: border-color 0.5s;
   flex-shrink: 0;
-}
-.command-wrap::before {
-  content: 'METHUSELAH // CORE // LOGIC';
-  position: absolute; top: -9px; left: 20px; background: var(--panel);
-  padding: 0 10px; font-size: 9px; color: var(--accent-amber); font-weight: 700; letter-spacing: 2px;
 }
 .corner { position: absolute; width: 14px; height: 14px; border: 1px solid var(--text-dim); }
 .tl { top: 4px; left: 4px; border-right: 0; border-bottom: 0; }
@@ -229,7 +221,7 @@ function GlucosePanel({ reading, entryOpen, inputVal, onTap, onInputChange, onKe
 
   return (
     <div
-      className="tel-block"
+      className={`tel-block${!hasReading ? " glucose-pulse" : ""}`}
       onClick={!entryOpen ? onTap : undefined}
       style={{ cursor: entryOpen ? "default" : "pointer" }}
     >
@@ -284,9 +276,6 @@ export default function MethuselahFinal() {
   const [glucoseEntryOpen, setGlucoseEntryOpen] = useState(false);
   const [glucoseInput,    setGlucoseInput]    = useState("");
   const [executed,        setExecuted]        = useState(false);
-  const [isScanning,      setIsScanning]      = useState(false);
-  const [bleStatus,       setBleStatus]       = useState("DISCONNECTED");
-  const [rocheDevice,     setRocheDevice]     = useState(null);
   const [logs,            setLogs]            = useState([{ time: ts(), msg: "BIOLOGICAL SYSTEMS ONLINE // STANDING BY", type: "" }]);
   const logRef = useRef(null);
 
@@ -316,6 +305,27 @@ export default function MethuselahFinal() {
           addLog(`OURA INTERCEPT: ${hrv} MS HRV // LAST NIGHT`, "roche");
           if (rhr !== null) addLog(`CARDIAC INTERCEPT: ${rhr} BPM // LAST NIGHT`, "roche");
           if (deepSleepPct !== null) addLog(`REPAIR DEPTH: ${deepSleepPct.toFixed(0)}% // LAST NIGHT`, "roche");
+
+          // HRV 7-day rolling average
+          const hrvHistory = JSON.parse(localStorage.getItem("hrvHistory") || "[]");
+          const prevHrv = hrvHistory.length > 0 ? hrvHistory[hrvHistory.length - 1] : null;
+          const newHrvHistory = [...hrvHistory, hrv].slice(-7);
+          localStorage.setItem("hrvHistory", JSON.stringify(newHrvHistory));
+          const avgHrv = newHrvHistory.reduce((a, b) => a + b, 0) / newHrvHistory.length;
+          const trendHrv = prevHrv === null ? "STABLE" : hrv > prevHrv ? "TRENDING UP" : hrv < prevHrv ? "TRENDING DOWN" : "STABLE";
+          addLog(`HRV 7-DAY AVG: ${Math.round(avgHrv)} MS // ${trendHrv}`, "roche");
+
+          // Deep Sleep 7-day rolling average
+          if (deepSleepPct !== null) {
+            const deepHistory = JSON.parse(localStorage.getItem("deepSleepHistory") || "[]");
+            const prevDeep = deepHistory.length > 0 ? deepHistory[deepHistory.length - 1] : null;
+            const newDeepHistory = [...deepHistory, deepSleepPct].slice(-7);
+            localStorage.setItem("deepSleepHistory", JSON.stringify(newDeepHistory));
+            const avgDeep = newDeepHistory.reduce((a, b) => a + b, 0) / newDeepHistory.length;
+            const trendDeep = prevDeep === null ? "STABLE" : deepSleepPct > prevDeep ? "TRENDING UP" : deepSleepPct < prevDeep ? "TRENDING DOWN" : "STABLE";
+            addLog(`REPAIR DEPTH 7-DAY AVG: ${avgDeep.toFixed(0)}% // ${trendDeep}`, "roche");
+          }
+
           return true;
         }
       }
@@ -350,7 +360,6 @@ export default function MethuselahFinal() {
     } else {
       setShowOuraSetup(true);
     }
-    // Load today's glucose if stored
     const storedDate    = localStorage.getItem("glucoseDate");
     const storedReading = localStorage.getItem("glucoseReading");
     const today = new Date().toISOString().split("T")[0];
@@ -390,10 +399,10 @@ export default function MethuselahFinal() {
     }
   }, [locked]);
 
-  // Logic engine — four vector priority stack (highest to lowest)
   const { hrv, rhr, deepSleepPct } = ouraData;
 
   let logic = {
+    name:   "",
     cmd:    "BIOLOGY OPTIMAL.",
     rat:    "",
     color:  "var(--text-main)",
@@ -403,6 +412,7 @@ export default function MethuselahFinal() {
 
   if (glucoseReading !== null && glucoseReading > 5.8) {
     logic = {
+      name:   "24-HOUR WATER FAST",
       cmd:    "INITIATE 24-HOUR WATER FAST.",
       rat:    `GLYCEMIC FRICTION DETECTED (${glucoseReading.toFixed(1)} MMOL/L).`,
       color:  "var(--accent-red)",
@@ -411,6 +421,7 @@ export default function MethuselahFinal() {
     };
   } else if (hrv !== null && hrv < 40) {
     logic = {
+      name:   "ZONE 2 OUTPUT",
       cmd:    "EXECUTE 45-MIN ZONE 2 OUTPUT.",
       rat:    `AUTONOMIC STRESS DETECTED (${Math.round(hrv)} MS HRV).`,
       color:  "var(--text-main)",
@@ -419,6 +430,7 @@ export default function MethuselahFinal() {
     };
   } else if (rhr !== null && rhr > 60) {
     logic = {
+      name:   "ACTIVE RECOVERY PROTOCOL",
       cmd:    "INITIATE ACTIVE RECOVERY PROTOCOL.",
       rat:    `CARDIAC LOAD ELEVATED (${rhr} BPM RHR).`,
       color:  "var(--text-main)",
@@ -427,6 +439,7 @@ export default function MethuselahFinal() {
     };
   } else if (deepSleepPct !== null && deepSleepPct < 15) {
     logic = {
+      name:   "SLEEP PROTOCOL",
       cmd:    "INITIATE SLEEP PROTOCOL TONIGHT.",
       rat:    `REPAIR DEPTH DEFICIENT (${deepSleepPct.toFixed(0)}% DEEP SLEEP).`,
       color:  "var(--text-main)",
@@ -441,31 +454,15 @@ export default function MethuselahFinal() {
 
   const handleExecute = () => {
     setExecuted(true);
-    addLog("PROTOCOL LOGGED: " + logic.cmd, "event");
+    addLog(`PROTOCOL EXECUTED // ${logic.name} // ${ts()}`, "event");
     setTimeout(() => {
       setExecuted(false);
       addLog("PROTOCOL COMPLETE // RETURNING TO BASELINE", "event");
     }, 2500);
   };
 
-  const handleHardwareConnect = async () => {
-    // BLE path closed on web — ESP32S3 bridge handles hardware in v2
-    return;
-  };
-
-  const bleColor = bleStatus === "ROCHE_LIVE" ? "var(--accent-blue)"
-    : isScanning ? "var(--accent-amber)"
-    : ouraStatus === "OURA_LIVE" ? "var(--accent-blue)"
-    : "var(--text-dim)";
-
-  const bleBtnClass = bleStatus === "ROCHE_LIVE" ? "ble-btn roche"
-    : isScanning ? "ble-btn scanning"
-    : "ble-btn";
-
-  const badgeLabel = bleStatus === "ROCHE_LIVE" ? "ROCHE LIVE"
-    : ouraStatus === "OURA_LIVE" ? "OURA LIVE"
-    : isScanning ? bleStatus
-    : "OFFLINE";
+  const badgeColor = ouraStatus === "OURA_LIVE" ? "var(--accent-blue)" : "var(--text-dim)";
+  const badgeLabel = ouraStatus === "OURA_LIVE" ? "OURA LIVE" : "OFFLINE";
 
   return (
     <>
@@ -524,24 +521,13 @@ export default function MethuselahFinal() {
           <div className="header">
             <div className="brand-wrap">
               <div className="brand">METHUSELAH</div>
-              <div className="brand-sub">
-                v1.0.8
-                {rocheDevice && ` // ${rocheDevice}`}
-              </div>
             </div>
             <div className="header-right">
               <div className="header-top-row">
-                <div className="live-badge" style={{ color: bleColor }}>
-                  <div className="blink" style={{ background: bleColor }} />
+                <div className="live-badge" style={{ color: badgeColor }}>
+                  <div className="blink" style={{ background: badgeColor }} />
                   {badgeLabel}
                 </div>
-                <button
-                  className={bleBtnClass}
-                  onClick={handleHardwareConnect}
-                  disabled={isScanning || bleStatus === "ROCHE_LIVE"}
-                >
-                  {isScanning ? "SCANNING..." : bleStatus === "ROCHE_LIVE" ? "NODE CONNECTED" : "CONNECT HARDWARE"}
-                </button>
               </div>
               <div className="clock">{clock}</div>
             </div>
