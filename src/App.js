@@ -260,6 +260,39 @@ function GlucosePanel({ reading, entryOpen, inputVal, onTap, onInputChange, onKe
   );
 }
 
+function calculateBRI(glucose, hrv, rhr, deepSleepPct, glucosePending) {
+  let score = 0;
+
+  if (glucosePending) {
+    score += 15;
+  } else if (glucose < 5.0) {
+    score += 25;
+  } else if (glucose <= 5.8) {
+    score += 15;
+  }
+
+  if (hrv === null)        { score += 15; }
+  else if (hrv >= 55)      { score += 25; }
+  else if (hrv >= 40)      { score += 15; }
+
+  if (rhr === null)        { score += 15; }
+  else if (rhr < 50)       { score += 25; }
+  else if (rhr <= 60)      { score += 15; }
+
+  if (deepSleepPct === null)      { score += 15; }
+  else if (deepSleepPct >= 20)    { score += 25; }
+  else if (deepSleepPct >= 15)    { score += 15; }
+
+  let label, color;
+  if      (score >= 85) { label = "OPTIMAL";                color = "#00aaff"; }
+  else if (score >= 70) { label = "NOMINAL";                color = "#00ff66"; }
+  else if (score >= 50) { label = "MODERATE SUPPRESSION";   color = "#ffb300"; }
+  else if (score >= 25) { label = "SIGNIFICANT SUPPRESSION"; color = "#ff2a2a"; }
+  else                  { label = "CRITICAL";               color = "#cc0000"; }
+
+  return { score, label, color };
+}
+
 export default function MethuselahFinal() {
   const ts = () => new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
@@ -279,7 +312,7 @@ export default function MethuselahFinal() {
   const [logs,            setLogs]            = useState([{ time: ts(), msg: "BIOLOGICAL SYSTEMS ONLINE // STANDING BY", type: "" }]);
   const logRef = useRef(null);
 
-  const addLog = (msg, type = "") => setLogs(prev => [{ time: ts(), msg, type }, ...prev].slice(0, 12));
+  const addLog = (msg, type = "", color = null) => setLogs(prev => [{ time: ts(), msg, type, color }, ...prev].slice(0, 12));
 
   const fetchOuraData = async (token) => {
     try {
@@ -325,6 +358,9 @@ export default function MethuselahFinal() {
             const trendDeep = prevDeep === null ? "STABLE" : deepSleepPct > prevDeep ? "TRENDING UP" : deepSleepPct < prevDeep ? "TRENDING DOWN" : "STABLE";
             addLog(`REPAIR DEPTH 7-DAY AVG: ${avgDeep.toFixed(0)}% // ${trendDeep}`, "roche");
           }
+
+          const briFetch = calculateBRI(null, hrv, rhr, deepSleepPct, true);
+          addLog(`BIOLOGICAL READINESS INDEX: ${briFetch.score} // ${briFetch.label} // GLUCOSE PENDING`, "", briFetch.color);
 
           return true;
         }
@@ -380,6 +416,8 @@ export default function MethuselahFinal() {
     localStorage.setItem("glucoseReading", val.toString());
     localStorage.setItem("glucoseDate", today);
     addLog(`GLYCEMIC INTERCEPT: ${val.toFixed(1)} MMOL/L // MANUAL ENTRY`, "roche");
+    const briGlucose = calculateBRI(val, hrv, rhr, deepSleepPct, false);
+    addLog(`BIOLOGICAL READINESS INDEX: ${briGlucose.score} // ${briGlucose.label} // ALL VECTORS CONFIRMED`, "", briGlucose.color);
     setGlucoseEntryOpen(false);
     setGlucoseInput("");
   };
@@ -455,6 +493,8 @@ export default function MethuselahFinal() {
   const hrvPct  = hrv  !== null ? ((hrv  - 25) / (95 - 25))   * 100 : 0;
   const rhrPct  = rhr  !== null ? ((rhr  - 40) / (100 - 40))  * 100 : 0;
   const deepPct = deepSleepPct !== null ? Math.min(100, (deepSleepPct / 30) * 100) : 0;
+
+  const bri = calculateBRI(glucoseReading, hrv, rhr, deepSleepPct, glucoseReading === null);
 
   const handleExecute = () => {
     setExecState("active");
@@ -583,7 +623,7 @@ export default function MethuselahFinal() {
             />
           </div>
 
-          <div className="command-wrap" style={{ borderColor: execState === "satisfied" ? "var(--accent-green)" : logic.border }}>
+          <div className="command-wrap" style={{ borderColor: execState === "satisfied" ? "#00ff66" : bri.color }}>
             <div className="corner tl" /><div className="corner tr" />
             <div className="corner bl" /><div className="corner br" />
             <div className="cmd-meta">PROTOCOL // {logic.level.toUpperCase()} // {clock}</div>
@@ -620,7 +660,10 @@ export default function MethuselahFinal() {
             {logs.map((l, i) => (
               <div key={i} className="log-line">
                 <span className="log-time">[{l.time}]</span>
-                <span className={l.type === "roche" ? "log-roche" : ""}>
+                <span
+                  className={l.type === "roche" ? "log-roche" : ""}
+                  style={l.color ? { color: l.color } : undefined}
+                >
                   {l.msg}{i === 0 && <span className="log-cursor" />}
                 </span>
               </div>
