@@ -275,7 +275,7 @@ export default function MethuselahFinal() {
   const [glucoseReading,  setGlucoseReading]  = useState(null);
   const [glucoseEntryOpen, setGlucoseEntryOpen] = useState(false);
   const [glucoseInput,    setGlucoseInput]    = useState("");
-  const [executed,        setExecuted]        = useState(false);
+  const [execState,       setExecState]       = useState("idle");
   const [logs,            setLogs]            = useState([{ time: ts(), msg: "BIOLOGICAL SYSTEMS ONLINE // STANDING BY", type: "" }]);
   const logRef = useRef(null);
 
@@ -453,12 +453,14 @@ export default function MethuselahFinal() {
   const deepPct = deepSleepPct !== null ? Math.min(100, (deepSleepPct / 30) * 100) : 0;
 
   const handleExecute = () => {
-    setExecuted(true);
+    setExecState("active");
     addLog(`PROTOCOL EXECUTED // ${logic.name} // ${ts()}`, "event");
-    setTimeout(() => {
-      setExecuted(false);
-      addLog("PROTOCOL COMPLETE // RETURNING TO BASELINE", "event");
-    }, 2500);
+  };
+
+  const handleComplete = () => {
+    setExecState("complete");
+    addLog(`PROTOCOL COMPLETE // RETURNING TO BASELINE // ${ts()}`, "event");
+    setTimeout(() => setExecState("idle"), 3000);
   };
 
   const badgeColor = ouraStatus === "OURA_LIVE" ? "var(--accent-blue)" : "var(--text-dim)";
@@ -576,18 +578,27 @@ export default function MethuselahFinal() {
             <div className="corner tl" /><div className="corner tr" />
             <div className="corner bl" /><div className="corner br" />
             <div className="cmd-meta">PROTOCOL // {logic.level.toUpperCase()} // {clock}</div>
-            <div className="cmd-text" style={{ color: logic.color }}>{logic.cmd}</div>
-            <div className="cmd-rationale">{logic.rat}</div>
-            {logic.level !== "optimal" ? (
-              <button
-                className={`btn-execute ${executed ? "done" : ""}`}
-                onClick={handleExecute}
-                disabled={executed}
-              >
-                {executed ? "PROTOCOL LOGGED" : "EXECUTE PROTOCOL"}
-              </button>
+            {execState === "idle" ? (
+              <>
+                <div className="cmd-text" style={{ color: logic.color }}>{logic.cmd}</div>
+                <div className="cmd-rationale">{logic.rat}</div>
+                {logic.level !== "optimal" ? (
+                  <button className="btn-execute" onClick={handleExecute}>
+                    EXECUTE PROTOCOL
+                  </button>
+                ) : (
+                  <div className="optimal-label">BASELINE STABLE. // ACTIVE</div>
+                )}
+              </>
+            ) : execState === "active" ? (
+              <>
+                <div className="cmd-text" style={{ color: logic.color }}>PROTOCOL ACTIVE.</div>
+                <button className="btn-execute" onClick={handleComplete}>
+                  PROTOCOL COMPLETE
+                </button>
+              </>
             ) : (
-              <div className="optimal-label">BASELINE STABLE. // ACTIVE</div>
+              <div className="cmd-text" style={{ color: logic.color }}>PROTOCOL COMPLETE.</div>
             )}
           </div>
 
