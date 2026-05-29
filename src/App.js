@@ -319,7 +319,7 @@ export default function MethuselahFinal() {
       const today = new Date();
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
-      const fmt = (d) => d.toISOString().split("T")[0];
+      const fmt = (d) => d.toLocaleDateString("en-CA");
       const res = await fetch(
         `/api/oura?token=${token}&start_date=${fmt(yesterday)}&end_date=${fmt(today)}`
       );
@@ -389,7 +389,7 @@ export default function MethuselahFinal() {
   const unlock = () => {
     setLocked(false);
     setAuthError(false);
-    const today = new Date().toISOString().split("T")[0];
+    const today = new Date().toLocaleDateString("en-CA");
     const protocolDate = localStorage.getItem("protocolExecutedDate");
     if (protocolDate === today) {
       setExecState("satisfied");
@@ -412,7 +412,7 @@ export default function MethuselahFinal() {
     const val = parseFloat(glucoseInput);
     if (isNaN(val) || val < 1 || val > 30) return;
     setGlucoseReading(val);
-    const today = new Date().toISOString().split("T")[0];
+    const today = new Date().toLocaleDateString("en-CA");
     localStorage.setItem("glucoseReading", val.toString());
     localStorage.setItem("glucoseDate", today);
     addLog(`GLYCEMIC INTERCEPT: ${val.toFixed(1)} MMOL/L // MANUAL ENTRY`, "roche");
@@ -505,7 +505,7 @@ export default function MethuselahFinal() {
     setExecState("complete");
     addLog(`PROTOCOL COMPLETE // RETURNING TO BASELINE // ${ts()}`, "event");
     setTimeout(() => {
-      const today = new Date().toISOString().split("T")[0];
+      const today = new Date().toLocaleDateString("en-CA");
       localStorage.setItem("protocolExecutedDate", today);
       setExecState("satisfied");
       addLog(`PROTOCOL SATISFIED // SYSTEM STANDING DOWN // ${ts()}`, "event");
