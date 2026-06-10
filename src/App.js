@@ -273,15 +273,15 @@ function calculateBRI(glucose, hrv, rhr, deepSleepPct, glucosePending) {
 
   if (hrv === null)        { score += 15; }
   else if (hrv >= 55)      { score += 25; }
-  else if (hrv >= 40)      { score += 15; }
+  else if (hrv >= 22)      { score += 15; }
 
   if (rhr === null)        { score += 15; }
   else if (rhr < 50)       { score += 25; }
-  else if (rhr <= 60)      { score += 15; }
+  else if (rhr <= 63)      { score += 15; }
 
   if (deepSleepPct === null)      { score += 15; }
   else if (deepSleepPct >= 20)    { score += 25; }
-  else if (deepSleepPct >= 15)    { score += 15; }
+  else if (deepSleepPct >= 12)    { score += 15; }
 
   let label, color;
   if      (score >= 85) { label = "OPTIMAL";                color = "#00aaff"; }
@@ -461,7 +461,7 @@ export default function MethuselahFinal() {
       border: "var(--accent-red)",
       level:  "critical",
     };
-  } else if (hrv !== null && hrv < 40) {
+  } else if (hrv !== null && hrv < 22) {
     logic = {
       name:   "ZONE 2 OUTPUT",
       cmd:    "EXECUTE 45-MIN ZONE 2 OUTPUT.",
@@ -470,7 +470,7 @@ export default function MethuselahFinal() {
       border: "var(--accent-amber)",
       level:  "warn",
     };
-  } else if (rhr !== null && rhr > 60) {
+  } else if (rhr !== null && rhr > 63) {
     logic = {
       name:   "ACTIVE RECOVERY PROTOCOL",
       cmd:    "INITIATE ACTIVE RECOVERY PROTOCOL.",
@@ -479,7 +479,7 @@ export default function MethuselahFinal() {
       border: "var(--accent-amber)",
       level:  "warn",
     };
-  } else if (deepSleepPct !== null && deepSleepPct < 15) {
+  } else if (deepSleepPct !== null && deepSleepPct < 12) {
     logic = {
       name:   "SLEEP PROTOCOL",
       cmd:    "INITIATE SLEEP PROTOCOL TONIGHT.",
@@ -599,8 +599,8 @@ export default function MethuselahFinal() {
               val={hrv !== null ? Math.round(hrv) : "--"}
               unit="ms"
               pct={hrvPct}
-              color={hrv === null ? "var(--text-dim)" : hrv < 40 ? "var(--accent-amber)" : "var(--accent-green)"}
-              status={hrv === null ? "AWAITING DATA" : hrv < 40 ? "SUPPRESSED" : "OPTIMAL"}
+              color={hrv === null ? "var(--text-dim)" : hrv < 22 ? "var(--accent-amber)" : "var(--accent-green)"}
+              status={hrv === null ? "AWAITING DATA" : hrv < 22 ? "SUPPRESSED" : "OPTIMAL"}
               isReal={ouraData.isLive}
             />
             <Metric
@@ -608,8 +608,8 @@ export default function MethuselahFinal() {
               val={rhr !== null ? rhr : "--"}
               unit="bpm"
               pct={rhrPct}
-              color={rhr === null ? "var(--text-dim)" : rhr > 60 ? "var(--accent-amber)" : "var(--accent-green)"}
-              status={rhr === null ? "AWAITING DATA" : rhr > 60 ? "ELEVATED" : "OPTIMAL"}
+              color={rhr === null ? "var(--text-dim)" : rhr > 63 ? "var(--accent-amber)" : "var(--accent-green)"}
+              status={rhr === null ? "AWAITING DATA" : rhr > 63 ? "ELEVATED" : "OPTIMAL"}
               isReal={ouraData.isLive}
             />
             <Metric
@@ -617,8 +617,8 @@ export default function MethuselahFinal() {
               val={deepSleepPct !== null ? deepSleepPct.toFixed(0) : "--"}
               unit="%"
               pct={deepPct}
-              color={deepSleepPct === null ? "var(--text-dim)" : deepSleepPct < 15 ? "var(--accent-amber)" : "var(--accent-green)"}
-              status={deepSleepPct === null ? "AWAITING DATA" : deepSleepPct < 15 ? "DEFICIENT" : "OPTIMAL"}
+              color={deepSleepPct === null ? "var(--text-dim)" : deepSleepPct < 12 ? "var(--accent-amber)" : "var(--accent-green)"}
+              status={deepSleepPct === null ? "AWAITING DATA" : deepSleepPct < 12 ? "DEFICIENT" : "OPTIMAL"}
               isReal={ouraData.isLive}
             />
           </div>
