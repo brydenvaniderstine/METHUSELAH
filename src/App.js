@@ -420,7 +420,10 @@ export default function MethuselahFinal() {
       const service = await server.getPrimaryService("00001808-0000-1000-8000-00805f9b34fb");
       const characteristic = await service.getCharacteristic("00002a18-0000-1000-8000-00805f9b34fb");
       const value = await characteristic.readValue();
+      const rawBytes = new Uint8Array(value.buffer);
       const text = new TextDecoder().decode(value);
+      addLog("BLE RAW BYTES: " + Array.from(rawBytes).join(","), "roche");
+      addLog("BLE TEXT: " + text, "roche");
       const parts = text.split(",");
       const glucose = parseFloat(parts[0]);
       if (!isNaN(glucose) && glucose > 0.5 && glucose < 30) {
