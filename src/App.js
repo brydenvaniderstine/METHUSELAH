@@ -208,7 +208,7 @@ function Metric({ label, val, unit, pct, color, status, isReal }) {
   );
 }
 
-function GlucosePanel({ reading, entryOpen, inputVal, onTap, onInputChange, onKeyDown, onSubmit }) {
+function GlucosePanel({ reading, entryOpen, inputVal, onTap, onBLERead, onInputChange, onKeyDown, onSubmit }) {
   const hasReading = reading !== null;
   const isElevated = hasReading && reading > 5.8;
   const color = !hasReading
@@ -254,6 +254,7 @@ function GlucosePanel({ reading, entryOpen, inputVal, onTap, onInputChange, onKe
           </div>
           <div className="tel-status" style={{ color }}>{status}</div>
           {!hasReading && <div className="tel-tap-hint">TAP TO ENTER READING</div>}
+<div onClick={onBLERead} style={{ fontSize: "8px", color: "var(--accent-blue)", letterSpacing: "1px", marginTop: "4px", cursor: "pointer" }}>● BLE AUTO-READ</div>
         </>
       )}
     </div>
@@ -408,7 +409,38 @@ export default function MethuselahFinal() {
     }
   };
 
-  const submitGlucose = () => {
+  const readBLEGlucose = async () => {
+    try {
+      addLog("BLE INTERCEPT // SCANNING FOR METHUSELAH BRIDGE...", "event");
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ name: "METHUSELAH" }],
+        optionalServices: ["00001808-0000-1000-8000-00805f9b34fb"]
+      });
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService("00001808-0000-1000-8000-00805f9b34fb");
+      const characteristic = await service.getCharacteristic("00002a18-0000-1000-8000-00805f9b34fb");
+      const value = await characteristic.readValue();
+      const text = new TextDecoder().decode(value);
+      const parts = text.split(",");
+      const glucose = parseFloat(parts[0]);
+      if (!isNaN(glucose) && glucose > 0.5 && glucose < 30) {
+        setGlucoseReading(glucose);
+        const today = new Date().toLocaleDateString("en-CA");
+        localStorage.setItem("glucoseReading", glucose.toString());
+        localStorage.setItem("glucoseDate", today);
+        addLog("BLE INTERCEPT: " + glucose.toFixed(1) + " MMOL/L // AUTO-LOGGED", "roche");
+        const bri = calculateBRI(glucose, ouraData.hrv, ouraData.rhr, ouraData.deepSleepPct, false);
+        addLog("BIOLOGICAL READINESS INDEX: " + bri.score + " // " + bri.label + " // ALL VECTORS CONFIRMED", "", bri.color);
+      } else {
+        addLog("BLE // NO READING YET — ENTER MANUALLY", "event");
+      }
+      device.gatt.disconnect();
+    } catch (err) {
+      addLog("BLE // " + err.message, "event");
+    }
+  };
+
+    const submitGlucose = () => {
     const val = parseFloat(glucoseInput);
     if (isNaN(val) || val < 1 || val > 30) return;
     setGlucoseReading(val);
@@ -590,6 +622,7 @@ export default function MethuselahFinal() {
               entryOpen={glucoseEntryOpen}
               inputVal={glucoseInput}
               onTap={() => setGlucoseEntryOpen(true)}
+onBLERead={readBLEGlucose}
               onInputChange={e => setGlucoseInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter") submitGlucose(); if (e.key === "Escape") { setGlucoseEntryOpen(false); setGlucoseInput(""); } }}
               onSubmit={submitGlucose}
