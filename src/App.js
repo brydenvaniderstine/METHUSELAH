@@ -414,11 +414,11 @@ export default function MethuselahFinal() {
       addLog("BLE INTERCEPT // SCANNING FOR METHUSELAH BRIDGE...", "event");
       const device = await navigator.bluetooth.requestDevice({
         filters: [{ name: "METHUSELAH" }],
-        optionalServices: ["00001808-0000-1000-8000-00805f9b34fb"]
+        optionalServices: ["4fafc201-1fb5-459e-8fcc-c5c9c331914b"]
       });
       const server = await device.gatt.connect();
-      const service = await server.getPrimaryService("00001808-0000-1000-8000-00805f9b34fb");
-      const characteristic = await service.getCharacteristic("00002a18-0000-1000-8000-00805f9b34fb");
+      const service = await server.getPrimaryService("4fafc201-1fb5-459e-8fcc-c5c9c331914b");
+      const characteristic = await service.getCharacteristic("beb5483e-36e1-4688-b7f5-ea07361b26a8");
       const value = await characteristic.readValue();
       const rawBytes = new Uint8Array(value.buffer);
       const text = new TextDecoder().decode(value);
