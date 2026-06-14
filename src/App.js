@@ -431,6 +431,8 @@ export default function MethuselahFinal() {
         const today = new Date().toLocaleDateString("en-CA");
         localStorage.setItem("glucoseReading", glucose.toString());
         localStorage.setItem("glucoseDate", today);
+        setGlucoseEntryOpen(false);
+        setGlucoseInput("");
         addLog("BLE INTERCEPT: " + glucose.toFixed(1) + " MMOL/L // AUTO-LOGGED", "roche");
         const bri = calculateBRI(glucose, ouraData.hrv, ouraData.rhr, ouraData.deepSleepPct, false);
         addLog("BIOLOGICAL READINESS INDEX: " + bri.score + " // " + bri.label + " // ALL VECTORS CONFIRMED", "", bri.color);
