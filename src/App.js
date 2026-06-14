@@ -453,17 +453,13 @@ export default function MethuselahFinal() {
     localStorage.setItem("glucoseReading", val.toString());
     localStorage.setItem("glucoseDate", today);
     addLog(`GLYCEMIC INTERCEPT: ${val.toFixed(1)} MMOL/L // MANUAL ENTRY`, "roche");
-    const briGlucose = calculateBRI(val, hrv, rhr, deepSleepPct, false);
+    const briGlucose = calculateBRI(val, ouraData.hrv, ouraData.rhr, ouraData.deepSleepPct, false);
     addLog(`BIOLOGICAL READINESS INDEX: ${briGlucose.score} // ${briGlucose.label} // ALL VECTORS CONFIRMED`, "", briGlucose.color);
     setGlucoseEntryOpen(false);
     setGlucoseInput("");
   };
 
   useEffect(() => {
-    const s = document.createElement("style");
-    s.textContent = CSS;
-    document.head.appendChild(s);
-    return () => document.head.removeChild(s);
   }, []);
 
   useEffect(() => {
@@ -562,7 +558,7 @@ export default function MethuselahFinal() {
           <div className="oura-sub">
             YOUR DATA. YOUR DEVICE. YOUR CONTROL.<br />
             PASTE YOUR PERSONAL ACCESS TOKEN BELOW.<br />
-            STORED LOCALLY. NEVER TRANSMITTED.
+            STORED LOCALLY. NEVER SHARED.
           </div>
           <input
             className="oura-input"
