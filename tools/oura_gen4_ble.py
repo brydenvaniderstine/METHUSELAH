@@ -72,7 +72,7 @@ async def main():
         received.clear()
 
         # Request from yesterday 9pm ring timestamp
-        START_TS = 278570166
+        START_TS = 278657166
         print(f"Fetching from ring_ts={START_TS} (yesterday 9pm)...")
         fetch = bytes([0x10,0x09]) + struct.pack("<I", START_TS) + bytes([0xFF,0xFF,0xFF,0xFF,0xFF])
         await wr(client, fetch)
