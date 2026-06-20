@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  const token = req.headers["x-oura-token"];
+  const { token } = req.query;
   const { start_date, end_date } = req.query;
   if (!token) return res.status(400).json({ error: "No token" });
 
