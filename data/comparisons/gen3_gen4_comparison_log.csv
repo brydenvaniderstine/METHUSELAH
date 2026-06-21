@@ -1,0 +1,4 @@
+date,sleep_window,gen3_decoded_avg_bpm,gen3_sample_minutes,gen4_official_avg_bpm,gen4_lowest_bpm,gen4_range_bpm,gen4_hrv_ms,gap_bpm,notes
+2026-06-18,21:48-05:25,68.5,43,75.0,58,unknown,18,6.5,"First successful decode; short sample window only covered part of night"
+2026-06-19,unknown,64.5,39,63.0,55,55-82,23,1.5,"Best match yet - same night confirmed via timestamp alignment, 9:47am Gen3 pull vs 9:56am Gen4 screenshots"
+2026-06-20,23:27-09:11,unknown,0,68.0,57,unknown,24,unknown,"Sleep window 11:27pm-9:11am, 8h37min sleep. Gen3 9:15am pull captured the wake transition (state 1->0) within 4 min of Gen4's recorded wake time of 9:11am - strong independent timing cross-validation. No full-night Gen3 avg bpm available due to short buffer window."

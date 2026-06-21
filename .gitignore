@@ -1,3 +1,5 @@
 node_modules
 build/
-data/
+
+# Raw BLE pull outputs - bulky, kept locally only
+data/raw_pulls/
