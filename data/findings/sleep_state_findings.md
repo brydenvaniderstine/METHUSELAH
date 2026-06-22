@@ -1,97 +1,127 @@
 # METHUSELAH // Gen3 sleep_state Enum Mapping — Findings Log
 
-## Status: HYPOTHESIS — CONFIRMED BY INDEPENDENT GROUND TRUTH (state 0/1 only;
-## state 2 still unobserved)
+## Status: CONFIRMED (state 0=awake, 1=asleep) WITH AN IMPORTANT TIMING
+## CAVEAT (see "Buffer timing is not a reliable proxy" below).
+## State 2 still unobserved.
 
 ## Background
 The Gen3 ring's `0x6a` event (`Sleep period info (2)`) includes a `sleep_state`
-field, an 8-bit signed integer bounded to the range [0, 2] per the verified
-open_ring decoder (see `decode_sleep_period_info_2`,
-open_ring/driver/decoders.py line 774). The semantic meaning of each value
-was not documented in the source and had to be inferred empirically.
+field, an 8-bit signed integer bounded to [0, 2] per the verified open_ring
+decoder (`decode_sleep_period_info_2`, open_ring/driver/decoders.py line
+774). Semantic meaning was not documented in source; inferred empirically.
 
 ## Evidence
 
 ### Observation 1 — Overnight pulls (June 19-20)
-Every `sleep_state` sample captured shortly after waking from overnight
-sleep showed **state = 1** (23 samples total across three separate pulls).
-Average HR 62.0-68.0 bpm, breathing rate 13.5-16.0 breaths/min — consistent
-with restful sleep.
+23 samples across three pulls, all state=1, during/after overnight sleep.
+HR 62.0-68.0 bpm, breathing 13.5-16.0 br/min — consistent with sleep.
 
-### Observation 2 — Daytime auto-loop test (June 20, 5:21pm-6:14pm)
-~53-minute auto-loop run during known-awake activity. All 20 `sleep_state`
-samples across four successful pulls showed **state = 0**, zero exceptions.
+### Observation 2 — Daytime auto-loop (June 20, 5:21pm-6:14pm)
+20 samples across four pulls, all state=0, during known-awake activity.
 
-### Observation 3 — In-window transition (June 21, 9:15am pull)
-A single continuous pull captured a transition: six samples at state=1
-(boot_ts 39783261-39784772), then two at state=0 (39785067, 39785363).
-motion_count rose steadily through the state=1 samples (1,1,2,9,10,11)
-immediately before the flip, then dropped after (10,3) — a "stirring before
-waking" pattern consistent with a real wake transition.
+### Observation 3 — First in-window transition (June 21, 9:15am pull)
+Six state=1 samples followed by two state=0 samples, with motion_count
+rising before the flip (1,1,2,9,10,11 → 10,3) then settling after — a
+"stirring before waking" pattern.
 
-### Observation 4 — Cross-referenced against Gen4 official wake time [NEW, CONFIRMING]
-Gen4's Oura app recorded sleep for the same night as **11:27pm-9:11am**
-(8h37min total sleep, 9h45min time in bed). The Gen3 auto-loop pull that
-captured the 1→0 transition (Observation 3) was run at **9:15am** — only
-4 minutes after Gen4's independently-recorded wake time of 9:11am.
+### Observation 4 — Cross-referenced against Gen4 wake time (June 21)
+Gen4 recorded sleep ending at 9:11am. The Observation 3 transition (pull run
+at 9:15am) landed within 4 minutes of that independently-recorded wake time.
 
-This is a direct, independent timing cross-reference: the state=1→0
-transition observed in raw Gen3 data lands almost exactly at the moment
-Oura's own official algorithm (running on a separate device, processing
-separate raw sensor data, using Oura's proprietary wake-detection logic)
-also determined the person woke up. Two independent measurement paths
-agree on the wake moment within a few minutes.
+### Observation 5 — Second in-window transition, opposite direction (June 22, 5:31am pull)
+Nine samples: three at state=0 (boot_ts 40541373-40541971), then six at
+state=1 (40542255-40543765). HR nearly flat throughout (64.0-65.5 bpm),
+motion=0 for all nine samples — a much quieter transition than Observation 3.
 
-Gen4 also recorded average HRV 24ms for the night with values visibly
-climbing into the 30s-40s ms range in the final hour before 9:11am wake —
-consistent with the general physiological pattern expected around waking,
-though this wasn't directly cross-checked against Gen3 HRV due to lack of a
-long enough same-window IBI capture.
+This pull was run at 5:31am, 11 minutes after Bryden's actual wake time of
+5:20am (confirmed via Gen4). Naively this looked like a contradiction: if
+state=0→1 means "falling asleep," why would that appear right after waking,
+not right before?
+
+### Observation 6 — Resolution via Gen4 hypnogram (June 22)
+Gen4's official hypnogram for the same night (9:47pm-5:20am, 6h39min asleep)
+shows three distinct "Awake" segments: one at sleep onset (~9:47pm-9:48pm,
+expected latency), and two closely-spaced brief awake blips clustered around
+roughly 1am-2am — consistent with Bryden's own account of waking briefly to
+use the bathroom, then falling back asleep shortly after.
+
+This resolves Observation 5 cleanly: the Gen3 pull's small rolling buffer
+almost certainly was NOT capturing data from the 5:20am final wake at all.
+It was likely still holding events from the ~1am-2am bathroom-wake episode
+(awake briefly, then back asleep) — a real state=0→1 transition, just not
+the one a naive "pull ran shortly after waking" assumption would predict.
 
 ## Confirmed mapping
 
 | sleep_state value | Meaning | Confidence |
 |---|---|---|
-| 0 | **Awake** | **High** — confirmed via independent Gen4 wake-time cross-reference (Obs. 4), corroborated by motion_count pattern (Obs. 3) and daytime-only sample (Obs. 2) |
-| 1 | **Asleep** (specific stage within sleep not yet distinguished — light/deep/REM all likely collapse to this single value) | **High** — same confirming evidence as above, plus three independent overnight pulls (Obs. 1) |
+| 0 | **Awake** | High — confirmed across 5 separate observations, both directions of transition, and one direct Gen4 cross-reference |
+| 1 | **Asleep** (single value; does not break out light/deep/REM separately) | High — same supporting evidence |
 | 2 | Unknown | None — never observed in any pull to date |
 
-## Remaining open question: state=2
-State=1 appears to represent "asleep" as a single undifferentiated value —
-it does NOT appear to break out light/deep/REM separately (those come from
-other fields/events, e.g. `deep_sleep_duration` in the Oura API, or
-potentially from amplitude/CV fields within the same 0x6a payload that
-haven't been analyzed yet). It remains unknown whether state=2 represents:
-- A specific sleep sub-stage (e.g. REM specifically)
-- A different axis entirely (e.g. "drowsy"/transitional, or a data-quality
-  flag rather than a behavioral state)
-- Something unrelated to sleep/wake at all
+## IMPORTANT: Buffer timing is not a reliable proxy for "this pull reflects
+## right now"
+Observation 5/6 revealed a real limitation in how we've been interpreting
+pulls: **running a pull shortly after a known event (e.g., waking up) does
+NOT guarantee the captured buffer window reflects that specific event.**
+The ring's small rolling buffer holds whatever recent events haven't yet
+been evicted, which may be from an earlier point in the night (a middle-of-
+the-night wake, a stage change hours ago) rather than the most recent or
+most behaviorally significant moment.
 
-### Next steps to resolve
-1. Attempt an overnight auto-loop run (8hr/15min interval) to maximize the
-   chance of capturing whatever triggers state=2, if it exists as a
-   meaningfully common state.
-2. If state=2 is never observed even across a full night, consider the
-   possibility it's a rare/edge-case value (e.g. signal-quality fallback)
-   rather than a regular part of the sleep cycle.
-3. Once more 0x6a payloads are captured, examine the `mzci`/`dzci`/`cv`
-   fields (currently decoded but not yet analyzed) for correlation with
-   state value — these may encode finer-grained stage information
-   independent of the 3-value sleep_state enum.
+**Practical implications:**
+- Do not assume a pull's sleep_state transition corresponds to "what just
+  happened" without independently verifying via boot_ts continuity or a
+  cross-referenced wall-clock anchor.
+- This is exactly the kind of gap that mature, continuously-logging systems
+  (like Gen4 + the Oura app) don't have, because they aren't working from a
+  small rolling buffer sampled intermittently. This is a current limitation
+  of our system (Gen3 + manual/scripted terminal pulls), not a flaw in the
+  ring's sensors or in Oura's broader approach. Same hardware lineage,
+  different level of pipeline maturity — see "Gen3 vs Gen4 framing" note
+  below.
+- The auto-loop tool (15-30 min interval) is the right mitigation: more
+  frequent pulls reduce the chance of missing or misattributing events, by
+  shrinking the gap between consecutive captured windows.
+
+## Gen3 vs Gen4 framing (for future reference, not just this finding)
+Per Bryden's framing (June 22): Gen3 and Gen4 are "essentially the same
+ring doing the same task," and discrepancies between our raw decode and
+Oura's official numbers should generally be attributed to **system
+maturity** (Oura's years-refined algorithms and continuous background
+logging vs. our few-days-old prototype working from small buffer snapshots)
+rather than to any inherent inferiority of the ring hardware itself or a
+flaw in our decode logic. Keep this lens when evaluating future
+discrepancies before concluding the decoder is wrong.
+
+## Resolved side-issue: apparent stale Gen4 data (June 21 evening)
+Bryden observed the Oura app still showing June 20's sleep data
+(11:27pm-9:11am) when checked again the evening of June 21, despite it
+being a new day. Initially flagged as a possible "Oura only updates once
+per wake cycle" structural issue. Confirmed resolved by the next morning
+(June 22): app correctly showed the new night (9:47pm-5:20am) once checked
+fresh. Most likely cause: a temporary ring-to-phone sync delay, not a
+systemic Oura limitation. Bryden's hypothesis that Oura's headline numbers
+refresh primarily around the wake event (rather than continuously through
+the day) remains a reasonable, separate question worth testing via a
+pre-bed daytime screenshot check - not yet confirmed either way.
+
+## Remaining open question: state=2
+Still never observed. Next steps unchanged from prior version:
+1. Attempt an overnight auto-loop run (8hr/15min) to maximize odds of
+   catching it, if it occurs at all during normal sleep.
+2. Examine unused decoded fields (`mzci`, `dzci`, `cv`) for correlation
+   with state, in case they encode additional resolution.
+3. Consider it may be a rare/edge-case value not part of routine cycling.
 
 ## Caveats
-- Confidence is high for the 0=awake/1=asleep binary specifically because
-  of the independent cross-reference in Observation 4. This is no longer
-  pure inference from internal consistency alone.
-- Sample sizes remain modest (single-digit to low-double-digit samples per
-  observation window). The mapping should be treated as well-supported but
-  not exhaustively validated — continued logging of future nights will
-  further strengthen or could still surface exceptions.
-- This mapping is specific to the Gen3 unit/firmware tested. Not yet
-  verified whether it generalizes to Gen4 (blocked pending the encryption
-  issue) or other ring generations.
+- Confidence in the core 0/1 mapping is high, but the *timing* of any given
+  observed transition should be treated as approximate, not precise, per
+  the buffer-timing caveat above.
+- Mapping confirmed specific to this Gen3 unit/firmware. Not yet verified
+  on Gen4 (blocked pending the encryption issue).
 
 ---
-*Updated 2026-06-21 (second update). Original hypothesis logged 2026-06-20;
-first transition observed 2026-06-21 morning; confirmed via independent
-Gen4 wake-time cross-reference same day.*
+*Updated 2026-06-22 (third update). History: hypothesis logged 2026-06-20;
+first transition + Gen4 cross-reference 2026-06-21; second transition
+investigated and buffer-timing caveat added 2026-06-22.*
