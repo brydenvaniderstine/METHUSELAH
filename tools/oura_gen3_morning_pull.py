@@ -39,6 +39,9 @@ PRIORITY_TAGS = {0x44, 0x49, 0x4B, 0x4C, 0x4E, 0x4F, 0x55, 0x58, 0x5D, 0x60, 0x6
 def _i8(b):
     return b - 0x100 if b & 0x80 else b
 
+def _u32(p, off):
+    return p[off] | (p[off+1]<<8) | (p[off+2]<<16) | (p[off+3]<<24)
+
 def decode_sleep_period_info_2(p):
     if len(p) < 10:
         raise ValueError("too short")
@@ -65,6 +68,45 @@ def decode_hrv_event(p):
     for i in range(0, n, 2):
         pairs.append({"hr_bpm": p[i], "rmssd_ms": p[i + 1]})
     return {"samples_5min": pairs}
+
+def decode_debug_data_sleep_statistics(p):
+    """0x61 sub-type 0x09 - ticks_in_deep_sleep, ticks_in_sleep, ticks_awake."""
+    if len(p) < 14:
+        raise ValueError("sleep_statistics payload too short")
+    if p[0] != 0x09:
+        raise ValueError(f"not a sleep_statistics record (sub_byte={p[0]:#x})")
+    return {
+        "ticks_in_deep_sleep": _u32(p, 1),
+        "ticks_in_sleep": _u32(p, 5),
+        "ticks_awake": _u32(p, 9),
+        "pfsm_state": p[13],
+    }
+
+def decode_debug_data_battery_level(p):
+    """0x61 sub-type 0x24 - battery percentage + voltage at moment of change."""
+    if len(p) < 5:
+        raise ValueError("battery_level_changed payload too short")
+    if p[0] != 0x24:
+        raise ValueError(f"not a battery_level record (sub_byte={p[0]:#x})")
+    return {
+        "battery_percentage": p[1],
+        "battery_voltage_mv": p[2] | (p[3] << 8),
+        "reason": p[4],
+    }
+
+def decode_debug_data_fuel_gauge(p):
+    """0x61 sub-type 0x14 - battery %, voltage, current, remaining capacity."""
+    if len(p) < 14:
+        raise ValueError("fuel_gauge_statistics payload too short")
+    if p[0] != 0x14:
+        raise ValueError(f"not a fuel_gauge record (sub_byte={p[0]:#x})")
+    battery_pct_raw = p[1] | (p[2] << 8)
+    voltage = p[3] | (p[4] << 8)
+    return {
+        "battery_percentage": battery_pct_raw / 256.0,
+        "average_battery_voltage_mv": voltage,
+        "remaining_capacity": p[9] | (p[10] << 8),
+    }
 
 def encrypt_nonce(nonce):
     return AES.new(AUTH_KEY, AES.MODE_ECB).encrypt(pad(nonce, 16))
@@ -190,6 +232,43 @@ async def main():
                     print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
         if not hrv_found:
             print("  No 0x5d HRV events found in this pull.")
+
+        print(f"\n=== DEBUG DATA DECODE (0x61) - sleep stats / battery ===")
+        debug_found = False
+        for p in parsed:
+            if p["tag"] == 0x61 and len(p["payload"]) > 0:
+                sub = p["payload"][0]
+                if sub == 0x09:
+                    debug_found = True
+                    try:
+                        d = decode_debug_data_sleep_statistics(p["payload"])
+                        deep_min = d["ticks_in_deep_sleep"] / 60.0
+                        sleep_min = d["ticks_in_sleep"] / 60.0
+                        awake_min = d["ticks_awake"] / 60.0
+                        print(f"  boot_ts={p['boot_ts']:>10}  [SLEEP STATS] "
+                              f"deep={deep_min:.1f}min  total_sleep={sleep_min:.1f}min  "
+                              f"awake={awake_min:.1f}min  pfsm_state={d['pfsm_state']}")
+                    except ValueError as e:
+                        print(f"  boot_ts={p['boot_ts']:>10}  SLEEP STATS DECODE FAIL: {e}")
+                elif sub == 0x24:
+                    debug_found = True
+                    try:
+                        d = decode_debug_data_battery_level(p["payload"])
+                        print(f"  boot_ts={p['boot_ts']:>10}  [BATTERY] "
+                              f"{d['battery_percentage']}%  {d['battery_voltage_mv']}mV  reason={d['reason']}")
+                    except ValueError as e:
+                        print(f"  boot_ts={p['boot_ts']:>10}  BATTERY DECODE FAIL: {e}")
+                elif sub == 0x14:
+                    debug_found = True
+                    try:
+                        d = decode_debug_data_fuel_gauge(p["payload"])
+                        print(f"  boot_ts={p['boot_ts']:>10}  [FUEL GAUGE] "
+                              f"{d['battery_percentage']:.1f}%  {d['average_battery_voltage_mv']}mV  "
+                              f"remaining_capacity={d['remaining_capacity']}")
+                    except ValueError as e:
+                        print(f"  boot_ts={p['boot_ts']:>10}  FUEL GAUGE DECODE FAIL: {e}")
+        if not debug_found:
+            print("  No sleep-stats/battery debug records found in this pull.")
 
         outpath = f"gen3_pull_{time.strftime('%Y%m%d_%H%M%S')}.txt"
         with open(outpath, "w") as f:
