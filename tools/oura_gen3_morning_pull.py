@@ -57,6 +57,15 @@ def decode_sleep_period_info_2(p):
         "cv": cv_raw / 65536.0,
     }
 
+def decode_hrv_event(p):
+    n = len(p)
+    if n < 2 or n > 12 or n % 2 != 0:
+        raise ValueError("invalid HRV payload size")
+    pairs = []
+    for i in range(0, n, 2):
+        pairs.append({"hr_bpm": p[i], "rmssd_ms": p[i + 1]})
+    return {"samples_5min": pairs}
+
 def encrypt_nonce(nonce):
     return AES.new(AUTH_KEY, AES.MODE_ECB).encrypt(pad(nonce, 16))
 
@@ -144,8 +153,8 @@ async def main():
         for p in priority_events:
             print(f"  [{p['tag_name']}] boot_ts={p['boot_ts']:>10}  payload={p['payload'].hex()}")
 
-        sleep_states = []
         print(f"\n=== SLEEP STATE DECODE (0x6a) ===")
+        sleep_states = []
         for p in parsed:
             if p["tag"] == 0x6A:
                 try:
@@ -157,16 +166,30 @@ async def main():
                 except ValueError as e:
                     print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
         if sleep_states:
-            from collections import Counter
             sc = Counter(sleep_states)
             total = len(sleep_states)
             print(f"\nSleep state distribution ({total} samples):")
             for state in (0, 1, 2):
                 pct = 100 * sc.get(state, 0) / total
                 print(f"  state {state}: {pct:.1f}%  ({sc.get(state, 0)} samples)")
-            print("  (state-to-label mapping not yet confirmed - see notes)")
         else:
             print("  No 0x6a sleep period events found in this pull.")
+
+        print(f"\n=== HRV DECODE (0x5d) - verified RMSSD per 5-min window ===")
+        hrv_found = False
+        for p in parsed:
+            if p["tag"] == 0x5D:
+                hrv_found = True
+                try:
+                    decoded = decode_hrv_event(p["payload"])
+                    print(f"  boot_ts={p['boot_ts']:>10}  payload={p['payload'].hex()}")
+                    for i, sample in enumerate(decoded["samples_5min"]):
+                        print(f"    window -{(len(decoded['samples_5min'])-1-i)*5}min: "
+                              f"hr={sample['hr_bpm']} bpm  rmssd={sample['rmssd_ms']} ms")
+                except ValueError as e:
+                    print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
+        if not hrv_found:
+            print("  No 0x5d HRV events found in this pull.")
 
         outpath = f"gen3_pull_{time.strftime('%Y%m%d_%H%M%S')}.txt"
         with open(outpath, "w") as f:
