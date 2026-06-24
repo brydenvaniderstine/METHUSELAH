@@ -109,10 +109,11 @@ def decode_spo2_event(p):
     if len(p) < 1:
         raise ValueError("Spo2Event payload too short")
     samples_end = len(p) - 1 if len(p) > 1 and p[-1] == 0xff else len(p)
+    SPO2_OFFSET = 6  # raw byte = true % + 6; see known_issues.md fix log 2026-06-24
     return {
         "header_high": p[0] >> 4,
         "header_low": p[0] & 0x0F,
-        "spo2_percent": list(p[1:samples_end]),
+        "spo2_percent": [b - SPO2_OFFSET for b in p[1:samples_end]],
     }
 
 def decode_sleep_temp_event(p):

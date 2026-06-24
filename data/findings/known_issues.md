@@ -1,50 +1,58 @@
 # METHUSELAH // Known Issues — Gen3 Decoders
 
-## SpO2 event decoder (0x6f) — VALUES OUT OF RANGE, NOT TRUSTWORTHY
+## SpO2 event decoder (0x6f) — FIXED (pending Gen4 cross-validation)
 
-**Status:** Provisional/broken. Do not use for any real SpO2 readings until fixed.
+**Status:** Fixed 2026-06-24. Flat offset of -6 applied to raw sample bytes.
 
-**Symptom:** `decode_spo2_event()` (per open_ring's documented field layout:
-`header_high`, `header_low`, `spo2_percent` list as raw uint8 values) produces
-values ranging 94-104% in real captured data (2026-06-23 pull). SpO2 is
-physically capped at 100% - any value above that is impossible, meaning the
-decode is wrong.
+**Root cause:** Raw payload bytes were `true_percent + 6`, not raw percent.
+header_high/header_low (p[0] nibbles) were tested for correlation with the
+needed correction and showed none — ruled out as a scale/calibration factor,
+likely a sequence or quality byte instead.
 
-**Likely cause:** The open_ring docstring's own "verified" example
-(`68 5d 5d 5d...` -> all 93%) is a single flat-value sample that happened to
-decode plausibly by coincidence. Real samples show smooth upward/downward
-drift crossing the 100% boundary (e.g. one window: 97,98,99,100,101,101,102...)
-suggesting these bytes are NOT raw percentages but some other encoding -
-possibly a baseline-relative delta, a different fixed-point scale, or values
-that need the header_high/header_low fields applied as a correction/offset
-that the current decoder ignores entirely (header fields are extracted but
-never used in the returned percent values).
+**Evidence:**
+- 190 real packets / 2,476 samples, retrieved via `grep -r "SPO2 event"`
+  across 14 saved pull files (2026-06-19 to 2026-06-23) and pasted for
+  analysis — offset=6 is the minimum correction eliminating all >100%
+  violations (offset=5 leaves 5 violations; offset=7+ starts going low).
+- Cross-checked against 2026-06-24 morning pull (21 fresh packets, not
+  part of the original 190): same offset, zero violations, corrected
+  range 91-99%, consistent with expected overnight SpO2 behavior.
 
-**Real data for reference (2026-06-23 pull, boot_ts=41497176):**
-samples=[100, 99, 98, 97, 96, 95, 94, 94, 94, 95, 95, 95, 97] decoded as
-"96.1% avg" - the *shape* of this curve (smooth dip and recovery) looks like
-real physiological SpO2 behavior, just offset/scaled wrong. This is
-encouraging - the underlying signal seems real, the math mapping it to a
-percentage is what's broken.
-
-**Working decoders, for contrast (same pull, same session):**
-- Sleep temp (0x75): 35.5-36.0 degC - sane, trustworthy
-- Fuel gauge battery (0x61/0x14): 56.4%, 3807mV - sane, trustworthy
-- Sleep state (0x6a): consistent state=1 throughout - sane, trustworthy
-
-## Next steps
-1. Try incorporating header_high/header_low into the percent calculation
-   (currently decoded but unused) - possible they're a scale/offset factor.
-2. Check if `decode_spo2_dc_event` (0x77, not yet read in detail) or
-   `decode_spo2_ibi_and_amplitude_event` (0x6e, decoded as raw bytes only)
-   contain calibration data this event type depends on.
-3. Consider cross-referencing against Gen4/Oura's official SpO2 % for the
-   same night (Oura app does report this under sleep details) once we have
-   a same-night comparison opportunity - same validation method used
-   successfully for HRV.
-4. Do not log any SpO2 comparison rows in the comparisons CSV until this is
-   resolved - would just be logging garbage numbers.
+**Still open:** No same-night Gen4/Oura official SpO2 comparison yet (the
+validation method used successfully for HRV). Treat as fixed-by-internal-
+consistency, not yet ground-truth-confirmed. Once available, cross-check
+and update this status to fully confirmed.
 
 ---
 *Logged 2026-06-23. Found during first live test of the SpO2 decoder
-immediately after wiring it into the pull script.*
+immediately after wiring it into the pull script. Fixed 2026-06-24.*
+
+## Debug data sleep statistics decoder (0x61/0x09) — BROKEN, NOT TRUSTWORTHY
+
+**Status:** New regression, found 2026-06-24. Do not use sleep stats output
+until fixed.
+
+**Symptom:** `decode_debug_data_sleep_statistics()` produced physically
+impossible values on the 2026-06-24 morning pull:
+- `deep=111924.3min` (~77.7 days) and `deep=111344.9min` in the same
+  session, four records total, all wildly out of range
+- `pfsm_state=128` appearing twice, vs. small single-digit values
+  (5, 6) seen previously — may indicate two different packet sub-formats
+  being routed through the same decoder
+
+**Likely cause:** Unconfirmed. Possible struct misalignment, or these
+0x61/0x09 packets have a different internal layout than the ones the
+decoder was originally validated against. Needs investigation before
+trusting deep-sleep-duration output again.
+
+**Next steps:**
+1. Pull raw hex for these specific records (boot_ts=42166360, 42166365,
+   42166971, 42166976) and inspect byte-by-byte against the documented
+   layout (ticks_in_deep_sleep, ticks_in_sleep, ticks_awake, pfsm_state).
+2. Check whether pfsm_state=128 packets are a distinct variant from
+   pfsm_state=5/6 packets — may need a sub-format branch.
+3. Do not log any sleep-stats rows to any comparisons CSV until resolved.
+
+---
+*Logged 2026-06-24. Found during 2026-06-24 morning pull, same session as
+the SpO2 fix.*
