@@ -34,7 +34,7 @@ EVENT_TAGS = {
     0x83: "Scan end",
 }
 
-PRIORITY_TAGS = {0x44, 0x49, 0x4B, 0x4C, 0x4E, 0x4F, 0x55, 0x58, 0x5D, 0x60, 0x6A, 0x6E, 0x71, 0x72}
+PRIORITY_TAGS = {0x44, 0x47, 0x49, 0x4B, 0x4C, 0x4E, 0x4F, 0x55, 0x58, 0x5D, 0x60, 0x6A, 0x6E, 0x6F, 0x71, 0x72, 0x75, 0x76}
 
 def _i8(b):
     return b - 0x100 if b & 0x80 else b
@@ -70,7 +70,6 @@ def decode_hrv_event(p):
     return {"samples_5min": pairs}
 
 def decode_debug_data_sleep_statistics(p):
-    """0x61 sub-type 0x09 - ticks_in_deep_sleep, ticks_in_sleep, ticks_awake."""
     if len(p) < 14:
         raise ValueError("sleep_statistics payload too short")
     if p[0] != 0x09:
@@ -83,7 +82,6 @@ def decode_debug_data_sleep_statistics(p):
     }
 
 def decode_debug_data_battery_level(p):
-    """0x61 sub-type 0x24 - battery percentage + voltage at moment of change."""
     if len(p) < 5:
         raise ValueError("battery_level_changed payload too short")
     if p[0] != 0x24:
@@ -95,7 +93,6 @@ def decode_debug_data_battery_level(p):
     }
 
 def decode_debug_data_fuel_gauge(p):
-    """0x61 sub-type 0x14 - battery %, voltage, current, remaining capacity."""
     if len(p) < 14:
         raise ValueError("fuel_gauge_statistics payload too short")
     if p[0] != 0x14:
@@ -107,6 +104,38 @@ def decode_debug_data_fuel_gauge(p):
         "average_battery_voltage_mv": voltage,
         "remaining_capacity": p[9] | (p[10] << 8),
     }
+
+def decode_spo2_event(p):
+    if len(p) < 1:
+        raise ValueError("Spo2Event payload too short")
+    samples_end = len(p) - 1 if len(p) > 1 and p[-1] == 0xff else len(p)
+    return {
+        "header_high": p[0] >> 4,
+        "header_low": p[0] & 0x0F,
+        "spo2_percent": list(p[1:samples_end]),
+    }
+
+def decode_sleep_temp_event(p):
+    n = len(p)
+    if n == 0 or n & 1:
+        raise ValueError("SleepTempEvent payload size must be even and >0")
+    n_samples = n // 2
+    temps_c = [(p[i] | (p[i + 1] << 8)) / 100.0 for i in range(0, n, 2)]
+    return {"n_samples": n_samples, "temps_c": temps_c}
+
+def decode_motion_event(p):
+    n = len(p)
+    if n < 4 or n > 6:
+        raise ValueError("MotionEvent payload size must be in [4..6]")
+    return {
+        "flags_high": p[0] >> 5, "flags_low": p[0] & 0x1F,
+        "acm_x": _i8(p[1]) * 8, "acm_y": _i8(p[2]) * 8, "acm_z": _i8(p[3]) * 8,
+    }
+
+def decode_bedtime_period(p):
+    if len(p) < 8:
+        raise ValueError("BedtimePeriod payload must be >=8 bytes")
+    return {"start_ring_time": _u32(p, 0), "end_ring_time": _u32(p, 4)}
 
 def encrypt_nonce(nonce):
     return AES.new(AUTH_KEY, AES.MODE_ECB).encrypt(pad(nonce, 16))
@@ -232,6 +261,59 @@ async def main():
                     print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
         if not hrv_found:
             print("  No 0x5d HRV events found in this pull.")
+
+        print(f"\n=== SPO2 DECODE (0x6f) ===")
+        spo2_found = False
+        for p in parsed:
+            if p["tag"] == 0x6F:
+                spo2_found = True
+                try:
+                    d = decode_spo2_event(p["payload"])
+                    avg = sum(d["spo2_percent"])/len(d["spo2_percent"]) if d["spo2_percent"] else 0
+                    print(f"  boot_ts={p['boot_ts']:>10}  samples={d['spo2_percent']}  avg={avg:.1f}%")
+                except ValueError as e:
+                    print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
+        if not spo2_found:
+            print("  No 0x6f SpO2 events found in this pull.")
+
+        print(f"\n=== SLEEP TEMP DECODE (0x75) ===")
+        temp_found = False
+        for p in parsed:
+            if p["tag"] == 0x75:
+                temp_found = True
+                try:
+                    d = decode_sleep_temp_event(p["payload"])
+                    print(f"  boot_ts={p['boot_ts']:>10}  temps_c={d['temps_c']}")
+                except ValueError as e:
+                    print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
+        if not temp_found:
+            print("  No 0x75 sleep temp events found in this pull.")
+
+        print(f"\n=== MOTION DECODE (0x47) ===")
+        motion_found = False
+        for p in parsed:
+            if p["tag"] == 0x47:
+                motion_found = True
+                try:
+                    d = decode_motion_event(p["payload"])
+                    print(f"  boot_ts={p['boot_ts']:>10}  acm_x={d['acm_x']}  acm_y={d['acm_y']}  acm_z={d['acm_z']}")
+                except ValueError as e:
+                    print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
+        if not motion_found:
+            print("  No 0x47 motion events found in this pull.")
+
+        print(f"\n=== BEDTIME PERIOD DECODE (0x76) ===")
+        bedtime_found = False
+        for p in parsed:
+            if p["tag"] == 0x76:
+                bedtime_found = True
+                try:
+                    d = decode_bedtime_period(p["payload"])
+                    print(f"  boot_ts={p['boot_ts']:>10}  start_rt={d['start_ring_time']}  end_rt={d['end_ring_time']}")
+                except ValueError as e:
+                    print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
+        if not bedtime_found:
+            print("  No 0x76 bedtime period events found in this pull.")
 
         print(f"\n=== DEBUG DATA DECODE (0x61) - sleep stats / battery ===")
         debug_found = False
