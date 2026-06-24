@@ -74,3 +74,77 @@ trusting deep-sleep-duration output again.
 ---
 *Logged 2026-06-24. Found during 2026-06-24 morning pull, same session as
 the SpO2 fix.*
+
+## SPO2 IBI+amplitude decoder (0x6e) — NOT YET DECODED, structural findings only
+
+**Status:** Open investigation, started 2026-06-24. No working decoder exists.
+open_ring's own `decode_spo2_ibi_and_amplitude_event()` is a raw passthrough
+(`{"u8_values": list(p)}`) — confirmed directly from source, not assumed from
+docs. Its docstring explicitly says "Conservative decode: emit raw bytes for
+downstream analysis," meaning open_ring's own authors did not crack this
+field layout either. This is real reverse-engineering from scratch, not a
+known decoder to port.
+
+**Confirmed structural facts** (from 85 real packets, 2026-06-24 morning pull,
+transcribed directly from PRIORITY EVENTS output, all verified 13 bytes):
+
+- **Byte 0**: highly variable (range 0-186, 34 unique values across 85
+  packets), alternates in a clear pattern between high-nibble values (8-11)
+  and low-nibble-dominant values (1-3) on roughly every other packet.
+  Sequence: 10,2,9,2,9,1,9,1,9,1,9,1,9,1,11,4,8,0,8,1,8,1,9,1,9,1,8,1,8,1,8,1,
+  8,0,8,1,9,1,9,1,9,1,11,3,11,2,8,1,8,1,8,1,10,2,9,1,9,1,9,1,8,1,9,1,8,1,9,1,
+  9,1,9,1,9,1,9,1,9,1,9,1,9,1,9,1 (high_nibble values shown).
+- **Bytes 1-6**: consistently low-variance across ALL 85 packets (mean
+  ~125-130, stdev 8-25). Likely a slow-moving/stable signal — candidate:
+  DC baseline or similar.
+- **Bytes 7-12**: consistently high-variance across ALL 85 packets (range
+  hits 0 and 250+ regularly, stdev ~48-52). Likely a genuinely noisy
+  signal (e.g. raw AC component or per-sample amplitude) rather than a
+  decode artifact — see falsified hypothesis below.
+
+**Falsified hypothesis:** Byte-0's alternating high/low-nibble pattern was
+tested as a possible red/IR channel split (consistent with real pulse-
+oximetry hardware using two LED wavelengths, and consistent with open_ring's
+own `0x77` docstring naming a `channel_index` concept). Split the 85 packets
+into two sub-sequences by high_nibble>=8 vs <8, then checked whether bytes
+7-12 (the noisy band) became smooth within either sub-sequence. **It did
+not** — both sub-sequences remained equally noisy in bytes 7-12. This
+specific channel-split theory is ruled out; byte 0 alternation remains
+unexplained.
+
+**Next steps, not yet attempted:**
+1. Test byte 0 as a raw incrementing/decrementing counter (mod something)
+   rather than a channel flag — sequence doesn't look monotonic at a glance
+   but hasn't been checked numerically against packet arrival order or
+   boot_ts deltas.
+2. Check whether bytes 1-6 correlate with the SAME-window decode_spo2_event
+   (0x6f) corrected values, which we already trust (offset=6 fix) — if
+   bytes 1-6 track the same physiological trend across the same boot_ts
+   range, that's real corroborating evidence for what this band represents.
+3. Bytes 7-12 may simply be legitimately noisy raw data (AC component,
+   not DC) — worth checking against known PPG AC/DC theory rather than
+   assuming it must decode to something smooth.
+
+---
+*Logged 2026-06-24. No decoder shipped — findings only, to save re-deriving
+this structure next session.*
+
+## SPO2 DC event (0x77) — NO RAW DATA CAPTURED YET
+
+**Status:** Blocked on data availability, as of 2026-06-24.
+
+**Finding:** `0x77` was never in `PRIORITY_TAGS` in `oura_gen3_morning_pull.py`,
+so despite 54 SPO2 DC event packets appearing in this morning's pull (per the
+Event type breakdown), zero individual packets had their raw hex printed —
+only the aggregate count. open_ring's own decoder for this tag
+(`decode_spo2_dc_event`) only extracts byte 0 (`channel_index`); the rest is
+dumped as `trailing_hex`, with a docstring hypothesis (`channel_index,
+beat_index, timestamp, dc[]`) that was never actually implemented/verified
+by open_ring's own authors either.
+
+**Fix applied:** `0x77` added to `PRIORITY_TAGS` in `oura_gen3_morning_pull.py`
+on 2026-06-24, so the next regular pull will print real hex for this tag.
+No decode function added yet — need real data first.
+
+---
+*Logged 2026-06-24.*
