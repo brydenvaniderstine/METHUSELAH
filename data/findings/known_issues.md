@@ -18,10 +18,28 @@ likely a sequence or quality byte instead.
   part of the original 190): same offset, zero violations, corrected
   range 91-99%, consistent with expected overnight SpO2 behavior.
 
-**Still open:** No same-night Gen4/Oura official SpO2 comparison yet (the
-validation method used successfully for HRV). Treat as fixed-by-internal-
-consistency, not yet ground-truth-confirmed. Once available, cross-check
-and update this status to fully confirmed.
+**Still open:** Same-night Gen4/Oura SpO2 comparison is NOT available through
+the Oura app UI — only a rolling multi-day average is shown (96.3% as of
+2026-06-24), with no per-night breakdown on the sleep detail screen (confirmed
+2026-06-24; the screen that shows per-night HR/HRV does not show per-night
+SpO2). True ground-truth cross-validation may not be possible via this method
+— the HRV/avg_bpm validation approach that worked has no SpO2 equivalent in
+the app.
+
+One data point for reference: Gen3 corrected (offset=6) avg for the 2026-06-24
+partial-night pull = 93.41% (range 90-99%, 21 packets/273 samples) vs. Gen4
+multi-day average = 96.3%. Gap of ~2.9 points, but NOT a valid same-window
+comparison — Gen3 sample is a ~35min slice near wake time, not full-night;
+Gen4 figure is multi-night, not single-night. Inconclusive either way, not
+evidence for or against the fix.
+
+Possible alternate validation paths, not yet attempted: Oura's raw data
+export (if available via account settings), Oura's public API (if it exposes
+per-night SpO2, separate from the cloud REST API already used for Gen4
+vectors). Until/unless one of those pans out, treat as fixed-by-internal-
+consistency only (zero >100% violations across 211 real packets / 2,749
+samples total across all pulls analyzed to date) — this is the practical bar
+for now, not a placeholder for an incoming confirmation.
 
 ---
 *Logged 2026-06-23. Found during first live test of the SpO2 decoder
