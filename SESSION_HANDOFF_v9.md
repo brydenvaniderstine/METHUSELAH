@@ -444,3 +444,14 @@ pattern throughout this project.
 3. Try u16-width fields for the 0x61/0x09 sleep-stats decoder (the next
    untested idea before this session paused).
 4. Continue normal daily Gen3/Gen4 pull rhythm regardless of decoder work.
+
+
+## 14-night data gate — CLEARED 2026-06-25
+
+Gate started 2026-06-11, ran 14 nights, cleared 2026-06-25. Confirmed via
+methuselah.ca dashboard screenshot: OURA LIVE active, all Track A vectors
+populated (HRV 39ms, cardiac 52bpm, repair depth 21%), 7-day rolling
+averages present and trending. No on-screen gate indicator exists — this
+was always an external tracking milestone, not a coded dashboard feature.
+Confirmed by sustained healthy data over the full window, not a banner.
+Clears the way for new feature work per the original gate's purpose.
