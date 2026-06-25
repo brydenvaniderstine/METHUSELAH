@@ -163,7 +163,30 @@ Ruled out.
 *Logged 2026-06-24. No decoder shipped — findings only, to save re-deriving
 this structure next session.*
 
-## SPO2 DC event (0x77) — NO RAW DATA CAPTURED YET
+## SPO2 DC event (0x77) — REAL DATA CAPTURED, structural findings only
+
+**Status:** Open investigation, started 2026-06-25. No working decoder yet.
+51 real packets pulled from the 2026-06-25 night pull (PRIORITY_TAGS fix
+worked).
+
+**Confirmed structural facts:**
+- Variable length confirmed: 43 packets at 14 bytes (dominant case), 6 at
+  4 bytes, 1 at 13 bytes, 1 at 2 bytes — matches open_ring's "variable size"
+  docstring claim.
+- 14-byte packets (n=43): per-position stats show NO calm/stable band —
+  every byte position 0-13 has high variance (stdev ~68-108), unlike 0x6e
+  which had a clear stable band at bytes 1-6. Byte 0 is somewhat tighter
+  (stdev 68 vs ~100-108 elsewhere) but still highly variable, not a fixed
+  header.
+
+**Next steps, not yet attempted:**
+1. Test byte 0 as channel_index per open_ring's own docstring hypothesis
+   (`channel_index, beat_index, timestamp, dc[]`).
+2. Investigate why short packets (2, 4, 13 bytes) exist — possibly
+   truncated/edge records, or a genuinely different record format.
+
+---
+*Logged 2026-06-25.*
 
 **Status:** Blocked on data availability, as of 2026-06-24.
 
