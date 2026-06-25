@@ -112,12 +112,13 @@ not** — both sub-sequences remained equally noisy in bytes 7-12. This
 specific channel-split theory is ruled out; byte 0 alternation remains
 unexplained.
 
+**Falsified hypothesis #2:** Byte 0 as a raw incrementing/decrementing
+counter. Checked consecutive-packet deltas across all 85 packets — deltas
+alternate between roughly -110/-140 and +100/+160, never a steady increment.
+Ruled out.
+
 **Next steps, not yet attempted:**
-1. Test byte 0 as a raw incrementing/decrementing counter (mod something)
-   rather than a channel flag — sequence doesn't look monotonic at a glance
-   but hasn't been checked numerically against packet arrival order or
-   boot_ts deltas.
-2. Check whether bytes 1-6 correlate with the SAME-window decode_spo2_event
+1. Check whether bytes 1-6 correlate with the SAME-window decode_spo2_event
    (0x6f) corrected values, which we already trust (offset=6 fix) — if
    bytes 1-6 track the same physiological trend across the same boot_ts
    range, that's real corroborating evidence for what this band represents.
