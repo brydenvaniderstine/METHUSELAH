@@ -1,6 +1,6 @@
 # METHUSELAH // Known Issues — Gen3 Decoders
 
-## SpO2 event decoder (0x6f) — FIXED (pending Gen4 cross-validation)
+## SpO2 event decoder (0x6f) — FIX INCONSISTENT ACROSS NIGHTS, NOT FULLY SOLVED
 
 **Status:** Fixed 2026-06-24. Flat offset of -6 applied to raw sample bytes.
 
@@ -44,6 +44,26 @@ for now, not a placeholder for an incoming confirmation.
 ---
 *Logged 2026-06-23. Found during first live test of the SpO2 decoder
 immediately after wiring it into the pull script. Fixed 2026-06-24.*
+
+## SpO2 (0x6f) offset=6 fix — FAILED cross-validation on 2026-06-25 night
+
+First real same-night Gen4 comparison (bedtime 9:49pm-5:20am, 2026-06-25):
+Gen4 reports avg SpO2 97%, "time at or below 88%: none recorded." Gen3
+corrected (offset=6) average for the same night = 88.0% (range 84.5-93.0,
+17 packets) — sitting exactly at the floor Gen4 says never happened.
+
+This is a real failure, not noise: offset=6 was derived from 211 packets
+across two prior nights and held up internally (zero >100% violations), but
+this third night's raw bytes came in lower to begin with (pre-correction
+avg 94.0% vs ~100-104% in earlier pulls), so the same flat offset overshoots
+and pushes Gen3 well below Gen4 ground truth.
+
+**Status: NOT solved.** offset=6 is not a universal constant — do not treat
+this fix as final or closed. Real per-night variance in raw byte baseline
+remains unexplained.
+
+---
+*Logged 2026-06-25.*
 
 ## Debug data sleep statistics decoder (0x61/0x09) — BROKEN, NEVER VALIDATED
 
