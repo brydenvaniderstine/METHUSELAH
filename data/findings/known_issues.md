@@ -180,8 +180,12 @@ worked).
   header.
 
 **Next steps, not yet attempted:**
-1. Test byte 0 as channel_index per open_ring's own docstring hypothesis
-   (`channel_index, beat_index, timestamp, dc[]`).
+1. ~~Test byte 0 as channel_index per open_ring's own docstring hypothesis~~
+   FALSIFIED 2026-06-25: byte 0 ranges 16-222 across 43 packets, alternating
+   between a low band (~16-63) and high band (~146-222) — far too wide a
+   range to be a simple channel_index (would expect 0/1 or small int).
+   Ruled out as stated; could still be some other field, not investigated
+   further today.
 2. Investigate why short packets (2, 4, 13 bytes) exist — possibly
    truncated/edge records, or a genuinely different record format.
 
