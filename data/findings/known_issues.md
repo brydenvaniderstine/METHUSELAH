@@ -45,10 +45,13 @@ for now, not a placeholder for an incoming confirmation.
 *Logged 2026-06-23. Found during first live test of the SpO2 decoder
 immediately after wiring it into the pull script. Fixed 2026-06-24.*
 
-## Debug data sleep statistics decoder (0x61/0x09) — BROKEN, NOT TRUSTWORTHY
+## Debug data sleep statistics decoder (0x61/0x09) — BROKEN, NEVER VALIDATED
 
-**Status:** New regression, found 2026-06-24. Do not use sleep stats output
-until fixed.
+**Status:** Broken since first wired in. NOT a regression — checked
+ring_decoder_inventory.md (2026-06-24): the doc only ever flagged 0x09 as a
+promising target to build, never claimed it was tested against real data.
+No known-good baseline ever existed. Do not use sleep stats output until
+fixed.
 
 **Symptom:** `decode_debug_data_sleep_statistics()` produced physically
 impossible values on the 2026-06-24 morning pull:
