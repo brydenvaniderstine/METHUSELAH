@@ -74,8 +74,15 @@ before. Brute-force u16 scan across all offsets found no clean 3-field
 layout. Tested cumulative-delta hypothesis (deep/sleep/awake as since-boot
 counters, checked deltas between same-pair records 5 seconds apart): deltas
 are roughly the right order of magnitude (~5s) but inconsistent in sign and
-not a clean match — partial lead, not resolved. Stopped here for the night,
-not exhausted.
+not a clean match — partial lead, not resolved.
+
+**2026-06-25 update, u16 width test:** Tried u16 fields at offsets 1,3,5,7,9,11.
+Offset 3 is small and consistent within same-night pairs (5.32/5.27 min vs
+0.48/0.50 min) — solid, reproducible signal, worth keeping as a real lead.
+Tried extending to a 3-field sum (offset3+5+9 as total sleep duration) —
+this did NOT hold up; sums vary 3x within the same ~5s window, ruled out.
+Offset 3 alone remains a live thread; the rest of the byte layout is still
+unresolved. Stopped here, not exhausted.
 
 **Status:** Broken since first wired in. NOT a regression — checked
 ring_decoder_inventory.md (2026-06-24): the doc only ever flagged 0x09 as a
