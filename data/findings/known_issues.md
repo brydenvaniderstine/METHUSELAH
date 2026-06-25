@@ -67,6 +67,16 @@ remains unexplained.
 
 ## Debug data sleep statistics decoder (0x61/0x09) — BROKEN, NEVER VALIDATED
 
+**2026-06-25 update:** Tested 32768Hz tick-rate divisor against 4 fresh
+records (2 pairs, two different nights) — `deep` field lands in a plausible
+1-10.6min range but `sleep`/`awake` stay near-zero, same misalignment as
+before. Brute-force u16 scan across all offsets found no clean 3-field
+layout. Tested cumulative-delta hypothesis (deep/sleep/awake as since-boot
+counters, checked deltas between same-pair records 5 seconds apart): deltas
+are roughly the right order of magnitude (~5s) but inconsistent in sign and
+not a clean match — partial lead, not resolved. Stopped here for the night,
+not exhausted.
+
 **Status:** Broken since first wired in. NOT a regression — checked
 ring_decoder_inventory.md (2026-06-24): the doc only ever flagged 0x09 as a
 promising target to build, never claimed it was tested against real data.
