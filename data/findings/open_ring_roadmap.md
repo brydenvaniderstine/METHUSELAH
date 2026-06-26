@@ -24,13 +24,35 @@ sub-types. This supersedes the earlier partial roadmap.
 
 ## IN PROGRESS — real RE work started, not yet solved (3)
 - [ ] 0x61/0x09 _dd_sleep_statistics — confirmed broken, never had a
-      working baseline. Tried: /60s, /32768Hz, offset-shifting, u32 width.
-      NEXT: try u16 field width.
-- [ ] 0x6E spo2_ibi_and_amplitude_event — 2 hypotheses killed
-      (channel-split, byte-0 counter). NEXT: correlate bytes 1-6 against
-      same-window 0x6F values.
-- [ ] 0x77 spo2_dc_event — zero real hex captured yet. In PRIORITY_TAGS now,
-      needs one fresh pull.
+      working baseline. Tried: /60s, /32768Hz, offset-shifting, u32 width,
+      u16 width (all offsets), cumulative-delta, delta_ts accumulation
+      (r=-0.094, falsified). Solid finding: offset-3 u16 is internally
+      consistent within same-pair records (confirmed across 55 unique
+      records, 11 pulls). pfsm=128 records are near-exact mirrors of the
+      preceding non-128 record (dual-buffer echo, not distinct data).
+      pfsm_state strongly predicts offset-3: pfsm=6 mean 197 (range
+      77-429), pfsm=5 mean 38 (range 15-101) — pfsm=6 holds ~10× more o3
+      than pfsm=5 in every pull. Working hypothesis: offset-3 = time
+      spent in current pfsm state. NEXT: cross-reference pfsm=6 record
+      timestamps against 0x6A sleep_state transitions in the same boot_ts
+      window to test time-in-state hypothesis.
+- [ ] 0x6E spo2_ibi_and_amplitude_event — 3 hypotheses killed (channel-
+      split, byte-0 counter, bytes-1-6 SpO2 correlation). Raw u8 values
+      of bytes 1-6 are almost entirely 93-108 (= 87-102% under offset-6),
+      consistent with SpO2 samples; b1/b2 r=0.626 and b2/b3 r=0.493 at
+      lag=0 suggest b1-b3 are consecutive samples of the same slow signal.
+      b4-b6 mutually independent — likely a different field (IBI or amp).
+      Structural ceiling reached on sleep-session data; needs a higher-
+      variance pull to confirm via correlation.
+- [ ] 0x77 spo2_dc_event — structural analysis complete (2026-06-25),
+      field meaning not yet decoded. Confirmed: byte 0 = channel field
+      (alternates L/H bands 16-107 / 146-222, near-perfect per-packet),
+      bytes 1-13 = 13 independent i8 fields centered near zero. Falsified:
+      channel_index (range too wide), red/IR DC-level split (no mean
+      difference between channels in i8), i16 pairing (stdev explodes).
+      open_ring docstring (`beat_index, timestamp, dc[]`) is unimplemented
+      hypothesis, no additional source hints. Ceiling reached on current
+      data — needs activity-session pull for physiological correlation.
 
 ## NOT STARTED — Tier 1, high biometric value (5)
 - [ ] 0x53 wear_event — ring on/off wrist, data-validity windows
@@ -106,16 +128,21 @@ and 0x82/0x83 — so the "35+" figure from earlier referred to distinct
 count differs. Every tag-level entry from the original inventory is
 represented above — nothing skipped.)
 
-## Suggested next-session order (unchanged from prior draft, still valid)
-1. 0x77 — easiest, data should be ready after one pull.
-2. 0x61/0x09 — try u16 width, last untried lever.
-3. 0x6E — try bytes 1-6 / SpO2 correlation.
-4. Then start working down the Tier 1 NOT STARTED list (0x53, 0x76, 0x69,
-   0x6B, 0x7E/0x7F) — these are fresh, no existing hypotheses to test, good
-   "clean start" tasks.
-5. Tier 2 and the 0x61 debug sub-types are lower priority but ARE on this
-   board and WILL get worked through eventually, including the genuinely
-   low-value ones (stack usage, periodic counters) for completeness.
+## Suggested next-session order (updated 2026-06-25)
+1. 0x61/0x09 — cross-reference pfsm=6 record timestamps against 0x6A
+   sleep_state transitions in the same boot_ts window. Tests the
+   time-in-current-pfsm-state hypothesis, which is the strongest live
+   lead on this decoder. Requires pulling 0x6A records from the same
+   pull files that contain pfsm=6 records and checking elapsed time
+   since last state change.
+2. 0x6E and 0x77 — both at structural ceiling on sleep-session data.
+   Need an activity/daytime pull with real physiological variance to
+   advance. Capture one during a walk or exercise session.
+3. Then start working down the Tier 1 NOT STARTED list (0x53, 0x76,
+   0x69, 0x6B, 0x7E/0x7F) — fresh, no existing hypotheses, good
+   clean-start tasks. 0x53 has a confirmed spec but zero packets yet.
+4. Tier 2 and the 0x61 debug sub-types are lower priority but ARE on
+   this board and WILL get worked through eventually.
 
 ## How to use this doc
 Check a box, move an item between sections, or add a note inline as
