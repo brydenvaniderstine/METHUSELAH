@@ -468,3 +468,71 @@ No decode function added yet — need real data first.
 
 ---
 *Logged 2026-06-24.*
+
+## Real step features (0x7E / 0x7F) — initial characterization (2026-06-26)
+
+**Status:** First real packets captured (20260626 activity pull, 10 pairs).
+No working decoder yet. Initial structural analysis complete.
+
+**Source:** open_ring `decode_real_steps_features()` — raw passthrough
+(14× u8), docstring says "FFTset sub-messages (first/second/third FFT),
+signal-processing meaning not yet documented." Both tags share the same
+decoder. Treated as a hint, not a structural assumption.
+
+**Confirmed structural facts (10 pairs, 20260626 pull):**
+- Both tags: fixed 14 bytes, always appear as consecutive pairs
+  (0x7E at ts N, 0x7F at ts N+1).
+- 0x7E and 0x7F are structurally distinct — means differ at every
+  position (diffs +26 to -99), tight/loose positions don't align.
+  They carry complementary, not identical, data.
+
+**Tight positions (low stdev — candidate stable/slow fields):**
+- 0x7E pos 4: stdev 15.4, range 51-95, mean 66
+- 0x7E pos 7: stdev 26.1, mean 91
+- 0x7E pos 8: stdev 26.2, mean 93 (pos 7 and 8 nearly identical stats)
+- 0x7F pos 6: stdev 11.5, range 33-76, mean 62  ← tightest overall
+- 0x7F pos 9: stdev 17.3, range 33-93, mean 72
+- 0x7F pos 11: stdev 22.0, mean 94
+
+**Zero-clustering finding:**
+0x7F pos3+pos4 go to zero together on 4 of 10 packets. Confirmed NOT
+driven by motion magnitude — resting-period packets (acm mag ~119)
+produce both zero and non-zero values. Zeros are algorithm-state-driven:
+they correspond to epochs where the ring's own step-detection state
+machine has just timed out, just restarted, or is in an invalid state.
+
+Evidence from State change debug strings in the same pull:
+  ts=49357574/75: 0x7F zero → 'timeout' fires ts+73
+  ts=49358798/99: 0x7E p1+p2 AND 0x7F p3+p4 both zero → isolated reset
+  ts=49360776/77: 0x7F zero → immediately after 'fea off' + position
+                  change (acm z-axis flips sign at ts=49360498)
+  ts=49361078/79: 0x7F zero → 'timeout' fires ts+145
+
+Active step-detection epochs (between 'motion det' and 'timeout'/'fea
+off' events) consistently produce non-zero pos3+pos4 in 0x7F.
+
+**Cross-tag coincidence:** 0x7E pos1+pos2 and 0x7F pos3+pos4 go to zero
+together on two of the four zero packets (ts=49358798/99, 49360776/77).
+The other two zero 0x7F packets have non-zero 0x7E pos1+pos2. These four
+bytes across the two tags may form a related validity or count field.
+
+**Ruled out:**
+- Motion magnitude as driver of zeros (tested directly, not correlated)
+
+**State machine strings visible in this pull (from State change events):**
+  'timeout', 'motion det', 'hr enable', 'fea off'
+  These are the ring's own debug labels for internal step-detector state.
+  byte0 of State change payload = state enum (0x03, 0x04, 0x05, 0x06).
+
+**Next steps (fresh thread):**
+1. Decode what the non-zero values in 0x7F pos3+pos4 represent —
+   step count? cadence? amplitude? Needs more activity pulls with known
+   step counts to correlate against.
+2. Investigate the tight positions (0x7F pos6 stdev 11.5, 0x7E pos4
+   stdev 15.4) — slow-varying fields, good candidates for a stable
+   feature like cadence or stride interval.
+3. Check whether 0x7E pos1+pos2 / 0x7F pos3+pos4 form a u16 pair
+   (LE or BE) across the two tags — cross-tag field hypothesis.
+
+---
+*Logged 2026-06-26. Based on 10 real pairs from gen3_pull_20260626_053013.*

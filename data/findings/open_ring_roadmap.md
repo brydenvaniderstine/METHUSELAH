@@ -22,7 +22,7 @@ sub-types. This supersedes the earlier partial roadmap.
 - [x] 0x6F spo2_event (SpO2, fixed with offset=+6, internal consistency
       confirmed; Gen4 cross-validation still open)
 
-## IN PROGRESS — real RE work started, not yet solved (3)
+## IN PROGRESS — real RE work started, not yet solved (4)
 - [ ] 0x61/0x09 _dd_sleep_statistics — partial decode confirmed. Original
       u32 field layout (ticks_in_deep/sleep/awake) is wrong for our data.
       CONFIRMED (2026-06-26): offset-3 u16 = seconds in current pfsm state.
@@ -37,6 +37,16 @@ sub-types. This supersedes the earlier partial roadmap.
       unresolved. open_ring names them ticks_in_deep_sleep/sleep/awake as
       u32s but those produce wildly wrong values — layout is wrong for our
       packets. Needs fresh investigation once offset-3 finding is wired in.
+- [ ] 0x7E/0x7F real_steps_features — first 10 pairs captured (20260626
+      activity pull). Structurally distinct tags, always consecutive pairs.
+      open_ring: raw passthrough, "FFTset sub-messages" hint only.
+      Confirmed: 0x7F pos3+pos4 zeros = algorithm-validity flags (timeout/
+      fea-off/restart epochs), NOT motion-magnitude driven. Cross-tag lead:
+      0x7E pos1+pos2 and 0x7F pos3+pos4 zero together on 2 of 4 zero
+      packets. Tight positions: 0x7F pos6 stdev 11.5, 0x7E pos4 stdev 15.4.
+      State machine strings visible: 'timeout', 'motion det', 'hr enable',
+      'fea off'. NEXT: decode non-zero pos3+pos4 values (step count?
+      cadence?), investigate tight positions, test cross-tag u16 hypothesis.
 - [ ] 0x6E spo2_ibi_and_amplitude_event — 3 hypotheses killed (channel-
       split, byte-0 counter, bytes-1-6 SpO2 correlation). Raw u8 values
       of bytes 1-6 are almost entirely 93-108 (= 87-102% under offset-6),
@@ -60,7 +70,8 @@ sub-types. This supersedes the earlier partial roadmap.
 - [ ] 0x76 bedtime_period — wired into script, never caught a real packet
 - [ ] 0x69 temp_period — aggregated temperature over a period
 - [ ] 0x6B motion_period — motion state over a period
-- [ ] 0x7E/0x7F real_steps_features — step counting (one tag, two event IDs)
+- [ ] 0x7E/0x7F real_steps_features — IN PROGRESS (2026-06-26). See IN
+      PROGRESS section below.
 
 ## NOT STARTED — Tier 2, weaker/auto-extracted confidence (12)
 - [ ] 0x49 sleep_summary_1 — 2x u16, semantics unknown
@@ -130,18 +141,17 @@ count differs. Every tag-level entry from the original inventory is
 represented above — nothing skipped.)
 
 ## Suggested next-session order (updated 2026-06-26)
-1. 0x61/0x09 — wire offset-3 (seconds-in-pfsm-state) into the pull
-   script as a confirmed output. Then investigate the remaining 12 bytes
-   (offsets 1-2, 4-12) fresh — open_ring's u32 layout is wrong for our
-   packets, treat it as unsolved.
-2. 0x6E and 0x77 — both at structural ceiling on sleep-session data.
-   The 20260626 activity pull has motion but no SpO2 — still need a
-   pull WITH SpO2 during activity/wider-range conditions to advance.
-3. Work down Tier 1 NOT STARTED list (0x53, 0x76, 0x69, 0x6B, 0x7E/0x7F).
-   0x53 has a confirmed spec but zero packets yet. 0x7E/0x7F had 10 real
-   step events in the 20260626 activity pull — good candidate to tackle
-   next after 0x09 wiring.
-4. Tier 2 and 0x61 debug sub-types are lower priority but tracked.
+1. 0x7E/0x7F — decode what non-zero 0x7F pos3+pos4 values represent
+   (step count, cadence, or amplitude). Needs activity pull with a known
+   step count to correlate against. Also: test cross-tag u16 hypothesis
+   (0x7E pos1+pos2 / 0x7F pos3+pos4 as a paired field), and investigate
+   tight positions (0x7F pos6 stdev 11.5, 0x7E pos4 stdev 15.4).
+2. 0x61/0x09 — investigate remaining bytes (1-2, 4-12). open_ring u32
+   layout is wrong; treat as unsolved. offset-3 is already wired in.
+3. 0x6E and 0x77 — need a pull WITH SpO2 during activity to advance.
+   The 20260626 pull has motion but no SpO2 — still blocked on data.
+4. Tier 1 NOT STARTED: 0x53 (confirmed spec, zero packets), 0x76, 0x69,
+   0x6B. Tier 2 and 0x61 debug sub-types lower priority but tracked.
 
 ## How to use this doc
 Check a box, move an item between sections, or add a note inline as
