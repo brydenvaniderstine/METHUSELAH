@@ -82,7 +82,23 @@ Offset 3 is small and consistent within same-night pairs (5.32/5.27 min vs
 Tried extending to a 3-field sum (offset3+5+9 as total sleep duration) —
 this did NOT hold up; sums vary 3x within the same ~5s window, ruled out.
 Offset 3 alone remains a live thread; the rest of the byte layout is still
-unresolved. Stopped here, not exhausted.
+unresolved.
+
+**2026-06-25 update, third pull (7:14pm, post-nap):** Tested offset3 on 3
+more pairs/records (5 total records, 2 clean pairs + 1 singleton). Result:
+4-for-4 consistency holds across every same-pair comparison tested so far
+(0.50/0.50min, 1.82/1.80min, plus the original 5.32/5.27 and 0.48/0.50).
+This is now a SOLID, REPRODUCIBLE FACT: offset3 is internally consistent
+within same-pair records, confirmed across 3 separate pulls/sessions.
+
+This is separate from and does not resolve the still-OPEN question of what
+offset3 actually represents physiologically — tested and ruled out so far:
+not minutes-into-current-sleep-state, not part of a 3-field summable total.
+Meaning remains unknown. Note: this same pull's nap window (reported
+14:46-15:27) was NOT captured in the buffer — boot_ts range for this pull
+was 43220739-43223552, consistent with only the ~47min immediately before
+the 19:14 pull time, not the early-afternoon nap. Nap-vs-0x09 timing
+question is unresolved due to data availability, not a decode failure.
 
 **Status:** Broken since first wired in. NOT a regression — checked
 ring_decoder_inventory.md (2026-06-24): the doc only ever flagged 0x09 as a
