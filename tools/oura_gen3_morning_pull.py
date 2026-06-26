@@ -75,10 +75,11 @@ def decode_debug_data_sleep_statistics(p):
     if p[0] != 0x09:
         raise ValueError(f"not a sleep_statistics record (sub_byte={p[0]:#x})")
     return {
-        "ticks_in_deep_sleep": _u32(p, 1),
-        "ticks_in_sleep": _u32(p, 5),
-        "ticks_awake": _u32(p, 9),
+        # offset-3 u16 LE confirmed 2026-06-26: seconds in current pfsm state
+        "seconds_in_pfsm_state": p[3] | (p[4] << 8),
         "pfsm_state": p[13],
+        # remaining fields (offsets 1-2, 4-12) not yet decoded correctly —
+        # open_ring's u32 layout produces nonsense; excluded until resolved
     }
 
 def decode_debug_data_battery_level(p):
@@ -325,12 +326,10 @@ async def main():
                     debug_found = True
                     try:
                         d = decode_debug_data_sleep_statistics(p["payload"])
-                        deep_min = d["ticks_in_deep_sleep"] / 60.0
-                        sleep_min = d["ticks_in_sleep"] / 60.0
-                        awake_min = d["ticks_awake"] / 60.0
+                        secs = d["seconds_in_pfsm_state"]
                         print(f"  boot_ts={p['boot_ts']:>10}  [SLEEP STATS] "
-                              f"deep={deep_min:.1f}min  total_sleep={sleep_min:.1f}min  "
-                              f"awake={awake_min:.1f}min  pfsm_state={d['pfsm_state']}")
+                              f"pfsm_state={d['pfsm_state']}  "
+                              f"seconds_in_pfsm_state={secs}  ({secs/60:.2f}min)")
                     except ValueError as e:
                         print(f"  boot_ts={p['boot_ts']:>10}  SLEEP STATS DECODE FAIL: {e}")
                 elif sub == 0x24:
