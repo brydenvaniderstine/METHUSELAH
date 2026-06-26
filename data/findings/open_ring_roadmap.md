@@ -23,19 +23,20 @@ sub-types. This supersedes the earlier partial roadmap.
       confirmed; Gen4 cross-validation still open)
 
 ## IN PROGRESS — real RE work started, not yet solved (3)
-- [ ] 0x61/0x09 _dd_sleep_statistics — confirmed broken, never had a
-      working baseline. Tried: /60s, /32768Hz, offset-shifting, u32 width,
-      u16 width (all offsets), cumulative-delta, delta_ts accumulation
-      (r=-0.094, falsified). Solid finding: offset-3 u16 is internally
-      consistent within same-pair records (confirmed across 55 unique
-      records, 11 pulls). pfsm=128 records are near-exact mirrors of the
-      preceding non-128 record (dual-buffer echo, not distinct data).
-      pfsm_state strongly predicts offset-3: pfsm=6 mean 197 (range
-      77-429), pfsm=5 mean 38 (range 15-101) — pfsm=6 holds ~10× more o3
-      than pfsm=5 in every pull. Working hypothesis: offset-3 = time
-      spent in current pfsm state. NEXT: cross-reference pfsm=6 record
-      timestamps against 0x6A sleep_state transitions in the same boot_ts
-      window to test time-in-state hypothesis.
+- [ ] 0x61/0x09 _dd_sleep_statistics — partial decode confirmed. Original
+      u32 field layout (ticks_in_deep/sleep/awake) is wrong for our data.
+      CONFIRMED (2026-06-26): offset-3 u16 = seconds in current pfsm state.
+      Evidence: 1:1 ratio against measured transition elapsed (169 vs 170),
+      tick-rate corroboration via 0x6A inter-gap, activity-pull contrast
+      (pfsm=6 o3=5s/65s during waking vs 77-429s during sleep), and
+      open_ring 0x61/0x0c parallel field `systime_spent_in_last_state_raw`.
+      pfsm=128 = dual-buffer echo. pfsm enum not in open_ring source —
+      state meanings must be inferred empirically (pfsm=6 = longest, likely
+      deep sleep; pfsm=5 = short resets ~30s; pfsm=3 = intermediate).
+      REMAINING OPEN: rest of the 14-byte layout (bytes 1-2, 4-12) still
+      unresolved. open_ring names them ticks_in_deep_sleep/sleep/awake as
+      u32s but those produce wildly wrong values — layout is wrong for our
+      packets. Needs fresh investigation once offset-3 finding is wired in.
 - [ ] 0x6E spo2_ibi_and_amplitude_event — 3 hypotheses killed (channel-
       split, byte-0 counter, bytes-1-6 SpO2 correlation). Raw u8 values
       of bytes 1-6 are almost entirely 93-108 (= 87-102% under offset-6),
@@ -128,21 +129,19 @@ and 0x82/0x83 — so the "35+" figure from earlier referred to distinct
 count differs. Every tag-level entry from the original inventory is
 represented above — nothing skipped.)
 
-## Suggested next-session order (updated 2026-06-25)
-1. 0x61/0x09 — cross-reference pfsm=6 record timestamps against 0x6A
-   sleep_state transitions in the same boot_ts window. Tests the
-   time-in-current-pfsm-state hypothesis, which is the strongest live
-   lead on this decoder. Requires pulling 0x6A records from the same
-   pull files that contain pfsm=6 records and checking elapsed time
-   since last state change.
+## Suggested next-session order (updated 2026-06-26)
+1. 0x61/0x09 — wire offset-3 (seconds-in-pfsm-state) into the pull
+   script as a confirmed output. Then investigate the remaining 12 bytes
+   (offsets 1-2, 4-12) fresh — open_ring's u32 layout is wrong for our
+   packets, treat it as unsolved.
 2. 0x6E and 0x77 — both at structural ceiling on sleep-session data.
-   Need an activity/daytime pull with real physiological variance to
-   advance. Capture one during a walk or exercise session.
-3. Then start working down the Tier 1 NOT STARTED list (0x53, 0x76,
-   0x69, 0x6B, 0x7E/0x7F) — fresh, no existing hypotheses, good
-   clean-start tasks. 0x53 has a confirmed spec but zero packets yet.
-4. Tier 2 and the 0x61 debug sub-types are lower priority but ARE on
-   this board and WILL get worked through eventually.
+   The 20260626 activity pull has motion but no SpO2 — still need a
+   pull WITH SpO2 during activity/wider-range conditions to advance.
+3. Work down Tier 1 NOT STARTED list (0x53, 0x76, 0x69, 0x6B, 0x7E/0x7F).
+   0x53 has a confirmed spec but zero packets yet. 0x7E/0x7F had 10 real
+   step events in the 20260626 activity pull — good candidate to tackle
+   next after 0x09 wiring.
+4. Tier 2 and 0x61 debug sub-types are lower priority but tracked.
 
 ## How to use this doc
 Check a box, move an item between sections, or add a note inline as

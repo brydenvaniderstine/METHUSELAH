@@ -136,12 +136,43 @@ Tested and FALSIFIED (2026-06-25): offset-3 accumulates based on time
 since the previous 0x09 record. Pearson r = -0.094 between consecutive-
 record delta_ts and delta_o3 (same-pull pairs only, n=43). Ruled out.
 
-Working hypothesis (not yet tested): offset-3 is time-in-current-pfsm-
-state. pfsm=6 is a longer-duration state (deep sleep?) accumulating more
-ticks before the record fires; pfsm=5 resets frequently to ~30. The right
-test is whether o3 at pfsm=6 correlates with elapsed time since the last
-pfsm=5→6 transition — requires 0x6A sleep_state data from the same
-boot_ts window to cross-reference.
+**CONFIRMED (2026-06-26): offset-3 u16 = seconds spent in current pfsm state.**
+
+Evidence:
+1. Direct measurement: pull 20260624_203119 has one visible 0x6A state
+   transition (→state=1) at ts=42359632. pfsm=6 record fires at
+   ts=42359801. Elapsed = 169 ticks, o3 = 170. Ratio = 1.006 — near-
+   exact 1:1. At 1 tick/sec this is 169s ≈ 170s.
+2. Tick-rate corroboration: 0x6A fires every ~303-306 ticks; known
+   behavior is ~5-min period → 305 ticks = 5.08 min at 1 tick/sec.
+   Consistent.
+3. Activity-pull contrast: 20260626 waking/activity pull gives pfsm=6
+   o3=5 (5s) and o3=65 (65s) — brief transient pfsm=6 episodes during
+   rapid state cycling while waking. Sleep pulls give pfsm=6 o3=77–429
+   (1.3–7.2 min) — sustained episodes during stable deep sleep.
+4. Open_ring corroboration: 0x61/0x0c (_dd_period_info_statistics) has
+   a parallel field named `systime_spent_in_last_state_raw` with the
+   same `pfsm_state` byte. Its unit is raw_u32/10.0 for seconds (higher
+   resolution). Our 0x09 offset-3 field uses whole seconds (÷1, not ÷10)
+   — same concept, coarser resolution.
+
+Tested and FALSIFIED (also 2026-06-26): "elapsed since last 0x6A record"
+as a proxy. r=-0.434 (all pfsm) / r=-0.473 (pfsm=6 only). Negative
+because 0x6A fires continuously every ~5 min — elapsed since last packet
+is random position within a 5-min interval, not time-in-state.
+
+**pfsm_state enum: NOT in open_ring.** Searched decoders.py, enums.py,
+state.py, PROTOCOL.md, README.md — pfsm_state is emitted raw (u8) with
+no symbolic names anywhere in the repo. Values seen in real data:
+  1, 2, 3, 4, 5, 6, 128
+State meanings are unknown from source; must be inferred empirically.
+Observed pattern: pfsm=6 → longest durations (deep sleep candidate),
+pfsm=5 → short resets (~30s), pfsm=3 → intermediate, pfsm=128 → echo.
+
+**What offset-3 gives us:** seconds the ring's internal sleep state
+machine has been in its current state at the moment the 0x09 record
+fires. This is real physiological data — duration in the current
+firmware sleep classification, not a tick counter or arbitrary offset.
 
 **Status:** Broken since first wired in. NOT a regression — checked
 ring_decoder_inventory.md (2026-06-24): the doc only ever flagged 0x09 as a
