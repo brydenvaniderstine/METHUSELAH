@@ -65,6 +65,29 @@ remains unexplained.
 ---
 *Logged 2026-06-25.*
 
+## Tier 1 NOT STARTED tags (0x53, 0x69, 0x6B, 0x7E/0x7F) — zero packets across 2 pulls
+
+**Status:** Real spec pulled for 0x53 (wear_event = alias for
+decode_state_change_ind, `<state:u8><text:ascii>`, STATE_CHANGE enum
+confirmed from enums.py — state 1 = STATE_NOT_IN_FINGER, exactly "ring off
+wrist"). Decoder written but NOT yet wired into the script — zero real
+packets captured to test against.
+
+All five tags added to PRIORITY_TAGS 2026-06-25. Two pulls since (7:14pm,
+7:25pm) — neither captured a single packet for any of these five tags.
+Likely conclusion: these are rare/event-driven (wear on/off transitions,
+step counts) rather than steady background telemetry like SpO2/IBI, so
+short pulls during steady sleep/rest won't naturally trigger them.
+
+**Next steps:** Either wait for a pull that spans a real wear-state change
+(taking the ring off, putting it back on) or activity period (for
+0x7E/0x7F steps), or consider whether the pull script's request window
+needs adjustment to reach further back in the ring's buffer where these
+events might already be sitting unflushed.
+
+---
+*Logged 2026-06-25.*
+
 ## Debug data sleep statistics decoder (0x61/0x09) — BROKEN, NEVER VALIDATED
 
 **2026-06-25 update:** Tested 32768Hz tick-rate divisor against 4 fresh
