@@ -37,16 +37,20 @@ sub-types. This supersedes the earlier partial roadmap.
       unresolved. open_ring names them ticks_in_deep_sleep/sleep/awake as
       u32s but those produce wildly wrong values — layout is wrong for our
       packets. Needs fresh investigation once offset-3 finding is wired in.
-- [ ] 0x7E/0x7F real_steps_features — first 10 pairs captured (20260626
-      activity pull). Structurally distinct tags, always consecutive pairs.
-      open_ring: raw passthrough, "FFTset sub-messages" hint only.
-      Confirmed: 0x7F pos3+pos4 zeros = algorithm-validity flags (timeout/
-      fea-off/restart epochs), NOT motion-magnitude driven. Cross-tag lead:
-      0x7E pos1+pos2 and 0x7F pos3+pos4 zero together on 2 of 4 zero
-      packets. Tight positions: 0x7F pos6 stdev 11.5, 0x7E pos4 stdev 15.4.
-      State machine strings visible: 'timeout', 'motion det', 'hr enable',
-      'fea off'. NEXT: decode non-zero pos3+pos4 values (step count?
-      cadence?), investigate tight positions, test cross-tag u16 hypothesis.
+- [ ] 0x7E/0x7F real_steps_features — 64 pairs across 3 activity pulls.
+      CONFIRMED (2026-06-27): invalid pairs (7F[3]=7F[4]=7F[7]=0) caused
+      by Feature session restart (payloads 02010400 / 02030400), recovery
+      spans 1–2 windows. NOT timeout/fea-off (prior hypothesis revised).
+      Strongest correlation: 7F[10] ↔ 7F[4] r=+0.526 — 7F[10] never hits
+      zero, 7F[4] validity-flagged; same underlying signal at different
+      smoothing. 7F[11] ↔ 7F[12] r=−0.539 — complementary pair, likely
+      two frequency bands. 7E[4] ↔ 7F[6] r=+0.374 — tight cross-tag pair.
+      7F[3] highest-variance field (stdev 61.4, range 7–230), primary step
+      output candidate. u16 hypothesis falsified (7F[3]↔7F[4] r=−0.084,
+      independent). CEILING: cannot label 7F[3]/7F[4]/7F[7] without
+      ground-truth step count. NEXT: timed step session (count steps,
+      pull immediately), correlate 7F[3] against known step count for
+      the walk window — one 300-sec pair per 5-min segment.
 - [ ] 0x6E spo2_ibi_and_amplitude_event — 3 hypotheses killed (channel-
       split, byte-0 counter, bytes-1-6 SpO2 correlation). Raw u8 values
       of bytes 1-6 are almost entirely 93-108 (= 87-102% under offset-6),
@@ -140,12 +144,12 @@ and 0x82/0x83 — so the "35+" figure from earlier referred to distinct
 count differs. Every tag-level entry from the original inventory is
 represented above — nothing skipped.)
 
-## Suggested next-session order (updated 2026-06-26)
-1. 0x7E/0x7F — decode what non-zero 0x7F pos3+pos4 values represent
-   (step count, cadence, or amplitude). Needs activity pull with a known
-   step count to correlate against. Also: test cross-tag u16 hypothesis
-   (0x7E pos1+pos2 / 0x7F pos3+pos4 as a paired field), and investigate
-   tight positions (0x7F pos6 stdev 11.5, 0x7E pos4 stdev 15.4).
+## Suggested next-session order (updated 2026-06-27)
+1. 0x7E/0x7F — needs ONE more experiment to break the ceiling: do a
+   timed 5–10 min walk, count steps or note Oura app step total for
+   that window, pull immediately. Correlate 7F[3] (the highest-variance
+   field, stdev 61.4) against known step count for that specific pair.
+   One clean data point would confirm or kill the step-count hypothesis.
 2. 0x61/0x09 — investigate remaining bytes (1-2, 4-12). open_ring u32
    layout is wrong; treat as unsolved. offset-3 is already wired in.
 3. 0x6E and 0x77 — need a pull WITH SpO2 during activity to advance.

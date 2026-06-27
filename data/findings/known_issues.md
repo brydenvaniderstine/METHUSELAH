@@ -566,3 +566,57 @@ indicating a possible buffer rollover.
 - gen3_pull_20260625_052605.txt → SLEEP WINDOW ✓
 
 *Logged 2026-06-27.*
+
+---
+
+## 0x7E/0x7F real_steps_features — Session 2 findings (2026-06-27)
+
+**Status:** Structural analysis deepened with 64 pairs across 3 activity-window pulls.
+
+### 1. Invalid pair causation — CONFIRMED
+
+Pairs where 7F[3]=7F[4]=7F[7]=0 are caused by Feature session restart events.
+
+Two distinct Feature session payloads observed:
+- `02010400` — precedes the invalid pair with a full DHR_state sequence (1→4→2) + "hr enable" State change (state_byte=0x5)
+- `02030400` — precedes the invalid pair with DHR_state:0 only; no "hr enable"
+
+The ring's step algorithm takes 1–2 consecutive 300-tick windows to recover after a feature session restart. "Orphan" invalid pairs (no trigger event visible in a 500-tick lookback) are explained by this: the Feature session event fires 300–900 ticks before the invalid pair, outside any short lookback window. All 10 invalid pairs in the corpus are consistent with this explanation.
+
+**Ruled out:** Motion magnitude as a driver (confirmed in prior session). Confirmed: zero fields are algorithm-validity flags, not measurement outputs.
+
+### 2. Cross-position correlations (n=54 valid pairs)
+
+Strongest notable correlations found:
+
+| Pair | r | Interpretation |
+|------|---|---|
+| 7F[10] ↔ 7F[4] | +0.526 | Strongest link found. 7F[10] never hits zero; 7F[4] zeros during invalid windows. Hypothesis: 7F[10] is a persistent/smoothed version of the same metric as 7F[4]. |
+| 7F[11] ↔ 7F[12] | −0.539 | Anti-correlated complementary pair. Consistent with energy in two complementary frequency bands (e.g., low-freq / high-freq split of accelerometer spectrum). Neither hits zero — always populated. |
+| 7E[4] ↔ 7F[6] | +0.374 | Cross-tag correlation among tight always-populated fields. |
+| 7E[4] ↔ 7F[10] | +0.330 | Cross-tag, consistent with 7E[4]↔7F[6] cluster. |
+| 7F[6] ↔ 7F[12] | +0.336 | |
+| 7E[4] ↔ 7F[4] | +0.337 | 7E[4] (tight) correlates with 7F[4] (validity-flagged) — suggests 7E[4] tracks the same signal as 7F[10]/7F[4]. |
+| 7F[12] ↔ 7F[3] | +0.296 | |
+| 7F[12] ↔ 7F[4] | −0.280 | 7F[12] anti-correlates with 7F[4] — consistent with 7F[11]↔7F[12] anti-corr cluster. |
+
+Low-correlation pairs (effectively independent): 7F[3]↔7F[4] r=−0.084, 7F[3]↔7F[7] r=0.161, 7F[4]↔7F[7] r=0.308.
+
+### 3. Per-field ranges in valid pairs (n=54)
+
+7F[3]: mean=139.0, stdev=61.4, range=7–230 — widest range, most likely primary output
+7F[4]: mean=77.2, stdev=25.7, range=25–161
+7F[7]: mean=74.5, stdev=33.0, range=0–149
+7F[10]: mean=159.6, stdev=32.8, range=80–204 — consistently high, no zeros ever
+7F[11]: mean=92.9, stdev=23.1, range=44–144
+7F[12]: mean=115.9, stdev=25.4, range=47–185
+7E[4]: mean=77.3, stdev=17.7, range=38–124 — tightest 7E position
+7F[6]: mean=72.9, stdev=16.1, range=33–109 — tightest 7F position
+
+### 4. Structural ceiling
+
+Cannot label 7F[3], 7F[4], 7F[7] as step_count / cadence / confidence without ground-truth correlation. The FFT-sub-message hypothesis (from open_ring docstring) is untested.
+
+**Designed next experiment:** Do a timed walk (5–10 min, count steps or sync with Oura app step count), pull immediately after, and correlate each of the three zero-capable fields against the known step count for the walk period. The highest-variance field (7F[3], stdev=61.4) is the most likely step count candidate and should be tested first.
+
+*Logged 2026-06-27. Based on 64 real pairs: 10 from gen3_pull_20260626_053013, 27 from gen3_pull_20260627_080230, 27 from gen3_pull_20260627_080358.*
