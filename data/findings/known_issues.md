@@ -714,3 +714,108 @@ contrasts with their positive correlation in static snapshots (r=+0.485).
 
 *Logged 2026-06-27. Based on 48 unique real records and 47 echo pairs across
 all 26 pull files in data/raw_pulls/gen3_morning/.*
+
+---
+
+## 0x53 wear_event — DECODER CONFIRMED 2026-06-27
+
+**Status:** DONE. Validated against 2 real packets (grep across all 26 pull files).
+
+**Decoder:** `decode_wear_event` (alias for `decode_state_change_ind`).
+Format: `state:u8 + text:ascii` where `text` is the duration in the previous
+state, as a numeric string (seconds).
+
+**Source:** open_ring `driver/decoders.py` + `enums.py` STATE_CHANGE enum.
+
+**Confirmed packets** (from gen3_pull_20260625_052605.txt, both at ts≈38433964):
+- `ts=38433964`: `state=1 (STATE_NOT_IN_FINGER), text='50009'`
+  → ring removed from finger; had been on-wrist for 50,009 s ≈ 13.9 hours
+- `ts=38434063`: `state=3 (STATE_FINGER_USER_ACTIVE), text='1469'`
+  → ring put back on; had been off-wrist for 1,469 s ≈ 24.5 min
+
+**Key finding:** Text field = duration of the *previous* state in seconds.
+  STATE_NOT_IN_FINGER text ("50009") = how long ring was on-wrist before removal.
+  STATE_FINGER_USER_ACTIVE text ("1469") = how long ring was off-wrist before replacement.
+  Note: Δts between the two events is only 99 ticks (1.6 min), NOT the 1469s text.
+  This confirms text is a firmware-maintained counter, not derived from boot_ts delta.
+
+**STATE_CHANGE enum confirmed values:**
+  1=STATE_NOT_IN_FINGER, 3=STATE_FINGER_USER_ACTIVE (both validated)
+  Full enum in enums.py goes to state 30; see enums.py for all values.
+
+**Decoder works. No more packets needed to confirm the format.**
+
+*Logged 2026-06-27.*
+
+---
+
+## 0x69 temp_period — DECODER CONFIRMED 2026-06-27
+
+**Status:** DONE. Validated against 7 real packets, cross-checked against 0x75.
+
+**Decoder:** `decode_temp_period`. Format: `i16 LE / 100 = °C`.
+Fixed 2-byte payload. Same formula as the already-confirmed 0x75 decoder.
+
+**Source:** open_ring `driver/decoders.py` `decode_temp_period()` → `{"temp_raw": _i16(p, 0)}`.
+Units were "TBD" in open_ring — now confirmed °C via cross-check (see below).
+
+**Real packets (7 total, from 3 pull files, grep across all 26):**
+All raw values / 100 → range 33.82–36.12°C; all plausible skin-temperature readings.
+
+**Cross-validation against 0x75 (confirmed skin-temp decoder):**
+Two near-timestamp pairs found:
+1. `ts=40728926` (0x75): samples include [36.09, 36.09, 36.42, 36.09, 36.09, 36.09, 36.35]°C
+   `ts=40728928` (0x69, Δt=2): raw=3612 → **36.12°C** — matches 0x75 mean of 36.18°C ✓
+2. `ts=39784292` (0x75): last sample 35.13°C
+   `ts=39784294` (0x69, Δt=2): raw=3513 → **35.13°C** — EXACT MATCH ✓
+
+**Interpretation:** 0x69 is a single-value period summary of the same skin-temperature
+sensor that 0x75 samples every ~30s. The 0x69 value closely tracks the mean/last
+sample of the surrounding 0x75 window. Both use identical encoding: i16 LE / 100 = °C.
+
+*Logged 2026-06-27.*
+
+---
+
+## 0x6B motion_period — ENUM MISMATCH 2026-06-27
+
+**Status:** IN PROGRESS. 4 real packets captured. open_ring decoder partially wrong.
+
+**Decoder claim:** `decode_motion_period()` → `{"motion_state_30s": p[0], ...}`,
+where p[0] is supposed to index MOTION_STATE enum: {0:NO_MOTION, 1:RESTLESS,
+2:TOSSING_AND_TURNING, 3:ACTIVE}.
+
+**Observed b[0] values from 4 real packets:**
+| ts | b[0] (u8) | payload len | context |
+|----|-----------|-------------|---------|
+| 38433969 | 6 | 8 bytes | 5 ticks after 0x53 wear_event (ring removal) |
+| 42165470 | 61 (0x3d) | 14 bytes | morning wake-up context |
+| 50240030 | 62 (0x3e) | 14 bytes | 1 tick after 0x7E real step feature (active walking) |
+| 50373571 | 52 (0x34) | 14 bytes | later in same activity pull |
+
+**Finding:** ALL four b[0] values are OUTSIDE the MOTION_STATE enum range (0–3).
+The enum mapping in open_ring is either incomplete for this firmware version, or
+b[0] is NOT a MOTION_STATE enum value in these packets.
+
+**Hypothesis — b[0] is a motion intensity count, not an enum:**
+- b[0]=62 during active stepping, b[0]=6 near ring removal — directionally consistent
+  with "more motion = higher count." But 4 data points is too few to confirm vs. reject.
+- Values 52, 61, 62 cluster together; 6 is an outlier (brief wear-event context).
+
+**Payload structure:**
+- Variable length: 8 bytes (n=1) vs 14 bytes (n=3). Both forms share b[0].
+- 0xaa bytes appear in some 14-byte payloads in trailing positions — standard
+  uninitialized-memory filler, consistent with a fixed-size buffer only partially
+  filled for shorter motion periods.
+- The 14-byte trailing bytes (b1–b13) show values in range 0–68 for the
+  wake-context packet, and values up to 233 for the active-stepping packet,
+  with 0xaa filler where the period was short. No u16 pattern visible at n=4.
+
+**Negative result:** open_ring MOTION_STATE enum (0–3) is NOT a complete map for
+this firmware — it does not account for the observed values (6, 52, 61, 62).
+
+**Next steps:** Capture more 0x6B packets across diverse motion contexts (rest, walk,
+sleep, brief wear events) to test the count hypothesis and map the trailing bytes.
+The 8-byte vs 14-byte format split also needs more data before it can be explained.
+
+*Logged 2026-06-27.*

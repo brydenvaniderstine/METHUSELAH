@@ -13,7 +13,7 @@ sub-types. This supersedes the earlier partial roadmap.
 3. Negative results (killed hypotheses) get logged, not discarded.
 4. One decoder at a time.
 
-## DONE — working, validated against real data (6)
+## DONE — working, validated against real data (8)
 - [x] 0x6A sleep_period_info_2 (sleep_state)
 - [x] 0x5D hrv_event (HRV/RMSSD)
 - [x] 0x61/0x14 fuel_gauge_statistics (battery %, voltage, capacity)
@@ -21,8 +21,15 @@ sub-types. This supersedes the earlier partial roadmap.
 - [x] 0x47 motion_event (3-axis accelerometer)
 - [x] 0x6F spo2_event (SpO2, fixed with offset=+6, internal consistency
       confirmed; Gen4 cross-validation still open)
+- [x] 0x53 wear_event — format: state:u8 + text:ascii (duration of prior
+      state in seconds, as numeric string). STATE_CHANGE enum confirmed
+      (states 1 and 3 validated against 2 real packets 2026-06-27).
+- [x] 0x69 temp_period — i16 LE / 100 = °C. CONFIRMED 2026-06-27 by
+      cross-check with 0x75 at ts=40728926/40728928 (2-tick gap, values
+      match to within 0.06°C). Same formula as 0x75; 0x69 appears to be
+      a single-value period average of the same skin-temp sensor.
 
-## IN PROGRESS — real RE work started, not yet solved (4)
+## IN PROGRESS — real RE work started, not yet solved (5)
 - [ ] 0x61/0x09 _dd_sleep_statistics — partial decode confirmed. Original
       u32 field layout (ticks_in_deep/sleep/awake) is wrong for our data.
       CONFIRMED (2026-06-26): offset-3 u16 = seconds in current pfsm state.
@@ -61,6 +68,14 @@ sub-types. This supersedes the earlier partial roadmap.
       b4-b6 mutually independent — likely a different field (IBI or amp).
       Structural ceiling reached on sleep-session data; needs a higher-
       variance pull to confirm via correlation.
+- [ ] 0x6B motion_period — 4 real packets captured (2026-06-27). open_ring
+      decoder maps b[0] to MOTION_STATE (0-3), but all 4 observed b[0]
+      values (6, 52, 61, 62) are outside the enum. Contextual correlation:
+      b[0]=62 during active stepping, b[0]=6 near ring removal (wear event),
+      consistent with a motion-intensity count rather than an enum.
+      Variable payload length (8 or 14 bytes). 0xaa bytes appear as filler
+      in unused slots of the 14-byte form. CEILING: need more packets across
+      a range of activities to resolve b[0] and map the trailing bytes.
 - [ ] 0x77 spo2_dc_event — structural analysis complete (2026-06-25),
       field meaning not yet decoded. Confirmed: byte 0 = channel field
       (alternates L/H bands 16-107 / 146-222, near-perfect per-packet),
@@ -71,11 +86,8 @@ sub-types. This supersedes the earlier partial roadmap.
       hypothesis, no additional source hints. Ceiling reached on current
       data — needs activity-session pull for physiological correlation.
 
-## NOT STARTED — Tier 1, high biometric value (5)
-- [ ] 0x53 wear_event — ring on/off wrist, data-validity windows
+## NOT STARTED — Tier 1, high biometric value (3)
 - [ ] 0x76 bedtime_period — wired into script, never caught a real packet
-- [ ] 0x69 temp_period — aggregated temperature over a period
-- [ ] 0x6B motion_period — motion state over a period
 - [ ] 0x7E/0x7F real_steps_features — IN PROGRESS (2026-06-26). See IN
       PROGRESS section below.
 
@@ -139,7 +151,7 @@ All dispatched via sub-byte at payload offset 0, tag 0x61 itself.
 - [ ] 0x61/0x3F _dd_daily_drop_sample — daily diagnostic sample
 
 ## Count check
-6 done + 3 in progress + 5 + 12 + 2 + 24 = **52 decoder entries tracked**
+8 done + 5 in progress + 3 not-started-T1 + 12 + 2 + 24 = **54 decoder entries tracked**
 (some inventory rows bundle two tag IDs under one decoder, e.g. 0x7E/0x7F
 and 0x82/0x83 — so the "35+" figure from earlier referred to distinct
 *functions*, this board tracks distinct *tags/sub-types*, which is why the
@@ -161,9 +173,9 @@ ceiling category, all blocked on ground-truth data rather than analysis:
       unlocks 0x6E and 0x77 simultaneously.
    b. Correlate 0x09 f2/f4 dynamics against known sleep stages from the
       Oura app for the same night → unlocks 0x09 f2/f4 meaning.
-2. **Tier 1 NOT STARTED**: 0x53 (spec confirmed, zero packets captured),
-   0x76 (bedtime_period), 0x69 (temp_period), 0x6B (motion_period).
-   Low-hanging fruit if the right pull is collected.
+2. **Tier 1 remaining**: 0x53 and 0x69 DONE (2026-06-27). 0x6B IN PROGRESS
+   (b[0] enum mismatch — needs more motion-diverse packets). 0x76
+   (bedtime_period) NOT STARTED — never caught a real packet yet.
 3. **Tier 2 and 0x61 debug sub-types** — tracked but lower priority.
 
 ## How to use this doc
