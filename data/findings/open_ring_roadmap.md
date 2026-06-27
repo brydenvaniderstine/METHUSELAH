@@ -26,17 +26,18 @@ sub-types. This supersedes the earlier partial roadmap.
 - [ ] 0x61/0x09 _dd_sleep_statistics — partial decode confirmed. Original
       u32 field layout (ticks_in_deep/sleep/awake) is wrong for our data.
       CONFIRMED (2026-06-26): offset-3 u16 = seconds in current pfsm state.
-      Evidence: 1:1 ratio against measured transition elapsed (169 vs 170),
-      tick-rate corroboration via 0x6A inter-gap, activity-pull contrast
-      (pfsm=6 o3=5s/65s during waking vs 77-429s during sleep), and
-      open_ring 0x61/0x0c parallel field `systime_spent_in_last_state_raw`.
-      pfsm=128 = dual-buffer echo. pfsm enum not in open_ring source —
-      state meanings must be inferred empirically (pfsm=6 = longest, likely
-      deep sleep; pfsm=5 = short resets ~30s; pfsm=3 = intermediate).
-      REMAINING OPEN: rest of the 14-byte layout (bytes 1-2, 4-12) still
-      unresolved. open_ring names them ticks_in_deep_sleep/sleep/awake as
-      u32s but those produce wildly wrong values — layout is wrong for our
-      packets. Needs fresh investigation once offset-3 finding is wired in.
+      CONFIRMED (2026-06-27): full layout is 6×u16 LE + 1×u8 pfsm_state.
+      Layout: b1-b2=f0(unknown), b3-b4=o3(seconds in pfsm state), b5-b6=f2
+      (dynamic, pfsm-dependent decay), b7-b8=0(padding), b9-b10=f4(dynamic,
+      opposite direction to f2 in pfsm=6), b11-b12=f5(flag ∈{0,1}), b13=pfsm.
+      KEY FINDING: f2 and f4 are dynamically updating — proven via orig/echo
+      pair comparison (47 pairs). f2 always decays orig→echo; decay rate is
+      pfsm-dependent: pfsm=6 retains 60%, pfsm=3 retains only 2.6%.
+      f4 INCREASES in pfsm=6 echo (+20K avg/5s) and DECREASES in pfsm=3.
+      Interpretation: f2/f4 appear to be biosignal metrics with short time
+      constants, NOT simple cumulative time-in-state. f0 uncorrelated with
+      everything. f5 flag (4 occurrences) has no clear predictor identified.
+      CEILING: physical meaning of f0/f2/f4 unconfirmed without ground truth.
 - [ ] 0x7E/0x7F real_steps_features — 64 pairs across 3 activity pulls.
       CONFIRMED (2026-06-27): invalid pairs (7F[3]=7F[4]=7F[7]=0) caused
       by Feature session restart (payloads 02010400 / 02030400), recovery

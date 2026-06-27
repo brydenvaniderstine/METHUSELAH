@@ -620,3 +620,97 @@ Cannot label 7F[3], 7F[4], 7F[7] as step_count / cadence / confidence without gr
 **Designed next experiment:** Do a timed walk (5–10 min, count steps or sync with Oura app step count), pull immediately after, and correlate each of the three zero-capable fields against the known step count for the walk period. The highest-variance field (7F[3], stdev=61.4) is the most likely step count candidate and should be tested first.
 
 *Logged 2026-06-27. Based on 64 real pairs: 10 from gen3_pull_20260626_053013, 27 from gen3_pull_20260627_080230, 27 from gen3_pull_20260627_080358.*
+
+---
+
+## 0x61/0x09 sleep_statistics — Session 3 findings (2026-06-27)
+
+**Status:** Major structural progress. Layout confirmed. Dynamic behavior characterized.
+
+### 1. u16 LE layout CONFIRMED (n=48 unique real records, n=47 echo pairs)
+
+The payload is 14 bytes structured as 6 × u16 LE + 1 × u8 (pfsm_state):
+
+| offset | field | u16 LE? | value range | confirmed meaning |
+|--------|-------|---------|-------------|-------------------|
+| b0 | sub_byte | — | 9 (constant) | record type |
+| b1-b2 | f0 | u16 LE | 0–65487 | unknown |
+| b3-b4 | f1=o3 | u16 LE | 0–429 | seconds in current pfsm state ← CONFIRMED |
+| b5-b6 | f2 | u16 LE | 1214–52987 | unknown (dynamically updating, see below) |
+| b7-b8 | f3 | u16 LE | 0 always | padding / reserved field |
+| b9-b10 | f4 | u16 LE | 940–56879 | unknown (dynamically updating, see below) |
+| b11-b12 | f5 | u16 LE | 0 or 1 | binary flag (4 occurrences in corpus) |
+| b13 | pfsm_state | u8 | 1–6 | ring sleep-state machine state ← CONFIRMED |
+
+Evidence: b7=b8=0 in ALL 48 real records (zero stdev). b12=0 in all records.
+b11 ∈ {0, 1} in all records. This uniquely constrains the layout — the open_ring
+u32 interpretation is wrong; correct layout is u16 LE fields.
+
+### 2. f0, f2, f4 are dynamically updating values — CONFIRMED
+
+Proven by comparison of original vs echo records (pfsm=128 records are written
+~4–11 ticks after the original, same pfsm state). The confirmed fields o3 and
+pfsm_state are stable (Δo3 ≤ ±2), but f0/f2/f4 differ substantially.
+
+### 3. f2 decay rate is pfsm-dependent — CONFIRMED (n=47 echo pairs)
+
+f2 ALWAYS decreases from original to echo (no exception found across all 47 pairs).
+The fraction retained after ~5 ticks depends strongly on pfsm state:
+
+| pfsm | n | mean f2 retained (orig→echo) | avg Δt |
+|------|---|------|---|
+| 3 | 14 | **2.6%** retained (97.4% lost) | 4.7 ticks |
+| 4 | 3  | **3.7%** retained (96.3% lost) | 5.7 ticks |
+| 5 | 19 | **11.4%** retained (88.6% lost) | 6.1 ticks |
+| 6 | 9  | **60.1%** retained (40.0% lost) | 5.1 ticks |
+
+f2 is nearly stable during pfsm=6 (deep sleep?) and collapses almost to zero
+during pfsm=3/4. This is the sharpest behavioural contrast found in any field.
+
+### 4. f4 direction is pfsm-dependent — CONFIRMED
+
+| pfsm | n | pos/neg Δ | mean Δf4 |
+|------|---|-----------|----------|
+| 3 | 14 | 1 pos / 13 neg | **−18766** |
+| 4 | 3  | 0 pos / 3 neg  | **−1822** |
+| 5 | 19 | 12 pos / 7 neg | **+1027** |
+| 6 | 9  | 7 pos / 2 neg  | **+19937** |
+
+f4 decreases in pfsm=3/4 (same direction as f2), is neutral in pfsm=5, and
+strongly INCREASES in pfsm=6. f4 and f2 thus show OPPOSITE dynamics in pfsm=6.
+
+Combined: during pfsm=6, f2 decays slowly (-40%/5s) while f4 grows rapidly
+(+20K in 5 ticks on average). During pfsm=3, both f2 and f4 collapse to near-
+zero rapidly. This anti-correlated behaviour between f2 and f4 in pfsm=6
+contrasts with their positive correlation in static snapshots (r=+0.485).
+
+### 5. Correlations (n=48 real records)
+
+| pair | r | note |
+|------|---|------|
+| f2 ↔ f4 | +0.485 | strongest pair — same signal at different scales? |
+| f2 ↔ o3 | +0.363 | when more time in current state, f2 is larger |
+| o3 ↔ pfsm | +0.314 | confirms pfsm=6 has longest per-state durations |
+| f0 ↔ anything | ≈0 | f0 is independent of all other fields |
+
+### 6. Structural ceiling
+
+- f0 has zero meaningful correlation with any other field — completely opaque.
+- Physical meaning of f2/f4 not confirmed. Candidates: EWMA of a biosignal
+  (short τ for pfsm=3/4, long τ for pfsm=6); or two complementary sleep-state
+  accumulators (time in deep vs. light sleep). The pfsm=6 f4 growth rate of
+  ~4K per tick rules out simple seconds-in-state at 1:1 tick rate.
+- f5 flag (4 occurrences: pfsm=6 o3=429, pfsm=6 o3=319, pfsm=3 o3=148,
+  pfsm=5 o3=33) — no clear predictor identified; not reliably linked to large o3.
+
+### 7. Negative results
+
+- f0+f2+f4 sum is NOT constant within or across sessions (one coincidental near-
+  constant pair found in session 8, ruled out as general pattern).
+- f2 and f4 are NOT simple cumulative time-in-state at 1:1 second rate.
+- open_ring's "ticks_in_deep_sleep/sleep/awake" field names remain unverified —
+  the u32 layout they assume is wrong; the semantic labels are still plausible
+  but cannot be confirmed without ground truth.
+
+*Logged 2026-06-27. Based on 48 unique real records and 47 echo pairs across
+all 26 pull files in data/raw_pulls/gen3_morning/.*
