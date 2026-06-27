@@ -38,6 +38,7 @@ sub-types. This supersedes the earlier partial roadmap.
       constants, NOT simple cumulative time-in-state. f0 uncorrelated with
       everything. f5 flag (4 occurrences) has no clear predictor identified.
       CEILING: physical meaning of f0/f2/f4 unconfirmed without ground truth.
+      STATUS: structure confirmed / meaning open — same ceiling as 0x6E/0x77.
 - [ ] 0x7E/0x7F real_steps_features — 64 pairs across 3 activity pulls.
       CONFIRMED (2026-06-27): invalid pairs (7F[3]=7F[4]=7F[7]=0) caused
       by Feature session restart (payloads 02010400 / 02030400), recovery
@@ -146,17 +147,24 @@ count differs. Every tag-level entry from the original inventory is
 represented above — nothing skipped.)
 
 ## Suggested next-session order (updated 2026-06-27)
-1. 0x7E/0x7F — needs ONE more experiment to break the ceiling: do a
-   timed 5–10 min walk, count steps or note Oura app step total for
-   that window, pull immediately. Correlate 7F[3] (the highest-variance
-   field, stdev 61.4) against known step count for that specific pair.
-   One clean data point would confirm or kill the step-count hypothesis.
-2. 0x61/0x09 — investigate remaining bytes (1-2, 4-12). open_ring u32
-   layout is wrong; treat as unsolved. offset-3 is already wired in.
-3. 0x6E and 0x77 — need a pull WITH SpO2 during activity to advance.
-   The 20260626 pull has motion but no SpO2 — still blocked on data.
-4. Tier 1 NOT STARTED: 0x53 (confirmed spec, zero packets), 0x76, 0x69,
-   0x6B. Tier 2 and 0x61 debug sub-types lower priority but tracked.
+Three decoders are now in the same "structure confirmed / meaning open"
+ceiling category, all blocked on ground-truth data rather than analysis:
+  - 0x7E/0x7F: needs timed step count to label 7F[3]/7F[4]/7F[7]
+  - 0x61/0x09: needs ground truth to identify f0/f2/f4 physical meaning
+  - 0x6E / 0x77: need activity pull WITH SpO2 present
+
+1. **Ground-truth data collection round** — all three can be unblocked in
+   a single deliberate session:
+   a. Wear a second tracker (watch, phone pedometer) during a walk, then
+      pull immediately → unlocks 0x7E/0x7F (7F[3] step-count hypothesis)
+      AND may provide SpO2 if ring activates SpO2 during activity →
+      unlocks 0x6E and 0x77 simultaneously.
+   b. Correlate 0x09 f2/f4 dynamics against known sleep stages from the
+      Oura app for the same night → unlocks 0x09 f2/f4 meaning.
+2. **Tier 1 NOT STARTED**: 0x53 (spec confirmed, zero packets captured),
+   0x76 (bedtime_period), 0x69 (temp_period), 0x6B (motion_period).
+   Low-hanging fruit if the right pull is collected.
+3. **Tier 2 and 0x61 debug sub-types** — tracked but lower priority.
 
 ## How to use this doc
 Check a box, move an item between sections, or add a note inline as
