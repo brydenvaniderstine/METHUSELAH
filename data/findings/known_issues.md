@@ -717,6 +717,83 @@ all 26 pull files in data/raw_pulls/gen3_morning/.*
 
 ---
 
+## 0x7E/0x7F real_steps_features — Session 3: 7F[11]/7F[12] analysis (2026-06-27)
+
+**Status:** Structural analysis complete. Energy-split hypothesis partially confirmed,
+energy-conservation sub-hypothesis falsified. Ceiling reached on existing data.
+
+### 1. Anti-correlation confirmed (n=96 valid pairs, all 26 pull files)
+
+r(7F[11], 7F[12]) = **−0.568** (was −0.539 at n=54; strengthens with more data).
+Both fields always populated (no zeros, ranges 44–149 and 47–185 respectively).
+
+### 2. Energy conservation falsified
+
+FFT-band complementarity hypothesis: "f11+f12 = constant (total spectral energy)."
+
+Observed: stdev(f11+f12) = **21.3** — essentially equal to stdev(f11) = 21.2.
+Sum NOT stabilized by the anti-correlation. This is exactly what the correlation
+structure predicts (σ²(sum) = σ²(f11) + σ²(f12) + 2cov = 449.4 + 580.8 − 580.6 = 449.6
+→ σ = 21.2). No additional constraint on the sum beyond what the correlation alone produces.
+
+Sum max = 255 observed only ONCE in 96 pairs (1.0%). Not a firmware ceiling.
+
+**Conclusion:** f11 and f12 are NOT complementary partitions of a fixed total.
+Simple "two bands summing to a constant energy" model is wrong.
+
+### 3. Diff(f11−f12) is the informative signal
+
+| Pair | r |
+|------|---|
+| diff ↔ 7F[4] | **+0.337** |
+| diff ↔ 7F[10] | **+0.293** |
+| diff ↔ 7F[3] | −0.255 |
+| diff ↔ 7F[8] | −0.270 |
+| sum ↔ anything | ≤±0.180 (noise) |
+
+The difference (f11−f12) tracks the step-output cluster (f4, f10) better than
+either f11 or f12 alone. Sum shows no meaningful correlation with any field.
+
+f12 > f11 in 65/96 pairs (67.7%), mean diff = −16.1. f12 is the dominant field
+on average, but when f11 wins (positive diff), step output fields are higher.
+
+### 4. 7F[8] — new position highlighted
+
+7F[8] clusters with f12: r(f11, 7F[8])=−0.213, r(f12, 7F[8])=+0.263.
+May be a third member of the "competing/suppressor" cluster alongside f12.
+
+### 5. Full per-field correlations (7F positions with |r|>0.15):
+
+| 7F pos | r(f11) | r(f12) | r(diff) | r(sum) |
+|--------|--------|--------|---------|--------|
+| 3 | −0.156 | +0.287 | −0.255 | +0.170 |
+| 4 | +0.249 | −0.342 | +0.337 | −0.139 |
+| 5 | −0.133 | +0.252 | −0.221 | +0.153 |
+| 8 | −0.213 | +0.263 | −0.270 | +0.085 |
+| 10| +0.187 | −0.323 | +0.293 | −0.180 |
+
+Pattern: f12 shares sign with 7F[3/5/8]; f11 opposes that cluster.
+The diff amplifies both directions.
+
+### 6. Interpretation hypothesis (not yet testable without ground truth)
+
+f11 = cadence-frequency band power (accelerometer FFT near step-rate, ~1–3 Hz)
+f12 = low-frequency / gravity-artifact band power
+
+Walking → periodic step motion → cadence band wins (f11 > f12, diff > 0, f4/f10 higher).
+Stationary or irregular → gravity/low-freq dominates (f12 > f11, diff < 0, step output suppressed).
+
+Anti-correlation arises because spectral mass at cadence frequency is not available
+at low frequency — they compete but their total is not conserved.
+
+**Testable during planned timed-walk session:** diff(f11−f12) should shift positive
+during walking vs. resting. This can be confirmed alongside the 7F[3] step-count
+hypothesis in the same single data-collection session.
+
+*Logged 2026-06-27. Based on 96 valid pairs from all 26 pull files.*
+
+---
+
 ## 0x53 wear_event — DECODER CONFIRMED 2026-06-27
 
 **Status:** DONE. Validated against 2 real packets (grep across all 26 pull files).

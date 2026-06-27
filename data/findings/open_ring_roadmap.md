@@ -52,8 +52,10 @@ sub-types. This supersedes the earlier partial roadmap.
       spans 1–2 windows. NOT timeout/fea-off (prior hypothesis revised).
       Strongest correlation: 7F[10] ↔ 7F[4] r=+0.526 — 7F[10] never hits
       zero, 7F[4] validity-flagged; same underlying signal at different
-      smoothing. 7F[11] ↔ 7F[12] r=−0.539 — complementary pair, likely
-      two frequency bands. 7E[4] ↔ 7F[6] r=+0.374 — tight cross-tag pair.
+      smoothing. 7F[11] ↔ 7F[12] r=−0.568 (n=96) — anti-correlated, energy
+      conservation FALSIFIED. diff(f11−f12) is the true signal: r=+0.337
+      with f4, r=+0.293 with f10. Hypothesis: f11=cadence-band power,
+      f12=low-freq/gravity artifact. 7E[4] ↔ 7F[6] r=+0.374 — tight cross-tag.
       7F[3] highest-variance field (stdev 61.4, range 7–230), primary step
       output candidate. u16 hypothesis falsified (7F[3]↔7F[4] r=−0.084,
       independent). CEILING: cannot label 7F[3]/7F[4]/7F[7] without
