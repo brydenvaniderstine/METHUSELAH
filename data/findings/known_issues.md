@@ -536,3 +536,33 @@ bytes across the two tags may form a related validity or count field.
 
 ---
 *Logged 2026-06-26. Based on 10 real pairs from gen3_pull_20260626_053013.*
+
+---
+
+## Pull classifier — FEATURE ADDED 2026-06-27
+
+**Status:** Implemented and tested.
+
+**What it does:**
+Classifies each pull as SLEEP WINDOW / ACTIVE WINDOW / MIXED WINDOW / UNCLEAR
+immediately after the event-type breakdown, before any decode sections.
+
+Sleep tags: 0x6A, 0x5D, 0x6F, 0x75
+Activity tags: 0x7E, 0x7F, or ≥3× 0x47 (motion events)
+
+Rules:
+- SLEEP WINDOW: sleep tags present, no activity tags
+- ACTIVE WINDOW: activity tags present, no sleep tags
+- MIXED WINDOW: both present
+- UNCLEAR: neither fires
+
+Also checks boot_ts gap against most recent prior pull file in
+data/raw_pulls/gen3_morning/; warns if gap >1800 ticks (~30 min),
+indicating a possible buffer rollover.
+
+**Test results (against real saved pulls):**
+- gen3_pull_20260627_080230.txt → ACTIVE WINDOW ✓
+- gen3_pull_20260627_080358.txt → ACTIVE WINDOW ✓
+- gen3_pull_20260625_052605.txt → SLEEP WINDOW ✓
+
+*Logged 2026-06-27.*

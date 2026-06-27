@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import asyncio, struct, time, sys
+import asyncio, struct, time, sys, re
+from pathlib import Path
 from bleak import BleakClient
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
@@ -225,6 +226,39 @@ async def main():
         print(f"\n=== PRIORITY EVENTS: {len(priority_events)} found ===")
         for p in priority_events:
             print(f"  [{p['tag_name']}] boot_ts={p['boot_ts']:>10}  payload={p['payload'].hex()}")
+
+        # --- PULL CLASSIFIER ---
+        SLEEP_TAGS = {0x6A, 0x5D, 0x6F, 0x75}
+        ACTIVITY_TAGS = {0x7E, 0x7F}
+        tag_set = set(p["tag"] for p in parsed)
+        tag_counts_all = Counter(p["tag"] for p in parsed)
+        has_sleep = bool(tag_set & SLEEP_TAGS)
+        has_activity = bool((tag_set & ACTIVITY_TAGS) or tag_counts_all.get(0x47, 0) >= 3)
+        if has_sleep and has_activity:
+            pull_class, pull_note = "MIXED WINDOW", "sleep and activity tags both present"
+        elif has_sleep:
+            pull_class, pull_note = "SLEEP WINDOW", "sleep tags present"
+        elif has_activity:
+            pull_class, pull_note = "ACTIVE WINDOW", "no sleep tags present"
+        else:
+            pull_class, pull_note = "UNCLEAR", "neither sleep nor activity tags"
+        print(f"\n=== PULL CLASSIFICATION: {pull_class} ({pull_note}) ===")
+
+        pull_dir = Path(__file__).parent.parent / "data" / "raw_pulls" / "gen3_morning"
+        prior_files = sorted(pull_dir.glob("gen3_pull_*.txt"))
+        if prior_files:
+            last_file = prior_files[-1]
+            last_boot_ts = None
+            with open(last_file) as _fh:
+                for _line in _fh:
+                    _m = re.search(r"boot_ts=(\d+)", _line)
+                    if _m:
+                        last_boot_ts = int(_m.group(1))
+            if last_boot_ts is not None:
+                gap = min(boot_tss) - last_boot_ts
+                if gap > 1800:
+                    print(f"  WARNING: boot_ts gap from {last_file.name} is {gap:,} ticks "
+                          f"(~{gap/60:.0f} min) — possible buffer rollover")
 
         print(f"\n=== SLEEP STATE DECODE (0x6a) ===")
         sleep_states = []
