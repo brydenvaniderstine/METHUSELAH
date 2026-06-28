@@ -22,26 +22,35 @@ Evidence:
   size — intentional firmware design. open_ring's `_catchup()` docstring explicitly
   calls this a "circular buffer."
 
-### 2. Event rates and data loss window
+### 2. Event rates and data loss window (CORRECTED 2026-06-28)
 
-Event rates measured from real pull data (255 events per pull):
+**The 1-tick/second assumption was wrong for activity mode.**
 
-| Context | s/event | Buffer time window |
-|---------|---------|-------------------|
-| SLEEP (SpO2, IBI, HRV, temp, debug) | ~10 s/event | ~42 min |
-| ACTIVE WAKE (step features, motion, temp, debug) | ~22–37 s/event | ~1.5–2.6 h |
+Measured from the 88-second pair (gen3_pull_20260627_080230 vs 080358, direct
+wall-clock gap 88 seconds):
+- 207 of 255 buffer slots were replaced in 88 seconds → **2.35 events/second during activity**
+- 255 / 2.35 = **108 seconds ≈ 1.8 minutes** to replace the entire buffer during walking
 
-During sleep the ring generates events rapidly (high sensor duty cycle), so the buffer
-covers only ~42 minutes of sleep data at any moment. As soon as activity starts after
-waking, wake events (at a slower per-event rate) progressively overwrite sleep events.
-After **~2.6 hours of active walking**, all 255 buffer slots contain post-wake events
-and all sleep data is permanently lost.
+Separately, the 22:31/22:34 sleep pair (206-second gap) shows **0 new events** — confirming
+sleep mode generates far fewer events than 1.24/s (buffer would NOT have turned over in 3.5 min).
 
-Confirmed data loss case (2026-06-28 morning pull, gen3_pull_20260628_074844.txt):
+| Context | event rate | Buffer time window |
+|---------|-----------|-------------------|
+| SLEEP (SpO2, IBI, HRV, temp, debug) | ≤1.2 ev/s, likely ~0.1 ev/s | ≥3.5 min, likely ~42 min |
+| ACTIVE WAKE (step features, motion, debug) | **~2.35 ev/s** | **~1.8 minutes** |
+
+The tick rate is also mode-dependent: during activity, the 88-second pair shows **77 ticks/second**
+(6,757 new ticks in 88 seconds). The previously-assumed 1 tick/second is only consistent with
+sleep-mode events, and cannot be assumed globally.
+
+**Corrected analysis of the 2026-06-28 missed-sleep pull (gen3_pull_20260628_074844.txt):**
 - 255 real events, all activity: Motion events, Real step features, Debug data, PPG amplitude
-- boot_ts span: 51,038,541 → 51,047,881 = 9,340 seconds = 2.6 hours post-wake
-- Zero sleep tags (0x6A, 0x5D, 0x6F, 0x75)
-- Same pattern confirmed across prior data-loss incidents (missed nap, 6 AM bathroom break)
+- boot_ts span: 51,038,541 → 51,047,881 = **9,340 ticks at 77 ticks/s = 121 seconds = 2.0 minutes** post-wake
+  (ORIGINAL CLAIM: "9,340 seconds = 2.6 hours" — WRONG, used 1 tick/second which is incorrect for activity mode)
+- Oldest event in the buffer: **~07:46 AM**, not "05:13 AM" as previously stated
+- User was active from 07:21 AM to 07:48 AM = 27 minutes of walking = **14.9× buffer cycles**
+- Sleep data was completely gone after the FIRST ~1.8 minutes of walking (~07:23 AM)
+- Zero sleep tags (0x6A, 0x5D, 0x6F, 0x75) — confirmed
 
 ### 3. Script request is NOT the problem
 
@@ -53,22 +62,32 @@ The script correctly sends `10 09 00000000 ff ff ff ff ff`:
 This retrieves the **full contents of the ring's buffer**. There is no request-side
 parameter that can reach further back — the data is already gone, overwritten in flash.
 
-### 4. Fix
+### 4. Fix (CORRECTED 2026-06-28)
 
-**The only fix is to pull sooner.** Specifically:
+**The only fix is to pull sooner. The required window is MUCH shorter than originally stated.**
 
-- Pull **within 1 hour of waking** to guarantee sleep data is still in the buffer.
-  At ~37 s/event during activity, 1 hour = ~97 events overwritten, 158 sleep events
-  still present. At ~10 s/event during sleep, the most recent ~25 minutes of sleep
-  are in the final 158 slots — sufficient for classifier tags.
-- **Hard upper limit: ~1.5–2.5 hours** post-wake before all sleep data is gone,
-  depending on activity intensity. Intense activity (faster event rate) shortens this.
-- Morning bathroom breaks or brief movement before pulling are fine if total active
-  time is under an hour.
+The correct timing constraint:
+- Pull **before any significant walking** — the buffer is completely replaced within
+  **~1.8 minutes of sustained activity** (2.35 events/second × 255 slots = 108 seconds).
+- "Within 1 hour of waking" is WRONG — by that point the buffer has cycled 33× at
+  activity rates. All sleep data is gone within 2 minutes of first movement.
+- Even lying still for 5 minutes is fine — sleep mode generates ≤1.24 events/second
+  (confirmed: buffer contents identical after 3.5 minutes of sleep-mode time). Staying
+  in bed after waking does NOT threaten the buffer.
+
+**The distinction that matters:**
+- LYING STILL (even 30 minutes): safe, sleep events don't fire quickly
+- WALKING even briefly (~2 minutes): fatal, sleep data permanently gone
+
+**What this means for the fix:**
+- Optimal: trigger pull automatically when the alarm fires, before any movement
+- Acceptable: pull while still in bed, before standing up
+- Risky: pull after a bathroom trip (walking even 30 seconds starts the replacement)
 
 **Alternative mitigation (not yet implemented):** A lightweight background pull
-scheduled 30 minutes after the alarm fires (before significant movement accumulates)
-would guarantee capture on days when the normal pull runs late.
+triggered by the alarm (before movement starts) would guarantee capture reliably.
+A scheduled "30 minutes post-alarm" pull is NOT sufficient — pull must be
+BEFORE first movement, not some time later.
 
 ### 5. The 0x11 parsing artifact
 
