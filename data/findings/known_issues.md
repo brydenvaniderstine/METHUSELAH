@@ -84,12 +84,41 @@ The correct timing constraint:
 - Acceptable: pull while still in bed, before standing up
 - Risky: pull after a bathroom trip (walking even 30 seconds starts the replacement)
 
-**Alternative mitigation (not yet implemented):** A lightweight background pull
-triggered by the alarm (before movement starts) would guarantee capture reliably.
-A scheduled "30 minutes post-alarm" pull is NOT sufficient — pull must be
-BEFORE first movement, not some time later.
+### 5. Automation investigated and explicitly rejected (2026-06-28)
 
-### 5. The 0x11 parsing artifact
+**Decision: do not automate for now. Revisit only after a clear decision on coexisting with vs. replacing the official Oura app.**
+
+**Why polling doesn't work:**
+A repeating-interval background pull (laptop-side, bleak) cannot reliably beat the ~108-second buffer replacement window. The math:
+
+- Each BLE pull takes ~10–20 seconds (scan → connect → auth → transfer → disconnect)
+- To catch a 108-second window reliably, the poll interval must be well under 108 seconds
+- At 30-second poll intervals: ~17–50% of elapsed time is spent in BLE connections with no margin
+- Even at 20-second intervals: if the user moves immediately after a poll, the next poll arrives ~18 seconds later and the buffer is already 40% replaced
+- Polling is fundamentally probabilistic against a 108-second window; no practical interval makes it reliable without being effectively continuous
+
+**Why near-continuous polling is also a non-starter:**
+- At 30-second intervals for an 8-hour sleep: ~960 BLE reconnections per night
+- BLE radio during active connection draws meaningfully more current than advertising-idle
+- Over weeks/months this noticeably shortens the ring's ~7-day battery life
+- Not worth the battery cost for still-unreliable capture
+
+**The only architecturally sound solution: persistent BLE streaming daemon**
+- The Oura phone app architecture (and open_ring's `flush_interval_s=20.0` parameter) uses a persistent BLE connection, not repeated reconnects
+- Events stream continuously and are written to disk as they arrive
+- No race condition against the buffer window — events are captured before they age out
+- But: significant engineering step from the current one-shot pull script (requires background daemon, reconnect logic, stateful event dedup, event streaming vs. one-shot history fetch)
+
+**Critical blocker: Oura app BLE conflict**
+- BLE peripherals (the ring) typically allow only ONE central connection at a time
+- If the official Oura app holds a BLE connection overnight for its own sleep tracking, a competing daemon cannot connect
+- Breaking Oura's BLE access would disable their own sleep tracking, which is currently the ground-truth source used for cross-validation
+- This conflict alone makes a daemon not worth building until there's a deliberate choice: coexist with Oura (by scheduling BLE access, or triggering after app disconnects) or replace Oura as the primary tracker
+
+**Accepted near-term solution: manual habit**
+Pull the ring before getting out of bed. The buffer is safe indefinitely while lying still (≤1.24 events/second, buffer not cycling), and destroyed within 2 minutes of walking. The habit is simple: phone alarm fires → grab phone → trigger pull → then get up. No code change needed. Revisit daemon architecture only if fidelity requirements grow beyond what the manual habit can deliver.
+
+### 6. The 0x11 parsing artifact
 
 Every pull file ends with `UNKNOWN (0x11)` at an anomalously high boot_ts value.
 This is the ring's `_HISTORY_FETCH_RESP` response frame (`11 08 FF 00 <last_ring_ts:4LE>`),
