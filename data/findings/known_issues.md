@@ -1,5 +1,88 @@
 # METHUSELAH // Known Issues — Gen3 Decoders
 
+## Gen3 ring flash buffer: 255-event circular FIFO — sleep data loss root cause (2026-06-28)
+
+**Status:** Root cause confirmed. Hardware constraint. No software fix.
+
+### 1. The constraint
+
+The ring maintains a **255-event circular flash buffer**. Every event fired by the
+firmware is written into this buffer; when full, the oldest entry is overwritten.
+When you connect and request history (`10 09 00000000 ff ff ff ff ff`), you receive
+the current contents of this buffer — at most 255 real events, no matter what
+start timestamp you request.
+
+Evidence:
+- All 27 saved pull files return exactly **255 real events** (plus one `UNKNOWN (0x11)`
+  frame = the ring's `_HISTORY_FETCH_RESP` response summary — not a real event).
+- This is consistent across pulls taken 37 seconds apart AND pulls taken 9+ hours apart.
+  If the buffer were larger and we were cap-limited, short-interval pulls would return
+  fewer than 255 events. They don't — 255 every time.
+- `max_events=0xFF=255` in our BLE request (`10 09` opcode) exactly matches the buffer
+  size — intentional firmware design. open_ring's `_catchup()` docstring explicitly
+  calls this a "circular buffer."
+
+### 2. Event rates and data loss window
+
+Event rates measured from real pull data (255 events per pull):
+
+| Context | s/event | Buffer time window |
+|---------|---------|-------------------|
+| SLEEP (SpO2, IBI, HRV, temp, debug) | ~10 s/event | ~42 min |
+| ACTIVE WAKE (step features, motion, temp, debug) | ~22–37 s/event | ~1.5–2.6 h |
+
+During sleep the ring generates events rapidly (high sensor duty cycle), so the buffer
+covers only ~42 minutes of sleep data at any moment. As soon as activity starts after
+waking, wake events (at a slower per-event rate) progressively overwrite sleep events.
+After **~2.6 hours of active walking**, all 255 buffer slots contain post-wake events
+and all sleep data is permanently lost.
+
+Confirmed data loss case (2026-06-28 morning pull, gen3_pull_20260628_074844.txt):
+- 255 real events, all activity: Motion events, Real step features, Debug data, PPG amplitude
+- boot_ts span: 51,038,541 → 51,047,881 = 9,340 seconds = 2.6 hours post-wake
+- Zero sleep tags (0x6A, 0x5D, 0x6F, 0x75)
+- Same pattern confirmed across prior data-loss incidents (missed nap, 6 AM bathroom break)
+
+### 3. Script request is NOT the problem
+
+The script correctly sends `10 09 00000000 ff ff ff ff ff`:
+- ts = 0x00000000 (from the very beginning)
+- max_events = 0xFF = 255 (the ring's own limit)
+- flags = 0xFFFFFFFF (all event types)
+
+This retrieves the **full contents of the ring's buffer**. There is no request-side
+parameter that can reach further back — the data is already gone, overwritten in flash.
+
+### 4. Fix
+
+**The only fix is to pull sooner.** Specifically:
+
+- Pull **within 1 hour of waking** to guarantee sleep data is still in the buffer.
+  At ~37 s/event during activity, 1 hour = ~97 events overwritten, 158 sleep events
+  still present. At ~10 s/event during sleep, the most recent ~25 minutes of sleep
+  are in the final 158 slots — sufficient for classifier tags.
+- **Hard upper limit: ~1.5–2.5 hours** post-wake before all sleep data is gone,
+  depending on activity intensity. Intense activity (faster event rate) shortens this.
+- Morning bathroom breaks or brief movement before pulling are fine if total active
+  time is under an hour.
+
+**Alternative mitigation (not yet implemented):** A lightweight background pull
+scheduled 30 minutes after the alarm fires (before significant movement accumulates)
+would guarantee capture on days when the normal pull runs late.
+
+### 5. The 0x11 parsing artifact
+
+Every pull file ends with `UNKNOWN (0x11)` at an anomalously high boot_ts value.
+This is the ring's `_HISTORY_FETCH_RESP` response frame (`11 08 FF 00 <last_ring_ts:4LE>`),
+which the script receives and saves as if it were a real event. Its "boot_ts" is
+actually the ring's last_ring_timestamp from the delivery summary. It doesn't affect
+data content but inflates the `newest_ts` calculation in per-file analysis. Harmless
+artifact — just exclude `UNKNOWN (0x11)` from span calculations.
+
+*Logged 2026-06-28. Based on analysis of all 27 pull files in data/raw_pulls/gen3_morning/.*
+
+---
+
 ## SpO2 event decoder (0x6f) — FIX INCONSISTENT ACROSS NIGHTS, NOT FULLY SOLVED
 
 **Status:** Fixed 2026-06-24. Flat offset of -6 applied to raw sample bytes.
