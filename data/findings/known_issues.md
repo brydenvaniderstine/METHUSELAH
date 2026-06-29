@@ -670,6 +670,50 @@ bytes across the two tags may form a related validity or count field.
 
 ---
 
+## 0x7E/0x7F real_steps_features — Timed walk attempt INCONCLUSIVE (2026-06-28)
+
+**Status:** Ground-truth experiment attempted but confounded. Not a failed hypothesis — retry with confound removed.
+
+### What happened
+
+10-minute walk, 1,273 steps (Apple Health), 1,163 steps (Oura app) — normal cross-device variance.
+Two baseline pulls before the walk: gen3_pull_20260628_201810, gen3_pull_20260628_201845.
+Two after-pulls: gen3_pull_20260628_203635 and gen3_pull_20260628_203908 (fresh terminal).
+
+Both after-pulls returned **identical data**, classified as SLEEP WINDOW by the pull classifier:
+- Zero 0x7E/0x7F step feature events
+- Zero motion events resembling walking
+- Only sleep-state, SpO2, temp data
+- Pull classifier correctly flagged a large boot_ts gap from the prior baseline pull
+
+**Ruled out:** Terminal window reuse as cause — the fresh-terminal repeat produced byte-identical results.
+
+### Hypothesis: Oura app is a competing BLE consumer
+
+The most likely explanation is that the official Oura app held its own persistent BLE connection during and after the walk, consumed the step-feature events from the 255-event circular buffer before our script connected, and left only the older sleep-state/SpO2 data behind.
+
+This is a **different failure mode** from the morning sleep-loss problem:
+- Sleep-loss failure: NEW activity events overwrite OLD sleep events (buffer cycles forward)
+- This failure: a competing consumer (Oura app) drains the buffer before our script connects — the walk data was real and captured by Oura's tracking, but already gone from the ring's buffer when we read it
+
+This is consistent with the BLE conflict already documented in the automation section above: Oura app likely maintains a persistent BLE connection for its own tracking, and BLE peripherals typically allow only one central connection at a time. The ring may also proactively push events to its primary connected central, resetting the buffer state our script sees.
+
+**This is INCONCLUSIVE, not a failed hypothesis.** The 7F[3]-as-step-count and diff(f11−f12) direction hypotheses are not disproven — the experiment simply didn't reach the ring's buffer before the Oura app did.
+
+### Retry plan (2026-06-29)
+
+Before the walk:
+1. Force-close the Oura app (fully killed, not just backgrounded)
+2. Disable Bluetooth on the phone OR put phone in airplane mode
+3. Walk 10 minutes with Apple Health or Apple Watch counting steps
+4. Immediately after stopping: run pull script before re-enabling phone BT
+
+This removes the competing-consumer confound. If the after-pull returns step features with phone BT disabled but not with it enabled, the Oura app BLE conflict is confirmed as the cause.
+
+*Logged 2026-06-28. Experiment inconclusive — suspected competing-consumer confound, controlled retry planned for 2026-06-29.*
+
+---
+
 ## Pull classifier — FEATURE ADDED 2026-06-27
 
 **Status:** Implemented and tested.
