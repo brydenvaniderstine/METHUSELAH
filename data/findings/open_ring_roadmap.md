@@ -121,8 +121,21 @@ sub-types. This supersedes the earlier partial roadmap.
       f0 gain/drive interpretation needs optical register access.
 - [ ] 0x50 activity_info_event — 11 packets. Has decoder (activity_byte_0 +
       trailing). Activity enum for byte_0 not confirmed.
-- [ ] 0x5B ble_connection_ind — 46 packets. Has decoder (6 u8 fields). Semantics
-      not confirmed.
+- [ ] 0x5B ble_connection_ind — PARTIAL DECODE (2026-06-30). 50 packets across
+      pulls. Open_ring decoder reads isolated u8s at offsets 0,1,6,7,8,9 — wrong.
+      Actual structure: byte[0] = subtype ∈ {2,3,4,5}; each subtype is a distinct
+      fixed-size record. Subtypes 2/4/5 always fire as a consecutive trio (1 tick
+      apart) on every BLE connection event; subtype 3 logs the peer MAC separately.
+      Sub=3: bytes[1]=addr_type (2=random-resolvable, 0=public), bytes[2:8]=6-byte
+      BLE MAC address. 7 unique MACs across all pulls (phone rotates random address).
+      Sub=4: u16_le(p[1:3])=u16_le(p[3:5]) always (min=max=fixed interval).
+      207×1.25ms=258.75ms (sleep/low-power mode); 27×1.25ms=33.75ms (active/app-open
+      mode). BLE spec confirmed — no firmware needed for these two fields.
+      Sub=2: b[7]∈{14,16,24,30} = negotiated connection interval (×1.25ms);
+      b[10]=8–180 = likely RSSI or packet error metric; b[2]∈{0,1,2,3} = reconnect
+      count within session.
+      Sub=5: 4×u16_le at offsets 1,5,7,9 — ranges 0–923 — likely TX/RX packet
+      counts or error counters; exact labels need firmware.
 - [ ] 0x5E selftest_event — 0 packets. Gen3 may not emit or very rare.
 - [ ] 0x6C feature_session — 48 packets. PARTIAL DECODE (2026-06-29). b0=session_class
       confirmed by ASCII debug-event adjacency: b0=0x02=GREEN_IBI_SESSION (activity),

@@ -1754,3 +1754,81 @@ scale and saturation behavior, not in what they're measuring.
   epoch count of motion threshold crossings or excess-above-baseline integral
 
 *Logged 2026-06-30.*
+
+---
+
+## 0x5B ble_connection_ind — PARTIAL DECODE (2026-06-30)
+
+**50 packets across pulls.** Open_ring decoder reads isolated u8 fields at offsets
+0,1,6,7,8,9 and discards the rest — incorrect. Actual structure: byte[0] is a subtype
+field ∈ {2, 3, 4, 5}, each subtype being a distinct fixed-length record.
+
+### Subtype structure
+
+**Subtypes 2/4/5 always fire as a consecutive trio** (timestamps 1 tick apart) on every
+BLE connection event. Subtype 3 logs the peer device MAC address and fires ~100–300 ticks
+after the connection trio, once address resolution completes.
+
+#### Subtype 2 — Connection event summary (12 bytes)
+```
+b[0] = 0x02 (subtype)
+b[1] = 0x00 (constant)
+b[2] ∈ {0,1,2,3} — reconnect count within session
+b[3] = 0x00 (constant)
+b[4] ∈ {0,16,81,149} — unknown parameter or event type
+b[5] ∈ {0,1} — binary flag
+b[6] ∈ {8,19} — feature flag or mode byte
+b[7] ∈ {14,16,24,30} — negotiated BLE connection interval (× 1.25ms = 17.5/20/30/37.5ms)
+b[8] = 0x00 (constant)
+b[9] ∈ {0,1,4} — small enum, possibly connection role
+b[10]: 8–180 — variable; likely RSSI or packet error rate
+b[11] ∈ {0,5,8,9,11} — small values; semantics unresolved
+```
+
+#### Subtype 3 — Peer device BLE address (10 bytes)
+```
+b[0] = 0x03 (subtype)
+b[1] = addr_type: 2=Random Resolvable Private Address (RRPA), 0=Public
+b[2:8] = 6-byte BLE MAC address (little-endian, standard BLE order)
+b[8:10] = 0x0000 (padding)
+```
+7 unique MACs observed across all pulls. Phone rotates its RRPA regularly — MACs that
+repeat within a session are the same device reconnecting. The one addr_type=0 (public)
+appearance may be a different device or a static test address.
+
+#### Subtype 4 — Connection parameters (13 bytes)
+```
+b[0] = 0x04 (subtype)
+u16_le(b[1:3]) = connection_interval_min (always = max → fixed interval)
+u16_le(b[3:5]) = connection_interval_max
+b[5]: 0–222 — variable; likely RSSI or current link quality
+b[6] ∈ {0,19} — flag, meaning unresolved
+b[7:9] = 0x0000 (constant)
+b[9]: 0–110 — variable metric
+b[10:13] = 0x000000 (constant)
+```
+**Connection interval values (BLE spec confirmed, no firmware needed):**
+- 207 × 1.25ms = **258.75ms** — ring's sleep/low-power BLE mode
+- 27 × 1.25ms = **33.75ms** — active/app-open mode (faster data, more power)
+
+min=max always → ring always negotiates a fixed interval, not a range.
+
+#### Subtype 5 — Link statistics (11 bytes)
+```
+b[0] = 0x05 (subtype)
+u16_le(b[1:3]): 28–923 — high-variance count (TX packets? connection events?)
+b[3:5] = 0x0000 (constant)
+u16_le(b[5:7]): 0–107 — lower-range count
+b[6] = 0x00 (constant, already included in u16 above)
+u16_le(b[7:9]): 0–602 — wide-range count
+u16_le(b[9:11]): 3–892 — wide-range count
+```
+Four u16 counters. Likely TX packets, RX packets, TX errors, RX errors or similar link
+statistics accumulated since last connection. Exact field labels need firmware.
+
+### Ceiling
+- Sub=2 fields b[4], b[5], b[9], b[11]: semantics unresolved
+- Sub=5 four u16 counters: TX/RX/error hypothesis unconfirmed without firmware or
+  simultaneous packet sniffer capture
+
+*Logged 2026-06-30.*
