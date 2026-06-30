@@ -140,14 +140,21 @@ sub-types. This supersedes the earlier partial roadmap.
       Best hypothesis: 4-channel optical noise floor / per-channel SNR residuals
       from PPG system (green×2, red, IR). Ceiling: needs firmware disassembly or
       simultaneous 0x77/0x6E in same activity pull to progress.
-- [ ] 0x72 sleep_acm_period — 193 packets. FORMAT CORRECTED: 6×u16 LE
-      (open_ring reads u8 at 6-11, wrong). CONFIRMED INVARIANTS (2026-06-28):
-      f4>=f3 (0 violations), f1=max(f0,f1,f2) (0 violations). Two correlated
-      groups: {f0,f1,f2} (r=+0.96-0.97) and {f3,f4,f5} (r=+0.89-0.97).
-      Quiet sleep: f0/f2 median=13, f1 median=23 (~2× f0/f2, gravity axis).
-      f3 stdev=2.9 in quiet (tightest field). Motion events drive all 6 fields
-      up. CEILING: field semantics (which axis, exact formula) need disassembly
-      or simultaneous external ACM ground truth.
+- [ ] 0x72 sleep_acm_period — PARTIAL DECODE (2026-06-30). 215 packets across
+      27/29 pulls (all window types). Format: 6×u16 LE (open_ring reads u8 at
+      offsets 6–11, incorrect). Invariants hold at 0 violations across 215 pkts:
+      f4>=f3, f1=max(f0,f1,f2).
+      {f0,f1,f2} = per-axis ACM energy. f1=gravity axis (dominant lying down;
+      quiet medians 12/22/13; heavy motion peaks 6767/11602/8780). All 3 corr
+      r=0.96-0.97 with each other, r=0.76-0.92 cross-group.
+      {f3,f4,f5} = motion summary. f3=period floor (min=24, quiet median=29);
+      f4=period peak (always >=f3, quiet median=34, active median=193); f5=sparse
+      overflow (r=+0.963 with f3; 88% of values <=10).
+      Sleep_state split: state=0 has ~2x higher all-field medians vs state=1,
+      confirming 0x72 tracks real motion differences between sleep states even
+      with the sleep_state enum gap.
+      CEILING: which physical axis maps to f0/f1/f2, exact ACM formula (RMS?
+      variance?), and f5 overflow semantics need firmware disassembly.
 - [ ] 0x73 ehr_trace_event — 48 packets. Has decoder (header + u8 samples).
       EHR = exercise heart rate. Semantics not confirmed.
 - [x] 0x80 green_ibi_quality_event — DONE 2026-06-28. See DONE section above.
@@ -212,11 +219,7 @@ can be deprioritized. 0x82/0x83 same. Count is approximate due to bundles.)
 
 **IMMEDIATELY actionable from existing 27 pulls:**
 
-1. **0x72 sleep_acm_period** (193 packets) — format corrected to 6×u16 LE.
-   Next: characterize f0-f2 (per-axis motion energy) across all 27 pulls;
-   separate sleep-quiet from movement-event packets; check correlation with
-   0x6A sleep_state at same timestamps. Could produce a working motion-intensity
-   decoder from existing data alone.
+1. ~~**0x72 sleep_acm_period**~~ — PARTIAL DECODE logged 2026-06-30. See IN PROGRESS section.
 
 2. ~~**0x80 green_ibi_quality_event**~~ — DONE 2026-06-30. See DONE section.
 

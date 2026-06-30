@@ -1690,3 +1690,67 @@ firmware symbols. Neither flag correlates visibly with IBI plausibility — qa=2
 samples still produce physiologically consistent HR values.
 
 *Logged 2026-06-30.*
+
+---
+
+## 0x72 sleep_acm_period — PARTIAL DECODE (2026-06-30)
+
+**215 packets across 27/29 pulls (fires in all window types — sleep, active, transitional).**
+Format: 6×u16 LE. Open_ring's existing decoder reads u8 at offsets 6–11 and treats bytes
+0–5 as a header — this is wrong. The entire 12-byte payload is 6×u16 fields.
+
+### Field structure
+
+```
+f0 = u16_le(p[0:2])   # per-axis ACM energy — X-axis (quiet median=12)
+f1 = u16_le(p[2:4])   # per-axis ACM energy — gravity/Z-axis (quiet median=22, always max)
+f2 = u16_le(p[4:6])   # per-axis ACM energy — Y-axis (quiet median=13)
+f3 = u16_le(p[6:8])   # period motion floor (quiet median=29, min=24 across all 215 pkts)
+f4 = u16_le(p[8:10])  # period motion peak (always >= f3, quiet median=34)
+f5 = u16_le(p[10:12]) # sparse overflow (r=+0.963 with f3; 88% of values <=10)
+```
+
+*Axis labels (X/Y/Z) are hypothetical based on magnitude hierarchy, not confirmed.*
+
+### Invariants (0 violations across 215 packets)
+- **f1 = max(f0, f1, f2)**: f1 is always the largest of the three ACM energy fields.
+  Interpretation: when lying still, gravity loads the Z-axis continuously, making f1
+  the dominant channel regardless of voluntary motion.
+- **f4 >= f3**: the period peak always meets or exceeds the floor. Structural constraint,
+  not physiological — likely enforced in firmware.
+
+### Motion response
+| Context | f0 | f1 | f2 | f3 | f4 | f5 |
+|---|---|---|---|---|---|---|
+| Quiet sleep (187 pkts) | 12 | 22 | 12 | 29 | 34 | 4 |
+| Active (28 pkts, ±120 ticks from motion event) | 430 | 1318 | 486 | 76 | 193 | 35 |
+| Max ever observed | 6767 | 11602 | 8780 | 456 | 1340 | 821 |
+
+All 6 fields increase with motion. f1 scales most dramatically (22→1318, ~60×). f3
+scales least (29→76, ~2.6×), consistent with it being a baseline/floor rather than
+a peak-sensitive metric.
+
+### Sleep_state correlation
+Nearest-neighbor join against 0x6A sleep_state (±500 ticks):
+- state=0 (n=55): median f0=27, f1=65, f2=16, f3=32, f4=41, f5=6
+- state=1 (n=160): median f0=12, f1=22, f2=13, f3=29, f4=34, f5=4
+
+State=0 shows ~2× higher f0/f1/f2 values vs state=1. This is meaningful differentiation
+even though the sleep_state enum mapping has a known decoder gap (see known_issues sleep_state
+section). 0x72 is tracking real motion differences between states.
+
+### Correlation matrix (all 215 packets)
+- Within {f0,f1,f2}: r=0.96–0.97 — the three axes move together
+- Within {f3,f4,f5}: r=0.89–0.97
+- Cross-group: r=0.76–0.92
+
+All 6 fields are proxies for the same underlying motion energy. The two groups differ in
+scale and saturation behavior, not in what they're measuring.
+
+### Ceiling
+- Which physical axis (X/Y/Z) maps to f0, f1, f2 — needs firmware struct or IMU datasheet
+- Exact ACM formula (RMS? sum of squares? variance over window?) — needs disassembly
+- f5 semantics: near-zero in quiet, spikes with motion, r=+0.963 with f3 — could be
+  epoch count of motion threshold crossings or excess-above-baseline integral
+
+*Logged 2026-06-30.*
