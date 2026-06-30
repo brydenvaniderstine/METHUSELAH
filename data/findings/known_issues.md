@@ -1914,3 +1914,68 @@ becomes active. This is the handoff mechanism from DHR to CVA optical mode.
 | 0x0d | CVA | confirmed |
 
 *Logged 2026-06-30.*
+
+---
+
+## 0x77 spo2_dc_event — structural ceiling confirmed (2026-06-30)
+
+**1352 packets across pulls. 870 (64%) are 14-byte form; remainder are 2–13 bytes.**
+Open_ring reads only b[0] ("channel_index") and drops the rest. Structural analysis
+extended with full correlation matrix across all 870 14-byte packets (n=1352 total).
+
+### 14-byte format (confirmed structure)
+```
+b[0]    = optical channel identifier; alternates L/H bands at 90.2% rate
+          L-band: 16–107; H-band: 146–222
+          most common consecutive delta = 128 (the band separation)
+b[1:14] = 13 sequential i8 samples of one optical channel
+          means -5.5 to +9.3 (centered near zero), SD ~32–43, full ±127 range used
+```
+
+### Key structural findings
+
+**b[0] alternation:** 90.2% of consecutive 14-byte packet pairs switch bands
+(L→H or H→L). The remaining 9.8% are same-band pairs — likely at session boundaries
+or when the buffer wraps. This is a two-wavelength interleaved sampling scheme.
+
+**b[0] vs SpO2 correlation:** r=-0.033 (L-band) and r=+0.011 (H-band) against
+nearest 0x6F SpO2 value within ±50 ticks (n=556 pairs). Near-zero — b[0] identifies
+the channel, not the saturation level.
+
+**b[1:14] diagonal correlation matrix (i8):**
+Adjacent bytes are correlated; correlation decays with lag distance:
+- Lag-1 pairs: r=0.24–0.54 (mean ~0.44)
+- Lag-2 pairs: r=0.37–0.52
+- Lag-6 pairs: r=0.08–0.21
+- Lag-12: r≈−0.03 (decorrelated)
+
+This diagonal band structure is the signature of a **time-series of 13 sequential
+samples of a slowly varying optical signal** — not 13 independent fields (prior
+characterization was wrong). Each packet captures 13 consecutive DC-level measurements
+for one optical channel.
+
+### Physical interpretation (hypothesis)
+The ring uses two optical wavelengths for SpO2 (classically red ~660nm and IR ~880nm).
+Each 14-byte packet delivers 13 sequential samples of one channel's optical signal.
+L-band and H-band packets interleave to give two parallel DC-level streams. SpO2 is
+then computed from the ratio of AC-to-DC across both wavelengths per cardiac cycle.
+
+The i8 samples centered near zero suggest the DC baseline has been subtracted (AC
+coupling), with b[0] encoding either the DC reference level or the channel select.
+The SD of ~35 is too large for pure AC-coupled PPG deltas — more likely raw samples
+with the mean close to zero after uint8→i8 reinterpretation.
+
+### Falsified hypotheses (complete list)
+- "channel_index" (0–255 range): falsified — b[0] is a channel value, not an index
+- red/IR DC-level split via mean difference: falsified — no mean difference in i8 between L/H
+- i16 pairing of adjacent bytes: falsified — stdev explodes
+- b[1:14] independent fields: falsified — diagonal correlation proves time-series
+- b[0] encodes SpO2 amplitude: falsified — r≈0 vs 0x6F
+
+### Ceiling
+- Which band (L=16–107 vs H=146–222) corresponds to red (660nm) vs IR (880nm)
+- Whether i8 values are raw samples or delta-encoded from b[0] as reference
+- Mapping b[0] value within each band to a physical quantity (LED current? gain?)
+- Needs activity pull with active SpO2 measurement for high-variance cross-validation
+
+*Logged 2026-06-30.*

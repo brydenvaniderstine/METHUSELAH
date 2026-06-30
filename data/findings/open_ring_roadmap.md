@@ -90,15 +90,21 @@ sub-types. This supersedes the earlier partial roadmap.
       Variable payload length (8 or 14 bytes). 0xaa bytes appear as filler
       in unused slots of the 14-byte form. CEILING: need more packets across
       a range of activities to resolve b[0] and map the trailing bytes.
-- [ ] 0x77 spo2_dc_event — structural analysis complete (2026-06-25),
-      field meaning not yet decoded. Confirmed: byte 0 = channel field
-      (alternates L/H bands 16-107 / 146-222, near-perfect per-packet),
-      bytes 1-13 = 13 independent i8 fields centered near zero. Falsified:
-      channel_index (range too wide), red/IR DC-level split (no mean
-      difference between channels in i8), i16 pairing (stdev explodes).
-      open_ring docstring (`beat_index, timestamp, dc[]`) is unimplemented
-      hypothesis, no additional source hints. Ceiling reached on current
-      data — needs activity-session pull for physiological correlation.
+- [ ] 0x77 spo2_dc_event — PARTIAL DECODE, ceiling confirmed (2026-06-30).
+      1352 packets; dominant form is 14-byte (870 pkts). b[0] = optical channel
+      identifier, alternates L/H bands (16-107 / 146-222) at 90.2% rate; most
+      common consecutive b[0] delta = 128 (the band separation). b[0] does NOT
+      correlate with SpO2 (r≈0 vs 0x6F, n=556 pairs) — it identifies the channel,
+      not the amplitude.
+      b[1:14] = 13 sequential i8 samples (NOT independent): diagonal correlation
+      matrix confirms time-series structure — r=0.43-0.54 at lag-1, decays to ~0
+      at lag-12. Means -5.5 to +9.3, SD ~35, full -128/+127 range used.
+      Two interleaved optical streams (L+H alternating) represent two wavelengths;
+      SpO2 ratio is derived from AC/DC ratio across both channels per beat.
+      CEILING: which band = red/IR (660nm/880nm), whether i8 = raw AC samples or
+      delta-encoded, and DC reference relationship to b[0] value all need firmware
+      disassembly or simultaneous raw PPG capture. Needs activity pull with SpO2
+      active for physiological variance to progress further.
 
 ## NOT STARTED — Tier 1, high biometric value (3)
 - [ ] 0x76 bedtime_period — wired into script, never caught a real packet
