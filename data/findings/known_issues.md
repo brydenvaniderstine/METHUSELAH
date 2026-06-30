@@ -1638,3 +1638,55 @@ event in the pre-bed pull? The ts=52650969 event at pfsm=0 has no preceding 128.
 the initial state on cold start, not a real FSM transition, so no epoch marker is emitted.
 
 *Logged 2026-06-30.*
+
+---
+
+## 0x80 green_ibi_quality_event — VALIDATED (2026-06-30)
+
+**Status: DECODER CONFIRMED.** 361 packets across 29 pulls (9 pulls have data; 20 have
+none by design — session-gated).
+
+### Format (confirmed)
+```
+payload: N × 2 bytes, N = floor(len/2), always even (14 bytes = 7 samples in 345/361 pkts)
+  b_low  = payload[2i]
+  b_high = payload[2i+1]
+  IBI_ms       = (b_low << 3) | (b_high & 0x07)   ← 11-bit unsigned
+  quality_a    = (b_high >> 3) & 0x03              ← 2-bit
+  quality_b    = (b_high >> 5) & 0x07              ← 3-bit
+  HR_bpm       = 60000 / IBI_ms
+```
+
+### Cross-validation against 0x6A avg_hr (3 pulls)
+| Pull | 0x80→HR | 0x6A HR | Delta |
+|---|---|---|---|
+| gen3_pull_20260621_205421 | 69.6 bpm | 68.0 bpm | +1.6 |
+| gen3_pull_20260626_053013 | 77.4 bpm | 77.5 bpm | **−0.1** |
+| gen3_pull_20260629_221420 | 86.4 bpm | 85.2 bpm | +1.3 |
+
+Mean delta +0.9bpm. Agreement is within measurement noise — decoder validated.
+
+### Sentinel value
+IBI=2000ms appears exactly 60 times (2.4% of 2476 samples). All other near-2000
+values (6 samples: 1804–1997ms) appear once each and are likely genuine slow-HR
+measurements. 2000ms = firmware "no beat detected" or rate too slow to measure.
+The 11-bit maximum is 2047ms; 2000ms is a chosen sentinel, not a rollover.
+Exclude IBI=2000 when computing HR means.
+
+### Session gating
+0x80 events only appear when the GREEN_IBI session is active. The decoder source
+notes the parser reads `RingEventParser::session()` flags at offsets 0x8/0x20 before
+emitting. 20/29 pulls have zero 0x80 events — this is expected behavior, not a gap.
+Present in sleep, transitional, and active windows wherever the session runs.
+
+### Quality flags (global distribution)
+- quality_a=0: 20 (0.8%) — rare, possibly exceptional quality
+- quality_a=1: 1610 (65%) — dominant, normal mode
+- quality_a=2: 488 (20%)
+- quality_a=3: 358 (14%) — degraded signal
+
+quality_b: 0=77%, 1–7=23% (decreasing frequency). Exact semantics unresolved without
+firmware symbols. Neither flag correlates visibly with IBI plausibility — qa=2/3
+samples still produce physiologically consistent HR values.
+
+*Logged 2026-06-30.*

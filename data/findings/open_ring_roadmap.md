@@ -28,12 +28,17 @@ sub-types. This supersedes the earlier partial roadmap.
       cross-check with 0x75 at ts=40728926/40728928 (2-tick gap, values
       match to within 0.06°C). Same formula as 0x75; 0x69 appears to be
       a single-value period average of the same skin-temp sensor.
-- [x] 0x80 green_ibi_quality_event — CONFIRMED 2026-06-28. Format:
-      N×(b_low,b_high) pairs → 11-bit IBI in ms + quality_a(2b) + quality_b(3b).
-      1,681 physiological samples (400-1500ms), mean 779ms / 80bpm, 4.3% artifact
-      rate. Activity-only (0 sleep-context pulls contain this tag — green LED
-      activates for activity HR, not sleep). quality_b=0 on 80% = clean signal;
-      higher qb flags quality issues. Roadmap was wrong about "raw-bytes-only".
+- [x] 0x80 green_ibi_quality_event — VALIDATED 2026-06-30. Format:
+      N×(b_low,b_high) pairs (payload always even; 345/361 pkts are 14 bytes = 7
+      samples). 11-bit IBI: (b_low<<3)|(b_high&0x07). quality_a: (b_high>>3)&0x03.
+      quality_b: (b_high>>5)&0x07. HR = 60000/IBI_ms.
+      Cross-validated against 0x6A avg_hr on 3 pulls: delta −0.1 to +1.6bpm
+      (mean +0.9bpm) — essentially perfect agreement. IBI=2000ms is a sentinel
+      (60 exact hits = "no beat detected"; 11-bit max is 2047). Session-gated:
+      only fires when GREEN_IBI session active — present in 9/29 pulls, absent
+      in others by design (not a gap). quality_a=1 dominant (65%); qa=0/2/3
+      semantics unresolved. NOT activity-only — fires in sleep, transitional,
+      and active windows wherever the GREEN_IBI session is running.
 
 ## IN PROGRESS — real RE work started, not yet solved (5)
 - [ ] 0x61/0x09 _dd_sleep_statistics — partial decode confirmed. Original
@@ -213,20 +218,12 @@ can be deprioritized. 0x82/0x83 same. Count is approximate due to bundles.)
    0x6A sleep_state at same timestamps. Could produce a working motion-intensity
    decoder from existing data alone.
 
-2. **0x80 green_ibi_quality_event** (257 packets) — real decoder confirmed.
-   Next: run the decoder across all 257 packets; check whether sleep-context
-   packets give IBI in 800-1200ms range (HR 50-75bpm) as expected. If yes,
-   this tag is essentially done.
+2. ~~**0x80 green_ibi_quality_event**~~ — DONE 2026-06-30. See DONE section.
 
-3. **0x6D MEAs quality event** (23 packets) — structural hypothesis (4×i24).
-   Next: correlate f0-f3 against same-window 0x6F SpO2 or 0x47 motion data
-   to test the "quality/penalty metric" hypothesis. Small n (23) may not
-   support correlation, but worth checking.
-
-4. **0x6B motion_period** — collect more packets by capturing pull during
+3. **0x6B motion_period** — collect more packets by capturing pull during
    deliberate motion (sit→walk→sit transitions). Only 4 packets currently.
 
-5. **0x76 bedtime_period** — has never fired. Not actionable from existing data.
+4. **0x76 bedtime_period** — has never fired. Not actionable from existing data.
 
 ## Gen4 Ground Truth Reference (added 2026-06-30)
 
