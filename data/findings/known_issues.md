@@ -1832,3 +1832,85 @@ statistics accumulated since last connection. Exact field labels need firmware.
   simultaneous packet sniffer capture
 
 *Logged 2026-06-30.*
+
+---
+
+## 0x50 activity_info_event — PARTIAL DECODE (2026-06-30)
+
+**13 packets across pulls.** Open_ring decoder only reads b[0] and calls the rest
+"trailing_hex" — the firmware uses a loop to read the trailing bytes, so the
+auto-extractor missed them.
+
+### Format
+```
+b[0]  = activity class enum ∈ {0, 21, 23, 60, 97, 198}
+b[1]–b[13] = 13-sample per-epoch intensity array (firmware loop-read)
+             (14-byte form only; shorter packets have fewer samples)
+```
+
+### b[0] activity class
+| Value | Context | Intensity |
+|---|---|---|
+| 0 (0x00) | Sedentary/rest — surrounds SPO2, Sleep ACM, Temp events; no Motion event | None |
+| 21 (0x15) | Light activity — Motion event at t+1 | Light |
+| 23 (0x17) | Light activity — Motion event at t+1 | Light |
+| 60 (0x3c) | Moderate activity — Motion event at t+1 | Moderate |
+| 97 (0x61) | Vigorous activity — Motion event at t+1 | Vigorous |
+| 198 (0xc6) | Intense activity — Motion event at t+1 | Intense |
+
+Non-zero b[0] ALWAYS co-occurs with a Motion event at t+1. b[0]=0 appears in sleep
+and rest contexts with SPO2 and Sleep ACM events nearby, no accompanying motion.
+
+### Trailing intensity array
+Values scale directly with b[0] activity class:
+- Sedentary (b[0]=0): values 9–12, tight clustering
+- Light (b[0]=21/23): values 12–21, moderate spread
+- Vigorous (b[0]=97): peaks to 32
+- Intense (b[0]=198): peaks to 91
+
+**MET×8 hypothesis:** 9/8=1.1 MET (sedentary), 12/8=1.5, 21/8=2.6, 32/8=4.0 (moderate),
+91/8=11.4 MET (vigorous running). Plausible but unconfirmed without simultaneous Gen4
+Average MET cross-validation. The 13-sample array likely represents ~13 minutes of
+per-minute activity intensity readings leading up to the event.
+
+### Ceiling
+- Exact enum labels for b[0] values (Oura internally uses specific activity class names)
+- MET×8 encoding unconfirmed — need simultaneous Gen4 Average MET field for same window
+- Short-packet variants (3, 7, 10 bytes) appear to have different structure
+
+*Logged 2026-06-30.*
+
+---
+
+## 0x6C feature_session — b1 direction map extended (2026-06-30)
+
+**Update to prior partial decode (2026-06-29).** b1 direction field now fully mapped
+via ASCII debug event adjacency across all 56 packets.
+
+### b1 complete mapping
+| Value | Meaning | ASCII context |
+|---|---|---|
+| 1 | START | Preceded by `DHR_state:4`, followed by `DHR_state:2` |
+| 2 | PAUSE/TRANSITION | GREEN_IBI only; fires when EHR session interrupts; co-occurs with EHR_BOUNDARY (b0=0x0b) packet at same timestamp |
+| 3 | STOP | Followed by `AFs;...` aggregate output or `CVA_state:0` |
+| 9 | EHR_BOUNDARY PRE-ANNOUNCE | b0=0x0b only; fires just before `EHRst;1;0;1` (EHR about to start) |
+| 10 | EHR_BOUNDARY CONFIRMED | b0=0x0b only; fires just after `EHRst;1;0;1` (EHR now active, GREEN_IBI confirmed paused) |
+
+### b0=8 confirmed: EHR_INHIBIT session
+b0=8 always co-occurs with `pp_rt_start` at t-2 and `EHR_INH;9` at t-1, followed by
+`CVA_state;1` at t+6–7. Interpretation: when CVA needs exclusive optical access, the
+ring emits a pp_rt_start (PPG real-time start), then inhibits EHR (EHR_INH = EHR
+inhibited, priority 9), then logs b0=8 b1=1 (EHR_INHIBIT session START), and CVA
+becomes active. This is the handoff mechanism from DHR to CVA optical mode.
+
+### Updated b0 session class map
+| b0 | Session | Status |
+|---|---|---|
+| 0x02 | GREEN_IBI | confirmed |
+| 0x03 | unknown | single occurrence only |
+| 0x04 | unknown | single occurrence only |
+| 0x08 | EHR_INHIBIT | confirmed via pp_rt_start/EHR_INH context |
+| 0x0b | EHR/DHR_BOUNDARY | confirmed |
+| 0x0d | CVA | confirmed |
+
+*Logged 2026-06-30.*

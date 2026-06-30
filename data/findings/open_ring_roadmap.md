@@ -119,8 +119,17 @@ sub-types. This supersedes the earlier partial roadmap.
       4-channel motion-artifact rejection counts within SpO2 measurement window.
       CEILING: f1-f4 semantic (artifact vs valid-sample count) needs firmware;
       f0 gain/drive interpretation needs optical register access.
-- [ ] 0x50 activity_info_event — 11 packets. Has decoder (activity_byte_0 +
-      trailing). Activity enum for byte_0 not confirmed.
+- [ ] 0x50 activity_info_event — PARTIAL DECODE (2026-06-30). 13 packets.
+      b[0] = activity class enum ∈ {0,21,23,60,97,198}. b[0]=0 → sedentary/rest
+      (surrounds SPO2, Sleep ACM, Temp events); non-zero → active (always followed
+      by Motion event at t+1). Values scale with intensity: 21/23=light, 60=moderate,
+      97=vigorous, 198=intense. Trailing bytes (loop-read by firmware — auto-extractor
+      missed them): 13-sample per-epoch intensity array for 14-byte packets. Values
+      9–16 in rest/light context, up to 91 in intense context. MET×8 encoding plausible
+      (9/8=1.1 MET rest, 91/8=11.4 MET vigorous). Short packets (3, 7, 10 bytes) are
+      rare variants; structure differs from 14-byte form.
+      CEILING: exact activity class enum labels (only 6 values observed); MET×8 unconfirmed
+      without simultaneous Gen4 Average MET cross-validation.
 - [ ] 0x5B ble_connection_ind — PARTIAL DECODE (2026-06-30). 50 packets across
       pulls. Open_ring decoder reads isolated u8s at offsets 0,1,6,7,8,9 — wrong.
       Actual structure: byte[0] = subtype ∈ {2,3,4,5}; each subtype is a distinct
@@ -137,13 +146,19 @@ sub-types. This supersedes the earlier partial roadmap.
       Sub=5: 4×u16_le at offsets 1,5,7,9 — ranges 0–923 — likely TX/RX packet
       counts or error counters; exact labels need firmware.
 - [ ] 0x5E selftest_event — 0 packets. Gen3 may not emit or very rare.
-- [ ] 0x6C feature_session — 48 packets. PARTIAL DECODE (2026-06-29). b0=session_class
-      confirmed by ASCII debug-event adjacency: b0=0x02=GREEN_IBI_SESSION (activity),
-      b0=0x0d=CVA_SESSION (sleep+SpO2), b0=0x0b=EHR/DHR_BOUNDARY. b1=1=START /
-      b1=3=STOP confirmed for CVA subsystem (CVA raw PPG flows between them); inferred
-      for GREEN IBI. No capability enum in open_ring source — b1 values 2,9,10 unlabeled.
-      b2: 4=COMPLETED(activity), 1=ONGOING(CVA), 0=UNSPECIFIED(boundary). Ceiling: enum
-      and direction confirmation for b0=2 need firmware disassembly or idle-state capture.
+- [ ] 0x6C feature_session — PARTIAL DECODE extended (2026-06-30). b0 session classes:
+      0x02=GREEN_IBI, 0x03=unknown, 0x04=unknown, 0x08=EHR_INHIBIT,
+      0x0b=EHR/DHR_BOUNDARY, 0x0d=CVA. b1 direction now fully mapped via ASCII context:
+      b1=1=START (all types; preceded by DHR_state:4, followed by DHR_state:2)
+      b1=2=PAUSE/TRANSITION (GREEN_IBI only; EHR session interrupting GREEN_IBI)
+      b1=3=STOP (all types; followed by AFs aggregate or CVA_state:0)
+      b1=9=EHR_BOUNDARY PRE-ANNOUNCE (fires before EHRst;1;0;1 — EHR about to start)
+      b1=10=EHR_BOUNDARY CONFIRMED (fires after EHRst;1;0;1 — EHR now active)
+      b0=8 confirmed: always co-occurs with pp_rt_start + EHR_INH;9 + CVA_state:1 →
+      EHR_INHIBIT session (EHR suppressed to give CVA exclusive optical access).
+      b2: 4=COMPLETED(activity), 1=ONGOING(CVA), 0=UNSPECIFIED(boundary).
+      CEILING: b0=3 and b0=4 session classes unidentified (single occurrence each);
+      b1=9 vs b1=10 distinction (pre-announce vs confirmed) needs more EHR start events.
 - [ ] 0x6D MEAs quality event — 23 packets. NOT ON ORIGINAL ROADMAP. No open_ring
       decoder (raw hex fallback). Format CONFIRMED (2026-06-29): byte[0]=0x00 +
       4×i24 LE, all values negative (-2 to -216). ACTIVITY-ONLY (no sleep pulls
