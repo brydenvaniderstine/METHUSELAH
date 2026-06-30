@@ -1,5 +1,83 @@
 # METHUSELAH // Known Issues — Gen3 Decoders
 
+## Gen3 vs Gen4 cross-validation — North Star reference (night of 2026-06-28/29)
+
+**Purpose:** First confirmed cross-validation data point between Gen3 BLE decoder output
+and Gen4 official Oura app. This is the reference to build against for Track B decoder
+work — especially 0x6A sleep_state granularity and 0x5D HRV. Not a one-off note;
+update `data/findings/gen3_vs_gen4_comparison.csv` with each new comparison night.
+
+**Source:** `gen3_pull_20260629_101344.txt` (morning pull, 255 events, sleep window).
+Gen4 numbers from Oura app screenshots, manually transcribed.
+
+### Confirmed agreement (close approximation, not 1:1 parity required)
+| Metric | Gen3 BLE | Gen4 app | Delta |
+|--------|----------|----------|-------|
+| HR range | 54.5–56.5 bpm | 52–58 bpm | Overlapping; Gen4 range wider (different averaging window) |
+| HR avg | ~55.3 bpm | 58 bpm avg | ~5% difference — acceptable |
+| SpO2 range | 92–97% | not shown | — |
+| SpO2 avg | ~94.4% | not shown | — |
+| Sleep temp | 34.88–35.26°C | not shown | — |
+
+### OPEN QUESTION — 0x6A sleep_state decoder completeness
+
+**Finding:** All 10 `[Sleep period info (2)]` samples in the pull return `state=1`
+(p[7]=1 in every packet). No variation across a 9.5-hour night.
+
+**Gen4 ground truth for the same night:**
+- REM: 29%, Light: 52%, Deep: 19%, Awake: 1h 32min (92 min)
+- Total sleep: 9h 32min at 86% efficiency
+- Multiple documented stage transitions occurred.
+
+**The open question:** Is `state=1` flat because:
+1. **Decoder is incomplete** — real stage data (REM/Light/Deep/Awake) lives in bits
+   of p[7] or other payload offsets we haven't mapped yet, and `state=1` only extracts
+   a single sub-field. OR
+2. **Window sampling artifact** — the 255-event buffer captures only a slice of the
+   night. With 10 x6A samples and sleep_period_info_2 firing ~every 30 seconds, the
+   pull covers ~5 minutes of actual sleep. If the ring happened to be in a sustained
+   stage=1 stretch during that window, all 10 samples could legitimately be state=1
+   even though the full night had rich stage variation.
+
+**Evidence for option 2 (window artifact):** Sleep ACM period (0x72) data from the
+same night shows motion_count variation (0–120+ range across all pulls), confirming
+real physiological variation exists. The 10-sample window just may not span a transition.
+
+**Evidence for option 1 (incomplete decoder):** The Gen3 ring has a full sleep-stage
+algorithm (it feeds the Gen4 app's REM/Light/Deep breakdown). That information has to
+live somewhere in the BLE event stream. If it's not in p[7] of 0x6A, it's either in
+a different field of 0x6A, a different tag entirely (0x61/0x09 _dd_sleep_statistics is
+the prime candidate), or aggregated into summary-only tags not yet decoded.
+
+**Tracking target:** A working sleep_state decoder should return values consistent with
+REM/Light/Deep/Awake distribution across a full night's pulls. State=1 at 100% of
+samples with no variation is a real gap, not noise. This is the concrete validation
+target for any 0x6A or 0x61/0x09 decoder improvement.
+
+**Next step:** Pull the 0x61/0x09 `_dd_sleep_statistics` packets from the same night
+and correlate the `pfsm_state` field against the Gen4 stage breakdown — that field
+(confirmed in the IN PROGRESS section of the roadmap) already shows dynamic values and
+is the most likely home for fine-grained sleep stage data.
+
+### DECODER GAP — 0x5D HRV absent from sleep pull
+
+**Finding:** Zero `[HRV event]` packets in `gen3_pull_20260629_101344.txt`.
+**Gen4 ground truth:** 36ms avg HRV, 57ms max for the same night.
+
+HRV data is confirmed present physiologically — this is a decoder/capture gap, not a
+measurement absence. The 255-event sleep buffer is dominated by SpO2, temperature,
+ACM, and sleep-period events. The 0x5D HRV event likely fires less frequently than
+the other tags and gets pushed out of the 255-event window before the morning pull.
+
+**Resolution path:** Pull immediately after a sleep window ends (before much activity
+fills the buffer) to catch 0x5D events while they're still in the circular buffer.
+Alternatively, 0x5D may appear in mid-sleep pulls (if taken). Check existing mid-sleep
+pulls in the corpus for any 0x5D presence.
+
+*Logged 2026-06-29. Reference CSV: `data/findings/gen3_vs_gen4_comparison.csv`.*
+
+---
+
 ## Gen3 ring flash buffer: 255-event circular FIFO — sleep data loss root cause (2026-06-28)
 
 **Status:** Root cause confirmed. Hardware constraint. No software fix.
@@ -969,6 +1047,265 @@ hypothesis in the same single data-collection session.
 
 ---
 
+## Tier 2 tag inventory — grep sweep completed (2026-06-28)
+
+**Context:** The roadmap listed most Tier 2 tags as "NOT STARTED" with unclear data
+availability. A corrected grep across all 27 pull files (using actual label strings,
+not hex patterns — pull script labels events by name, not by hex tag) found:
+
+| Tag | Label | Packets | Status |
+|-----|-------|---------|--------|
+| 0x81 | CVA raw PPG data | 393 | Fully decoded (stateful diff-PPG in open_ring) |
+| 0x4A | PPG amplitude | 233 | Has decoder, 5×u16 format (see below) |
+| 0x80 | GreenIbiQuality | 257 | Has real decoder (see below) — roadmap wrong |
+| 0x72 | Sleep ACM period | 193 | Has decoder, wrong format (see below) |
+| 0x6C | Feature session | 48 | Has decoder (byte_0, capability, status) |
+| 0x73 | EHR trace event | 48 | Has decoder (header + u8 samples) |
+| 0x5B | BLE connection | 46 | Has decoder (6 u8 fields at fixed offsets) |
+| 0x6D | MEAs quality event | 23 | **No decoder in open_ring dispatch table** |
+| 0x50 | Activity info | 11 | Has decoder (activity_byte_0 + trailing) |
+| 0x74 | EHR ACM intensity | 11 | Has decoder (7×u16 LE) |
+| 0x49/4C/4F | Sleep summaries | 0 | Gen3 does not emit these |
+| 0x82/0x83 | Scan start/end | 0 | Gen3 does not emit these |
+
+*Logged 2026-06-28.*
+
+---
+
+## 0x80 (GreenIbiQualityEvent) — REAL DECODER EXISTS, roadmap wrong (2026-06-28)
+
+**Finding:** Roadmap stated 0x80 was "raw-bytes-only (14x u8)." Wrong.
+`decode_green_ibi_and_amp_event` (raw passthrough at line 416) is NOT in the dispatch
+table. The dispatch table maps 0x80 to `decode_green_ibi_quality_event` (line 645) —
+a real IBI/quality bit-pack decoder.
+
+**Decoder format:**
+```
+payload = N pairs of bytes (N = floor(len/2))
+For each pair (b_low, b_high):
+  value_11bit = (b_low << 3) | (b_high & 0x07)   # IBI in ms (likely)
+  quality_a   = (b_high >> 3) & 0x03
+  quality_b   = (b_high >> 5) & 0x07
+```
+
+**Validation:** 4 real activity-context packets (boot_ts ~39149736) decoded to IBI
+values 502-700ms → HR 86-120bpm. Context: sandwiched between Motion event
+(ts=39149641) and Real step features (ts=39149795/796) — active walking confirmed.
+Artifact outlier (val=2000, qb=4) behaves consistently with quality gating.
+
+**Status:** Move 0x80 from "NOT STARTED / raw-bytes" to "IN PROGRESS — activity
+context validated, sleep context IBI range not yet confirmed."
+
+*Logged 2026-06-28.*
+
+---
+
+## 0x72 sleep_acm_period — STRUCTURAL ANALYSIS COMPLETE (2026-06-28)
+
+**Format:** 6×u16 LE — corrects open_ring's wrong decoder (`header_hex + u8 at 6-11`).
+
+### Confirmed invariants (n=193 packets, 0 exceptions)
+
+1. **f4 >= f3** — always, 0 violations. Firmware guarantee.
+2. **f1 = max(f0, f1, f2)** — always, 0 violations. f1 is always the dominant axis.
+3. f3 >= f5: 10 violations (5.2%) — not guaranteed, but usually holds.
+
+### Two correlated groups
+
+- Group 1: {f0, f1, f2}: pairwise r = +0.96–+0.97
+- Group 2: {f3, f4, f5}: pairwise r = +0.89–+0.97
+- Cross-group: r = +0.76–+0.92 (all driven by motion-event outliers; in quiet sleep only, cross-group r ≈ 0)
+
+### Quiet sleep baseline (n=146 packets, all fields < 100)
+
+| field | mean  | stdev | notes |
+|-------|-------|-------|-------|
+| f0    | 12.7  | 7.5   | smallest axis |
+| f1    | 26.9  | 18.6  | always max, ~2× f0/f2 |
+| f2    | 12.9  | 12.0  | ≈ f0 in baseline |
+| f3    | 29.5  | 2.9   | tightest field — nearly constant in quiet sleep |
+| f4    | 35.0  | 6.2   | always >= f3 |
+| f5    | 3.8   | 2.1   | small count |
+
+In quiet sleep: motion_count correlation drops to r ≈ 0 for all fields (full-corpus r=+0.62–0.68 was driven entirely by outlier motion events).
+
+### Motion event behavior
+
+- Moderate motion (f1≈108): f3=43, f4=120 — both groups respond, f4 responds more
+- Extreme motion (f1≈996): f3=29, f4=36 — Group 2 barely changes despite Group 1 exploding
+- Super-extreme (f1≈2000+): both groups explode (f3=300–456, f4=758–1340)
+
+f4–f3 grows from +2 to +10 in quiet sleep → +100 to +1000 in extreme motion.
+
+### Sleep state correlation (matched against 0x6A)
+
+State=0 (n=47, motion_count mean=1.6): f4 quiet mean=38.3
+State=1 (n=146, motion_count mean=0.8): f4 quiet mean=34.1
+State=0 is slightly more restless — possibly lighter sleep.
+
+### Field hypotheses (unconfirmed — need disassembly or ACM ground truth)
+
+- **f0**: smallest per-axis motion count in the ~30-second window
+- **f1**: largest per-axis motion count (gravity-aligned axis, or firmware sorts and puts max in slot 1)
+- **f2**: middle-axis motion count (same baseline as f0 in quiet sleep)
+- **f3**: motion floor/mean — very stable (~29) from micro-motion (breathing/cardiac); resistant to individual spikes
+- **f4**: motion peak or cumulative total — always >= f3, responds strongly to spikes
+- **f5**: count of above-threshold events — small in quiet (0–12), can reach 821 in extreme motion
+
+### Status
+
+FORMAT confirmed (6×u16 LE). Two confirmed invariants (f4>=f3, f1=max). MEANING is hypothetical.
+Ceiling: cannot assign exact field semantics without `parse_api_sleep_acm_period` disassembly or
+ground-truth accelerometer comparison (simultaneous external ACM + ring pull).
+
+*Logged 2026-06-28. n=193 packets from all 27 pulls, matched against 188 0x6A records.*
+
+---
+
+## 0x4A ppg_amplitude_ind — FULL CORRELATION ANALYSIS (2026-06-29)
+
+**Status:** Format confirmed. Full correlation analysis complete. f0 well-characterized,
+f1-f4 partially decoded. Ceiling reached on f1-f4 semantic labeling.
+
+### Format (confirmed)
+10-byte fixed payload = 5×u16 LE at offsets 0,2,4,6,8.
+open_ring decoder reads ONLY `_u16(p, 0)` and divides by 65535 — drops f1-f4 silently.
+
+### f0 — optical amplitude indicator (confirmed)
+**Context split (n=243 total):**
+- ACTIVITY (n=43): f0 = 0 in ALL 43 packets. Red/IR optical system is OFF during
+  activity mode (ring uses green-only LED for IBI/HR). f0=0 is a reliable activity
+  sentinel.
+- SLEEP (n=185): f0 ranges 0–65535, mean=21,426, stdev=15,655.
+- MIXED (n=15): intermediate range.
+
+**f0 vs SpO2 correlation (n=185 sleep, r=−0.561, nearest 0x6F within 2000 ticks):**
+Strongly monotonic negative relationship:
+
+| SpO2 | n | f0 mean | f0 stdev |
+|------|---|---------|----------|
+| 88% | 8 | 61,248 | 12,124 |
+| 89% | 11 | 40,735 | 16,592 |
+| 90% | 17 | 31,840 | 14,785 |
+| 91% | 12 | 18,448 | 12,870 |
+| 92% | 31 | 18,488 | 11,249 |
+| 93% | 22 | 20,922 | 11,568 |
+| 94% | 28 | 13,645 | 9,023 |
+| 95% | 14 | 13,423 | 5,775 |
+| 96% | 22 | 18,500 | 10,715 |
+| 97% | 16 | 12,491 | 7,049 |
+| 98% | 4 | 13,207 | 9,353 |
+
+f0 SATURATES at 65535 when SpO2 drops to 88% (hardware ceiling hit). The inverse
+SpO2 correlation reflects automatic gain control: ring increases LED drive power when
+optical signal is weak (desaturation event) → higher raw amplitude.
+
+f0=0 in 16/185 sleep packets (SpO2_mean=94.4%): likely "no valid measurement" sentinel
+or measurement gap — f0=0 in sleep is NOT a low-SpO2 indicator; quite the opposite.
+
+**Timing:** 0x4A fires once per SpO2 measurement cluster (~every 200–300 sleep ticks),
+bracketed by 0x6F SpO2 samples. It is a per-cluster summary, not a per-sample event.
+
+**open_ring normalization (f0 / 65535.0):** yields ~0.33 at SpO2=93% baseline sleep.
+Normalization is correct but the semantic is optical gain level, NOT signal quality.
+
+### f1-f4 — per-channel artifact/sample counts (confirmed context, meaning open)
+**Context split:**
+- ACTIVITY: ALL ZERO for f1-f4 in every activity packet (43/43). Sleep-only metric.
+- SLEEP: range 0–30 per field, mean 2.2–4.2, zeros in 37–61% of packets.
+
+**Inter-field correlations (n=243):** extremely high — these are near-identical:
+r(f1,f2)=+0.963, r(f1,f3)=+0.918, r(f1,f4)=+0.889, r(f2,f3)=+0.979, r(f2,f4)=+0.958,
+r(f3,f4)=+0.992. One underlying quantity expressed across 4 channels/sub-windows.
+
+**f0 vs f1-f4:** r≈0 (−0.045 to +0.021). Completely independent subsystems.
+
+**f1-f4 vs motion_count (r=+0.414 to +0.508):** increase with movement.
+- mc=0: f1_mean=3.0
+- mc=2-3: f1_mean=8–10
+- mc=13: f1_mean=7.6
+
+**f1=0 vs f1>0 context:**
+- f1=0 (n=68): SpO2=92.75%, mc=0.9 → quiet low-SpO2 periods
+- f1>0 (n=117): SpO2=93.92%, mc=2.4 → motion-present periods
+
+**f1-f4 sum:** range 0–118, mean=11.7. Sum not obviously more informative than f1 alone.
+
+**Best hypothesis:** f1-f4 count motion-artifact events or signal-adjustment rounds
+within the SpO2 measurement window across 4 optical channels (green×2, red, IR). The
+positive motion correlation and zero-in-activity context are consistent with artifact
+rejection counts. The near-identical cross-channel values (r=0.99) mean the ring sees
+essentially the same motion artifact simultaneously across all channels (expected for
+wrist movement affecting all LEDs equally).
+
+### Ceiling
+- f1-f4 semantic (artifact count vs valid-sample count) unresolvable from correlation
+  alone. Needs firmware symbol for the ppg_amplitude_ind struct fields.
+- f0 as gain/drive vs DC-level: both explain the inverse SpO2 correlation; indistinguishable
+  without access to the optical subsystem registers or firmware.
+
+*Logged 2026-06-28 (format). Full analysis 2026-06-29.*
+
+---
+
+## 0x6D MEAs quality event — CORRELATION COMPLETE, CEILING REACHED (2026-06-29)
+
+**Status:** Format confirmed. Correlation analysis complete. Physical meaning open.
+
+### Format (confirmed)
+byte[0]=0x00 (constant header, all 23 packets) + 4×i24 LE at offsets 1, 4, 7, 10.
+All values negative (-2 to -211 across all 23 packets). 13-byte fixed payload.
+
+### Activity-only (confirmed)
+0x6D appears ONLY in activity pulls. Both pulls containing 0x6D are activity windows
+(no SpO2 events, no sleep events). SpO2 correlation is impossible on existing data.
+
+### Periodic cadence: 121 ticks (~1.57s)
+Inter-event spacing within each burst is exactly 121 ticks (±1). This is a fixed-rate
+periodic emitter during activity, NOT triggered by motion or physiological events.
+Tick gaps between bursts: 4275, 711411 (recording boundaries).
+
+### Descriptive stats (n=23)
+| field | min | max | mean | stdev |
+|-------|-----|-----|------|-------|
+| f0 | -216 | -7 | -72.4 | 60.7 |
+| f1 | -207 | -2 | -57.5 | 51.5 |
+| f2 | -132 | -3 | -57.2 | 37.8 |
+| f3 | -126 | -5 | -56.3 | 35.9 |
+
+### Inter-field correlations (r, n=23)
+All signed = |value| since all negative. Moderate cross-channel correlation, NOT independent.
+- r(f0,f1)=+0.605, r(f0,f2)=+0.500, r(f0,f3)=+0.144 ← f0/f3 most independent
+- r(f1,f2)=+0.655, r(f1,f3)=+0.443, r(f2,f3)=+0.617
+
+**Interpretation:** 4 correlated-but-distinct channels (not the same signal×4; not
+4 fully independent channels). Moderate r=0.44–0.66 is consistent with 4 sensors
+measuring the same physical tissue from slightly different geometries/wavelengths.
+
+### vs motion magnitude (0x47, nearest within ±500 ticks, n=23 matched)
+- r(f0,mag)=+0.099, r(f1,mag)=+0.097, r(f2,mag)=+0.012, r(f3,mag)=−0.207
+- r(|sum|,mag)=−0.027
+
+**FALSIFIED: motion quality hypothesis.** Near-zero correlation with motion magnitude
+rules out "penalizes high motion" or "ACM-derived quality score." These values are
+independent of how much the ring is moving at the same moment.
+
+### Best current hypothesis
+**4-channel optical background noise floor or per-channel signal residuals** from the
+PPG measurement system (4 photodetector channels: green×2, red, IR). Negative values
+consistent with signed residuals or log-domain SNR in dB-like units. Fixed 1.57s
+cadence matches a per-analysis-window quality report, NOT a per-beat or per-event trigger.
+
+### Ceiling
+Cannot decode further without:
+- Oura firmware disassembly to identify the "MEAs" symbol
+- Or: simultaneous capture of 0x77 spo2_dc_event or 0x6E spo2_ibi_and_amplitude during
+  same activity pull — those tags carry the raw optical channels that 0x6D may be scoring
+
+*Logged 2026-06-28. Correlation analysis completed 2026-06-29.*
+
+---
+
 ## 0x53 wear_event — DECODER CONFIRMED 2026-06-27
 
 **Status:** DONE. Validated against 2 real packets (grep across all 26 pull files).
@@ -1071,3 +1408,233 @@ sleep, brief wear events) to test the count hypothesis and map the trailing byte
 The 8-byte vs 14-byte format split also needs more data before it can be explained.
 
 *Logged 2026-06-27.*
+
+---
+
+## 0x6C feature_session — PARTIAL DECODE, CEILING REACHED (2026-06-29)
+
+**Status:** b0 session-class and b1 start/stop direction confirmed for CVA subsystem.
+Capability enum for all values not available from open_ring source.
+
+### Decoder (open_ring)
+`decode_feature_session`: `(byte_0, capability, status)` + optional trailing bytes.
+Docstring acknowledges "one of 12 session-type payloads (oneof in proto); per-version
+decoding deferred." No capability enum anywhere in the codebase. Not in PROTOCOL.md.
+
+### Corpus summary (n=48 packets, across 11 pulls)
+| b0 | count | b1 values seen | b2 values seen | trail |
+|----|-------|----------------|----------------|-------|
+| 0x02 | 30 | 1,2,3 | 4 | 0x00 (1 byte) |
+| 0x0b | 8 | 1,9,10 | 0 | none |
+| 0x0d | 6 | 1,3 | 1 | 0x0002 (2 bytes) |
+| 0x08 | 2 | 1 | 0 | none |
+| 0x04 | 1 | 1 | 1 | none |
+| 0x03 | 1 | 1 | 3 | 0x00000000 (4 bytes) |
+
+### b0 field — session class (context-correlated, confirmed)
+Determined by cross-referencing adjacent ASCII debug events and cooccurring data tags:
+
+- **0x02 = GREEN IBI / Daytime HR session** — appears exclusively in activity pulls
+  (same pulls contain UNKNOWN (0x80) green_ibi_quality_event). b1 alternates 1↔3
+  with no consistent first element (pull captured mid-cycle). b2=4 always (COMPLETED).
+  Trail=0x00 always.
+
+- **0x0d (13) = CVA (Cardiovascular Analysis) session** — appears exclusively in sleep
+  + SpO2 + CVA raw PPG pulls. Adjacent debug event `CVA_` (0x4356415f) fires 1–2 ticks
+  before every b0=13 packet. b2=1 always (ONGOING). Trail=0x0002 always.
+
+- **0x0b (11) = Session boundary / capability transition** — appears in mixed/transition
+  pulls adjacent to debug events `EHRs` (0x45485273) = Exercise Heart Rate and
+  `DHR_` (0x4448525f) = Daytime Heart Rate. b2=0 always. No trail.
+
+- **0x08, 0x04, 0x03** — single to two observations each, insufficient data.
+
+### b1 field — start/stop action (CONFIRMED for CVA, inferred for others)
+**CONFIRMED (b0=0x0d / CVA):**
+- b1=1 = SESSION START: fires immediately before CVA raw PPG data begins flowing.
+  Example: ts=49534817 (b1=1) → CVA raw PPG packets at 49534818 onward.
+- b1=3 = SESSION STOP: fires immediately after last CVA raw PPG packet, before SpO2
+  results. Example: ts=49535118 (b1=3) → SPO2 IBI+amplitude at 49535132.
+
+**INFERRED (b0=0x02 / GREEN IBI):**
+- b1=1 = START, b1=3 = STOP — by analogy with CVA, consistent with alternating pattern.
+  Direction unconfirmed because pull is captured mid-cycle.
+- b1=2 (single case, ts=38433973) — fires immediately after ring removal (wear event at
+  38433964); unknown meaning.
+
+**INFERRED (b0=0x0b / boundary events):**
+- b1=1 = capability RESTART (post-transition)
+- b1=9 = DHR capability transition (adjacent to DHR_ debug event at ring removal)
+- b1=10 = EHR capability transition (adjacent to EHRs debug event)
+
+### b2 field — session status (hypothesis)
+- 0x04 = COMPLETED — dominant with b0=2 (each IBI measurement window completed)
+- 0x01 = ONGOING — with b0=13 (CVA session persists across many 0x81 records)
+- 0x00 = UNSPECIFIED — with b0=11 (boundary/reset events have no meaningful status)
+
+### Trail bytes — session-class-specific
+- b0=2: always `0x00` — likely session_count or padding
+- b0=13: always `0x0002` — constant; possibly session_id=0 + protocol_version=2
+- b0=3: `0x00000000` — only one case, meaning unknown
+
+### Ceiling
+- No capability enum in any open_ring source. b1 values 2, 9, 10 cannot be mapped
+  without firmware disassembly.
+- b1=1 vs b1=3 direction is confirmed only for CVA (b0=13); GREEN IBI (b0=2) needs
+  a full-cycle capture starting from ring idle state to confirm direction.
+- b2 status encoding is hypothesis only — no enum defined anywhere.
+- Trail bytes: confirmed constant within each b0 class but semantic meaning unknown.
+
+*Logged 2026-06-29.*
+
+---
+
+## 0x73 ehr_trace_event + 0x74 ehr_acm_intensity — PARTIAL DECODE (2026-06-29)
+
+**Status:** Structure confirmed. HR trajectory decodable from b2 field. Raw PPG waveform
+visible in 10-sample bytes. 5-byte companion packet semantics unresolved.
+
+### Context
+All 48 x0x73 and 11 x0x74 events come from a single pull: `gen3_pull_20260620_231631.txt`
+(activity window with step features, 0x80 IBI events confirming mean HR=97 bpm).
+EHR (Exercise Heart Rate) system fires as a unit: 0x73 and 0x74 always coexist.
+
+### 0x73 format (confirmed)
+Two strictly alternating packet sizes, always in pairs:
+
+**14-byte:** `[b0:u8][b1:u8][b2:u8][b3:u8][lead:u8][s0..s8:u8×9]`
+**5-byte:**  `[b0:u8][b1:u8][b2:u8][b3:u8][companion:u8]`
+
+Header fields:
+- **b0** = monotonic event sequence counter. Increments by 1 per packet across both
+  sizes (even=14-byte, odd=5-byte). Range 146–193 in this session.
+- **b1** = LED/optical channel (0 or 1). Alternates within each group of 4 events.
+  Each time window emits 2×14-byte (one per channel) + 2×5-byte (one per channel).
+- **b2/b3** — semantics differ between packet sizes (see below).
+
+Groups of 4 fire every ~119 ticks (~1.55 seconds at 77 ticks/sec):
+`[14-byte b1=0] [5-byte b1=0] [14-byte b1=1] [5-byte b1=1]`
+followed ~20 ticks later by one 0x74 ACM intensity record.
+
+### 14-byte payload — raw PPG waveform (confirmed)
+The 10 sample bytes encode a green LED optical trace spanning ~3 heartbeats per packet.
+Pattern: alternating peaks (55–205) and troughs (4–14), matching a PPG pulse waveform.
+
+- **b1=0 channel:** mean peak amplitude = 123 (stronger signal)
+- **b1=1 channel:** mean peak amplitude = 87 (weaker signal)
+
+Consistent with two green LED sub-apertures or two gain-matched detector channels.
+
+**b2 in 14-byte (b1=0 only): IBI in ticks → HR trajectory (confirmed)**
+b2 encodes the inter-beat interval in activity ticks. Converting b2 → bpm (×77/60):
+
+| ts | b2 ticks | bpm |
+|----|----------|-----|
+| 39153468 | 52 | 88.8 |
+| 39153590 | 52 | 88.8 |
+| 39153710 | 52 | 88.8 |
+| 39153827 | 52 | 88.8 |
+| 39153948 | 73 | 63.3 |
+| 39154069 | 90 | 51.3 |
+| 39154191 | 96 | 48.1 |
+| 39154311 | 184 | 25.1* |
+| 39154427 | 93 | 49.7 |
+| 39154548 | 84 | 55.0 |
+| 39154669 | 82 | 56.3 |
+| 39154790 | 125 | 37.0* |
+
+*Outliers (missed beat / double-period detection). Core trajectory: 88.8 bpm sustained,
+then deceleration to ~49–56 bpm — consistent with post-exercise recovery.
+
+b2 for b1=1 channel: erratic (52, 105, 61, 52, 76, 64, 55, ...) — not a clean IBI
+sequence. b1=1 b2 meaning is NOT confirmed.
+
+### 5-byte companion packet (partial decode)
+- **b1=0 companion byte:** range 3–7 (mean=5.5) — matches optical trough/baseline values
+  in the 14-byte waveform. Likely DC baseline or signal floor measurement.
+- **b1=1 companion byte:** range 4–43 (mean=24.2) — no clear mapping to b1=1 waveform
+  parameters. Possibly IBI delta or cumulative quality metric; semantics unconfirmed.
+- **b2/b3 in 5-byte:** NOT the same as b2/b3 in 14-byte. u16 LE values 10554–51917.
+  Likely an optical DC level or amplitude integral; semantics unconfirmed.
+
+### 0x74 ehr_acm_intensity — 7-field motion intensity (confirmed)
+Format: 7×u16 LE. Each record covers ~142 ticks (~1.85 sec), consecutive records span
+the exercise session. The 7 sub-values are sub-window motion intensities. Sum trajectory:
+
+`710 → 2037 → 1722 → 1537 → 1372 → 1358 → 987 → 689 → 1017 → 1098 → 991`
+
+Classic exercise shape: ramp-up (710→2037 over first 2 records), sustained plateau
+(1372–1537), then cool-down (987→689). Recovers slightly (1017–1098) — consistent
+with brief resumption of movement after initial deceleration.
+
+### Ceiling
+- Lead byte (p[4] of 14-byte) purpose: ranges 7–90, varies per packet, not a simple
+  counter or quality flag. Likely a per-window amplitude summary; needs firmware.
+- b1=1 b2/b3 in 14-byte: not a clean IBI sequence — meaning unresolved.
+- 5-byte b1=1 companion and both 5-byte b2/b3: need firmware symbol for struct fields.
+- PPG waveform exact encoding (is it really 3 beats? what unit are peaks in?) needs
+  cross-validation against known HR from simultaneous 0x80 events at the same timestamps.
+
+*Logged 2026-06-29.*
+
+---
+
+## Pre-bed pull gen3_pull_20260629_221420.txt — physiological pattern (2026-06-30)
+
+**Pull context:** 2026-06-29 22:14 local. MIXED WINDOW — active pfsm states with tapering
+motion, one CVA session. Post-workout physiology.
+
+### Elevated HR and temp (post-workout)
+- HR range: 82–87 bpm (mean 85.2) across 10 ×6A samples — substantially elevated vs
+  typical sleep HR (54–56 bpm). Consistent with recent exercise; ring was pulled before
+  full recovery.
+- Skin temp: 36.09–36.35°C — warmer than typical sleep window (34.9–35.3°C). Elevated
+  peripheral temperature consistent with post-exercise vasodilation.
+- Motion: [17, 25, 34, 27, 17, 9, 0, 0, 0, 0] — real activity early in the window,
+  tapering to zero. Confirms settling toward rest at pull time.
+
+### pfsm states
+Sequence from ×09 debug events: 0, 4, 128, 6, 128, 5, 128, 6, 128 (using p[13] offset).
+The user's pull script output (4, 6, 5, 6) matches the non-128 values, confirming the
+pull script filters 128 from display. States 4, 5, 6 = transitional settling before sleep.
+
+**pfsm=128 (0x80) finding:** Always follows a real state by 4–6 ticks in every pairing
+observed across both pre-bed and morning pulls. Almost certainly a "state-change epoch
+boundary" or "transition-complete" marker rather than an independent FSM state. See
+morning pull note below.
+
+### CVA session
+Feature session (×6C): b0=13 (CVA), b1=3 (STOP) — CVA subsystem was active and ended
+during this window. One ×6C b0=8 packet also present; b0=8 semantics unresolved.
+
+### CVA raw PPG data (0x81) — observation count
+- **Count:** 1 packet in this pull. Second total occurrence across all 29 pulls (n=2
+  total; n=1 per pull in both appearances).
+- **Status:** Do not attempt decode. n=2 total with only one packet per occurrence is
+  insufficient to establish field structure. Flag for accumulation — need ≥5 packets
+  in a single pull before structural hypotheses are trustworthy.
+- **Context:** Both occurrences co-occur with active CVA sessions (×6C b0=13). Likely
+  the raw optical capture that feeds the CVA pipeline.
+
+---
+
+## Morning pull gen3_pull_20260630_101238.txt — pfsm=128 first noticed (2026-06-30)
+
+**Pull context:** 2026-06-30 10:12. ACTIVE WINDOW — step events, pfsm active states,
+battery 71–72%.
+
+### pfsm_state=128 pattern (confirmed across both pulls)
+Morning pull ×09 sequence: 5/128, 3/128, 5/128, 3/128, 5/128, 3/128. Same tight pairing
+(4–6 tick gap) as in pre-bed pull. pfsm=128 appears in BOTH pulls — it is NOT unique to
+active-window or sleep-window. This rules out it being a "woke up" or "active" state.
+
+**Hypothesis:** pfsm=128 is a firmware "epoch committed" or "state-change ack" event
+emitted ~5 ticks after every state transition to mark that the flash write completed.
+Supporting evidence: always exactly one 128 event per non-128 event, never sequential
+128s, gap is consistently 4–6 ticks (within one flash-write cycle at 77 ticks/sec).
+
+**Open question:** Is there a non-128 state value paired with the very first 0x00 (state=0)
+event in the pre-bed pull? The ts=52650969 event at pfsm=0 has no preceding 128. Possibly
+the initial state on cold start, not a real FSM transition, so no epoch marker is emitted.
+
+*Logged 2026-06-30.*

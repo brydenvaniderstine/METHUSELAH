@@ -28,6 +28,12 @@ sub-types. This supersedes the earlier partial roadmap.
       cross-check with 0x75 at ts=40728926/40728928 (2-tick gap, values
       match to within 0.06°C). Same formula as 0x75; 0x69 appears to be
       a single-value period average of the same skin-temp sensor.
+- [x] 0x80 green_ibi_quality_event — CONFIRMED 2026-06-28. Format:
+      N×(b_low,b_high) pairs → 11-bit IBI in ms + quality_a(2b) + quality_b(3b).
+      1,681 physiological samples (400-1500ms), mean 779ms / 80bpm, 4.3% artifact
+      rate. Activity-only (0 sleep-context pulls contain this tag — green LED
+      activates for activity HR, not sleep). quality_b=0 on 80% = clean signal;
+      higher qb flags quality issues. Roadmap was wrong about "raw-bytes-only".
 
 ## IN PROGRESS — real RE work started, not yet solved (5)
 - [ ] 0x61/0x09 _dd_sleep_statistics — partial decode confirmed. Original
@@ -70,6 +76,7 @@ sub-types. This supersedes the earlier partial roadmap.
       b4-b6 mutually independent — likely a different field (IBI or amp).
       Structural ceiling reached on sleep-session data; needs a higher-
       variance pull to confirm via correlation.
+(0x80 moved to DONE — see above)
 - [ ] 0x6B motion_period — 4 real packets captured (2026-06-27). open_ring
       decoder maps b[0] to MOTION_STATE (0-3), but all 4 observed b[0]
       values (6, 52, 61, 62) are outside the enum. Contextual correlation:
@@ -94,19 +101,52 @@ sub-types. This supersedes the earlier partial roadmap.
       PROGRESS section below.
 
 ## NOT STARTED — Tier 2, weaker/auto-extracted confidence (12)
-- [ ] 0x49 sleep_summary_1 — 2x u16, semantics unknown
-- [ ] 0x4C sleep_summary_2 — u16+u32, semantics unknown
-- [ ] 0x4F sleep_summary_3 — mixed widths, semantics unknown
-- [ ] 0x4A ppg_amplitude_ind — raw PPG signal strength (normalized float)
-- [ ] 0x50 activity_info_event — daytime activity, partial confidence
-- [ ] 0x5B ble_connection_ind — BLE link-quality telemetry
-- [ ] 0x5E selftest_event — ring self-test pass/fail counts
-- [ ] 0x6C feature_session — session boundary markers
-- [ ] 0x72 sleep_acm_period — sleep accelerometer period (seen often in pulls)
-- [ ] 0x73 ehr_trace_event — exercise heart rate trace
-- [ ] 0x80 green_ibi_and_amp_event — our old mystery tag, decoder exists but
-      is raw-bytes-only (14x u8, no real field layout)
-- [ ] 0x82/0x83 scan_start / scan_end — BLE scan boundary markers
+- [ ] 0x49 sleep_summary_1 — Gen3 does NOT emit (0 packets across all 27 pulls)
+- [ ] 0x4C sleep_summary_2 — Gen3 does NOT emit (0 packets)
+- [ ] 0x4F sleep_summary_3 — Gen3 does NOT emit (0 packets)
+- [ ] 0x4A ppg_amplitude_ind — 243 packets. Format 5×u16 LE (NOT just first u16
+      as open_ring claims). ANALYSIS COMPLETE (2026-06-29):
+      f0: r=−0.561 with SpO2; saturates at 65535 when SpO2=88%; f0=0 universally
+      in activity (red/IR LED off). Interpretation: optical AGC / LED drive level
+      — ring increases LED power when desaturation detected.
+      f1-f4: sleep-only (all-zero in activity), range 0–30, r=0.89-0.99
+      inter-field (one signal×4), r=+0.41-0.51 with motion_count. Best hypothesis:
+      4-channel motion-artifact rejection counts within SpO2 measurement window.
+      CEILING: f1-f4 semantic (artifact vs valid-sample count) needs firmware;
+      f0 gain/drive interpretation needs optical register access.
+- [ ] 0x50 activity_info_event — 11 packets. Has decoder (activity_byte_0 +
+      trailing). Activity enum for byte_0 not confirmed.
+- [ ] 0x5B ble_connection_ind — 46 packets. Has decoder (6 u8 fields). Semantics
+      not confirmed.
+- [ ] 0x5E selftest_event — 0 packets. Gen3 may not emit or very rare.
+- [ ] 0x6C feature_session — 48 packets. PARTIAL DECODE (2026-06-29). b0=session_class
+      confirmed by ASCII debug-event adjacency: b0=0x02=GREEN_IBI_SESSION (activity),
+      b0=0x0d=CVA_SESSION (sleep+SpO2), b0=0x0b=EHR/DHR_BOUNDARY. b1=1=START /
+      b1=3=STOP confirmed for CVA subsystem (CVA raw PPG flows between them); inferred
+      for GREEN IBI. No capability enum in open_ring source — b1 values 2,9,10 unlabeled.
+      b2: 4=COMPLETED(activity), 1=ONGOING(CVA), 0=UNSPECIFIED(boundary). Ceiling: enum
+      and direction confirmation for b0=2 need firmware disassembly or idle-state capture.
+- [ ] 0x6D MEAs quality event — 23 packets. NOT ON ORIGINAL ROADMAP. No open_ring
+      decoder (raw hex fallback). Format CONFIRMED (2026-06-29): byte[0]=0x00 +
+      4×i24 LE, all values negative (-2 to -216). ACTIVITY-ONLY (no sleep pulls
+      contain this tag). Fires every 121 ticks (~1.57s) fixed cadence. Inter-field
+      r=0.44–0.66 (4 distinct correlated channels, NOT identical×4). Zero
+      correlation with motion magnitude — FALSIFIED motion-quality hypothesis.
+      Best hypothesis: 4-channel optical noise floor / per-channel SNR residuals
+      from PPG system (green×2, red, IR). Ceiling: needs firmware disassembly or
+      simultaneous 0x77/0x6E in same activity pull to progress.
+- [ ] 0x72 sleep_acm_period — 193 packets. FORMAT CORRECTED: 6×u16 LE
+      (open_ring reads u8 at 6-11, wrong). CONFIRMED INVARIANTS (2026-06-28):
+      f4>=f3 (0 violations), f1=max(f0,f1,f2) (0 violations). Two correlated
+      groups: {f0,f1,f2} (r=+0.96-0.97) and {f3,f4,f5} (r=+0.89-0.97).
+      Quiet sleep: f0/f2 median=13, f1 median=23 (~2× f0/f2, gravity axis).
+      f3 stdev=2.9 in quiet (tightest field). Motion events drive all 6 fields
+      up. CEILING: field semantics (which axis, exact formula) need disassembly
+      or simultaneous external ACM ground truth.
+- [ ] 0x73 ehr_trace_event — 48 packets. Has decoder (header + u8 samples).
+      EHR = exercise heart rate. Semantics not confirmed.
+- [x] 0x80 green_ibi_quality_event — DONE 2026-06-28. See DONE section above.
+- [ ] 0x82/0x83 scan_start / scan_end — 0 packets. Gen3 does not emit.
 
 ## NOT STARTED — unidentified/low-confidence (2)
 - [ ] 0x56 unknown_56 — 1-byte flag, semantics never identified even by
@@ -153,32 +193,40 @@ All dispatched via sub-byte at payload offset 0, tag 0x61 itself.
 - [ ] 0x61/0x3F _dd_daily_drop_sample — daily diagnostic sample
 
 ## Count check
-8 done + 5 in progress + 3 not-started-T1 + 12 + 2 + 24 = **54 decoder entries tracked**
-(some inventory rows bundle two tag IDs under one decoder, e.g. 0x7E/0x7F
-and 0x82/0x83 — so the "35+" figure from earlier referred to distinct
-*functions*, this board tracks distinct *tags/sub-types*, which is why the
-count differs. Every tag-level entry from the original inventory is
-represented above — nothing skipped.)
+8 done + 6 in progress + 1 not-started-T1 + ~12 + 2 + 24 = **~55 decoder entries tracked**
+(Updated 2026-06-28: 0x80 promoted from NOT STARTED to IN PROGRESS. 0x6D added as new
+Tier 2 entry not previously on roadmap. 0x49/4C/4F confirmed Gen3 does not emit —
+can be deprioritized. 0x82/0x83 same. Count is approximate due to bundles.)
 
-## Suggested next-session order (updated 2026-06-27)
-Three decoders are now in the same "structure confirmed / meaning open"
-ceiling category, all blocked on ground-truth data rather than analysis:
-  - 0x7E/0x7F: needs timed step count to label 7F[3]/7F[4]/7F[7]
-  - 0x61/0x09: needs ground truth to identify f0/f2/f4 physical meaning
-  - 0x6E / 0x77: need activity pull WITH SpO2 present
+## Suggested next-session order (updated 2026-06-28)
 
-1. **Ground-truth data collection round** — all three can be unblocked in
-   a single deliberate session:
-   a. Wear a second tracker (watch, phone pedometer) during a walk, then
-      pull immediately → unlocks 0x7E/0x7F (7F[3] step-count hypothesis)
-      AND may provide SpO2 if ring activates SpO2 during activity →
-      unlocks 0x6E and 0x77 simultaneously.
-   b. Correlate 0x09 f2/f4 dynamics against known sleep stages from the
-      Oura app for the same night → unlocks 0x09 f2/f4 meaning.
-2. **Tier 1 remaining**: 0x53 and 0x69 DONE (2026-06-27). 0x6B IN PROGRESS
-   (b[0] enum mismatch — needs more motion-diverse packets). 0x76
-   (bedtime_period) NOT STARTED — never caught a real packet yet.
-3. **Tier 2 and 0x61 debug sub-types** — tracked but lower priority.
+**BLOCKED until controlled walk (tomorrow, 2026-06-29 or later):**
+- 0x7E/0x7F: timed walk with phone BT disabled, kill Oura app before walk
+- 0x6E / 0x77: same activity pull (need SpO2 activation during activity)
+- 0x61/0x09: Oura app sleep-stage cross-reference for same night
+
+**IMMEDIATELY actionable from existing 27 pulls:**
+
+1. **0x72 sleep_acm_period** (193 packets) — format corrected to 6×u16 LE.
+   Next: characterize f0-f2 (per-axis motion energy) across all 27 pulls;
+   separate sleep-quiet from movement-event packets; check correlation with
+   0x6A sleep_state at same timestamps. Could produce a working motion-intensity
+   decoder from existing data alone.
+
+2. **0x80 green_ibi_quality_event** (257 packets) — real decoder confirmed.
+   Next: run the decoder across all 257 packets; check whether sleep-context
+   packets give IBI in 800-1200ms range (HR 50-75bpm) as expected. If yes,
+   this tag is essentially done.
+
+3. **0x6D MEAs quality event** (23 packets) — structural hypothesis (4×i24).
+   Next: correlate f0-f3 against same-window 0x6F SpO2 or 0x47 motion data
+   to test the "quality/penalty metric" hypothesis. Small n (23) may not
+   support correlation, but worth checking.
+
+4. **0x6B motion_period** — collect more packets by capturing pull during
+   deliberate motion (sit→walk→sit transitions). Only 4 packets currently.
+
+5. **0x76 bedtime_period** — has never fired. Not actionable from existing data.
 
 ## How to use this doc
 Check a box, move an item between sections, or add a note inline as
