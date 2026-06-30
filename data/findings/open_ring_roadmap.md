@@ -228,6 +228,34 @@ can be deprioritized. 0x82/0x83 same. Count is approximate due to bundles.)
 
 5. **0x76 bedtime_period** — has never fired. Not actionable from existing data.
 
+## Gen4 Ground Truth Reference (added 2026-06-30)
+
+**File:** `data/reference/gen4_official_trends_2025-06-14_2026-06-07.csv`
+**Full baseline doc:** `data/findings/gen4_baselines.md`
+**Coverage:** 359 nights, 2025-06-14 → 2026-06-07 (no gaps)
+
+Personal reference bands for decoder validation — use these to sanity-check any decoded value:
+
+| Signal | Typical range (p25–p75) | Clear outlier threshold |
+|---|---|---|
+| Average RHR | 59–67 bpm | <52 or >75 bpm |
+| Lowest RHR | 52–57 bpm | <47 or >63 bpm |
+| HRV (RMSSD) | 24–35 ms | <15 ms (suppressed) / >45 ms (peak) |
+| Respiratory rate | 12.75–13.38 br/min | <12 or >14.5 br/min |
+| Skin temp deviation | −0.21 to +0.29°C | >+0.6°C likely illness |
+| Total sleep | 7.1–8.5 h | <5.9 h or >9.6 h |
+| Deep sleep | 61–88 min | <45 min or >107 min |
+| REM sleep | 93–130 min | <68 min or >153 min |
+| Sleep efficiency | 84.5–90% | <75% |
+
+**Gap warning:** Export ends 2026-06-07. All Gen3 pulls from 2026-06-28 onward fall
+outside this window. Export a fresh Gen4 CSV (2026-06-08+) to enable same-night
+cross-validation for the current pull set.
+
+**Highest-priority retrospective target:** 2025-12-20 (HRV=10ms, temp+2.59°C, readiness=29
+— absolute extremes across 359 nights). If Gen3 boot_ts can be aligned to that date's
+flash window, it is the single best test of whether physiological decoders track illness.
+
 ## How to use this doc
 Check a box, move an item between sections, or add a note inline as
 hypotheses get tested. This is the single source of truth for "have we
