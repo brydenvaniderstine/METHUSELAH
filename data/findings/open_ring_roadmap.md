@@ -196,8 +196,19 @@ sub-types. This supersedes the earlier partial roadmap.
       with the sleep_state enum gap.
       CEILING: which physical axis maps to f0/f1/f2, exact ACM formula (RMS?
       variance?), and f5 overflow semantics need firmware disassembly.
-- [ ] 0x73 ehr_trace_event — 48 packets. Has decoder (header + u8 samples).
-      EHR = exercise heart rate. Semantics not confirmed.
+- [ ] 0x73 ehr_trace_event — PARTIAL DECODE (2026-06-30). 48 packets, 1 activity pull.
+      Firmware name confirmed: DHR (Dynamic Heart Rate), not EHR (debug event
+      DHR_state:1 at ts=39153941). Activity-only; zero packets in any sleep pull.
+      Structure: 4-packet bursts at ~122-tick (1.58s) intervals:
+      14b(ch0)+5b(ch0)+14b(ch1)+5b(ch1). b[0]=sequence counter; b[1]=channel(0/1).
+      14-byte: 5xU16_LE optical samples; f2 notably lower (mean 2681/8810) vs f0/f1/f3/f4
+      (mean 16k-39k) -- likely DC offset/noise, not a 5th optical sample.
+      5-byte: u16_LE aggregate (ch0 mean 33724, ch1 mean 23816) + b[4]=quality/count
+      (ch0: 4-7 tight; ch1: 4-43 wide mean 25 -- ch1 may be primary beat-detection channel).
+      Cross-channel u16 r=-0.094 (independent signals). open_ring decoder reads flat u8
+      samples -- misses pair structure, channel field, u16 encoding entirely.
+      CEILING: channel-wavelength mapping (red/IR/green); f2 physical meaning; b[4]
+      semantics; no HR cross-validation (0x6A absent in DHR window).
 - [x] 0x80 green_ibi_quality_event — DONE 2026-06-28. See DONE section above.
 - [ ] 0x82/0x83 scan_start / scan_end — 0 packets. Gen3 does not emit.
 

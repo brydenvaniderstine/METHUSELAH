@@ -2069,3 +2069,86 @@ first action of the day.*
 Routine pull, no decoder gaps or anomalies requiring investigation.
 
 *Logged 2026-06-30.*
+
+---
+
+## 0x73 ehr_trace_event — PARTIAL DECODE (2026-06-30)
+
+**Source:** gen3_pull_20260620_231631.txt — 48 packets, all from one activity window.
+**open_ring decoder:** reads b[0] as counter + b[4:] as u8 samples — wrong; misses the
+14b/5b pair structure and the dual-channel field.
+
+### Confirmed: firmware name is DHR, not EHR
+Debug event at ts=39153941 in the same pull decodes to ASCII `DHR_state:1`.
+The pull label "EHR trace event" is the open_ring name; the firmware calls this
+subsystem **DHR** (Dynamic Heart Rate). EHR and DHR refer to the same exercise-HR mode.
+
+### Activity-only
+Zero 0x73 packets across any sleep pull. All 48 packets come from one activity window
+where DHR_state=1 is active. Not session-gated in the same way as 0x80 — it fires
+continuously during the DHR session, not per-beat.
+
+### 4-packet burst structure
+Packets fire in bursts of 4 at ~122-tick (~1.58s) intervals:
+
+```
+14b (b[1]=0, ch0) → 5b (b[1]=0, ch0)    [ticks T, T+1]
+14b (b[1]=1, ch1) → 5b (b[1]=1, ch1)    [ticks T+2, T+3]
+```
+
+- b[0] = monotonically incrementing sequence counter (0x92→0xc1 across 48 packets)
+- b[1] = optical channel select: 0=ch0, 1=ch1 (two interleaved wavelengths, analogous
+  to 0x77 L/H alternation pattern)
+
+### 14-byte packet: 5 × u16_LE optical samples
+b[2:12] = 5 consecutive u16_LE values per burst window.
+
+| Field | ch0 range | ch0 mean | ch1 range | ch1 mean |
+|---|---|---|---|---|
+| f0 | 13364–32125 | 20103 | 9783–26985 | 16450 |
+| f1 | 14095–43274 | 23289 | 16419–40460 | 27522 |
+| f2 | 2144–3645 | 2681 | 2197–15444 | 8810 |
+| f3 | 14132–47288 | 29897 | 11066–35980 | 24445 |
+| f4 | 26890–51718 | 39461 | 13337–34338 | 20625 |
+
+f2 has notably lower values and tighter range in ch0 (mean 2681) vs f0/f1/f3/f4
+(mean 20k–39k) — likely a different measurement type (DC offset? noise floor?) rather
+than a 5th optical sample.
+
+### 5-byte companion: aggregate + quality byte
+- b[2:4] = u16_LE aggregate value (ch0 mean 33724; ch1 mean 23816)
+- b[4] = per-channel count or quality metric:
+  - ch0: 4–7 (tight, mean 5.7)
+  - ch1: 4–43 (wide, mean 25.4)
+  Channel 1 shows much higher b[4] variance — possibly ch1 is the primary beat-detection
+  channel (count of IBI detections per window), ch0 is reference/secondary.
+
+### Cross-channel relationship
+Cross-channel 5-byte u16 correlation: r=−0.094 (near zero, independent signals).
+ch0 mean amplitude consistently > ch1 (33724 vs 23816). Consistent with red vs IR
+at different LED power levels — not identical measurements on two channels.
+
+### open_ring decoder is wrong
+open_ring reads `b[4:]` as a flat list of u8 samples. This misinterprets:
+- The 14b/5b pairing (treats them as independent 14-byte and 5-byte records)
+- The channel field b[1]
+- The 5 × u16_LE structure in the 14-byte form (reads as 10 × u8)
+
+### No HR cross-validation possible from existing data
+No 0x6A or 0x80 events appear in the DHR window. The ring appears to run DHR and the
+green-IBI/sleep HR subsystems in mutually exclusive modes. Cross-validating the u16
+optical values against a known HR requires either a simultaneous 0x6A event or a new
+EHR-mode pull where HR is also logged by the Oura app.
+
+### Falsified hypotheses
+- open_ring interpretation (flat u8 samples): falsified — 14b/5b pair structure confirmed
+- b[4] as raw sample: falsified — too small (3–43) and channel-asymmetric to be optical
+
+### Ceiling
+- Which optical channel (ch0/ch1) corresponds to which wavelength (red 660nm / IR 880nm / green 530nm)
+- Whether the 5 × u16_LE fields are raw optical amplitude samples or filtered/processed values
+- Physical meaning of f2 (consistently lower than f0/f1/f3/f4)
+- Physical meaning of 5-byte b[4] (beat count per window? SNR? quality metric?)
+- Cross-validation against HR requires a fresh EHR-mode pull with simultaneous Oura HR logging
+
+*Logged 2026-06-30.*
