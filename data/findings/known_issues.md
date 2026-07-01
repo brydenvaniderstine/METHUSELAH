@@ -1,3 +1,11 @@
+# ── UPDATE RULE ──────────────────────────────────────────────
+# Claude Code must append to this file at the end of any session
+# that produces a new finding, confirmed pattern, or resolved/
+# unresolved decoder question. Do not wait to be asked explicitly.
+# If a session ends without touching this file and a finding occurred,
+# that is an error. Last updated: 2026-06-30
+# ─────────────────────────────────────────────────────────────
+
 # METHUSELAH // Known Issues — Gen3 Decoders
 
 ## Gen3 vs Gen4 cross-validation — North Star reference (night of 2026-06-28/29)

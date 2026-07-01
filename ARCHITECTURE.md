@@ -97,3 +97,31 @@ component — only on the *interface* that component exposes.
 2. Add a decoder in `pipeline/decoders/` for its protocol.
 3. Add the new vector to `engine/` — thresholds, scoring weight, command impact.
 4. `web/` reads the new value from `engine/`. No structural change to `web/` required.
+
+---
+
+## Deferred decisions
+
+These decisions have been identified and deliberately parked.
+They are not forgotten — they live here until conditions change.
+
+### DGX Spark acquisition
+- Hardware: NVIDIA Grace Blackwell, 1 PFLOPS FP4, 128GB unified memory, ~$3–4K USD
+- Use case: local LLM inference for METHUSELAH v2 — data sovereignty, no token costs, clinical compliance
+- Buy signal: API costs become meaningful OR a clinical partner requires data residency
+- Status: watching, not buying. No action until one of the two buy signals fires.
+
+### Enoch / METHUSELAH data relationship
+- Enoch (enoch.ca) is the psychological self-awareness companion; METHUSELAH is the biological execution layer
+- Currently two separate Vercel deployments with no defined data relationship
+- Decision needed: permanently separate / future data bridge / unified platform
+- Status: parked until METHUSELAH Track B and v2 are further along
+
+### Evening pull folder naming convention
+- Current: time-of-day (gen3_morning / gen3_evening)
+- Alternative: classifier output (sleep_window / active_window)
+- Status: provisional time-of-day convention in place — revisit once two-pulls-a-day rhythm is established
+
+### Track B completion definition
+- No formal definition of "done" exists yet
+- Status: needs owner decision before v2 work begins in earnest
