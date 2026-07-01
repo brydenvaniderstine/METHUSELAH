@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# ARCHITECTURE VIOLATION — decoder functions defined inline in a pull script (pipeline/tools/)
+# Correct home: pipeline/decoders/0x6a.py, 0x5d.py, 0x6f.py, 0x75.py, 0x47.py, etc. (one file per tag)
+# Fix in a future session — do not move without updating all references
 import asyncio, struct, time, sys, re
 from pathlib import Path
 from bleak import BleakClient

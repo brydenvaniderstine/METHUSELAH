@@ -1,3 +1,6 @@
+// ARCHITECTURE VIOLATION — business logic in React component (web/ must import from engine/ only)
+// Correct home: engine/thresholds.js (L275–291 thresholds + L637–655 status labels), engine/scoring.js (L275–291 scoring), engine/commands.js (L481–522 command strings)
+// Fix in a future session — do not move without updating all references
 import React, { useState, useEffect, useRef } from "react";
 
 const CSS = `
