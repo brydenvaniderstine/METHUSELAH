@@ -1979,3 +1979,50 @@ with the mean close to zero after uint8→i8 reinterpretation.
 - Needs activity pull with active SpO2 measurement for high-variance cross-validation
 
 *Logged 2026-06-30.*
+
+---
+
+## Walk Experiment — INCONCLUSIVE (2026-06-28, logged 2026-06-30)
+
+**Experiment:** Timed walk to generate step-feature events for 0x7E/0x7F decoder validation.
+
+### Ground truth
+- Walk duration: ~10 minutes
+- Apple Health: 1273 steps
+- Oura app: 1163 steps (variance accepted as normal cross-device behavior)
+
+### Post-walk pulls
+- gen3_pull_20260628_201810.txt
+- gen3_pull_20260628_201845.txt
+- gen3_pull_20260628_203635.txt
+- gen3_pull_20260628_203908.txt
+
+All four pulls returned **zero step-feature events**. Window classified as SLEEP WINDOW
+across all four pulls. No 0x7E/0x7F packets. No walking-pattern motion events in the
+ring's activity-classifier signature.
+
+### Falsified hypotheses
+- Terminal window reuse causing stale session state: FALSIFIED — fresh terminal produced
+  identical result.
+
+### Root cause hypothesis (not yet falsified)
+**Oura app BLE competition.** The Oura app maintains a persistent BLE connection to the
+ring. When the app is running during or after the walk, it drains step-feature events
+from the ring's 255-event circular flash buffer before the pull script connects. By the
+time the pull script establishes its own BLE connection, the buffer has been partially
+or fully consumed by the app's background sync. This would explain:
+- Why the ring's own Oura app step count was 1163 (it saw the data)
+- Why the pull script found a SLEEP WINDOW (the app's drain shifted what was left in the buffer)
+- Why terminal-reuse was not the cause (the issue is BLE resource contention, not session state)
+
+### Required protocol for next attempt
+1. Kill Oura app **before** the walk begins — not after.
+2. Disable phone Bluetooth during the walk if possible.
+3. Pull immediately upon returning, before relaunching the Oura app.
+4. Aim for a longer walk (20+ min) to fill more of the 255-event buffer with step events.
+
+### Status
+INCONCLUSIVE — experiment design did not control for Oura app BLE contention.
+0x7E/0x7F decoder remains at structural ceiling pending a clean pull.
+
+*Logged 2026-06-30.*

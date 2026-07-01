@@ -70,9 +70,16 @@ sub-types. This supersedes the earlier partial roadmap.
       7F[3] highest-variance field (stdev 61.4, range 7–230), primary step
       output candidate. u16 hypothesis falsified (7F[3]↔7F[4] r=−0.084,
       independent). CEILING: cannot label 7F[3]/7F[4]/7F[7] without
-      ground-truth step count. NEXT: timed step session (count steps,
-      pull immediately), correlate 7F[3] against known step count for
-      the walk window — one 300-sec pair per 5-min segment.
+      ground-truth step count.
+      WALK EXPERIMENT: INCONCLUSIVE (2026-06-28). 1273 Apple Health steps /
+      1163 Oura steps confirmed. Post-walk pulls (201810, 201845, 203635,
+      203908) returned zero 0x7E/0x7F packets — buffer classified as SLEEP
+      WINDOW. Root cause: Oura app BLE connection drained step-feature events
+      before pull script connected. Terminal-reuse hypothesis FALSIFIED (fresh
+      terminal = identical result). NOT a decoder failure — a buffer-contention
+      failure. REVISED PROTOCOL: kill Oura app BEFORE walk begins; disable
+      phone BT during walk; pull immediately on return before relaunching app;
+      walk 20+ min to fill more of the 255-event buffer.
 - [ ] 0x6E spo2_ibi_and_amplitude_event — 3 hypotheses killed (channel-
       split, byte-0 counter, bytes-1-6 SpO2 correlation). Raw u8 values
       of bytes 1-6 are almost entirely 93-108 (= 87-102% under offset-6),
