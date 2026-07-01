@@ -2152,3 +2152,22 @@ EHR-mode pull where HR is also logged by the Oura app.
 - Cross-validation against HR requires a fresh EHR-mode pull with simultaneous Oura HR logging
 
 *Logged 2026-06-30.*
+
+---
+
+## 0x56 unknown_56 — NOT OBSERVED (2026-06-30)
+
+Zero packets across all 34 pulls (gen3_morning + gen3_autoloop directories).
+
+**open_ring internal contradiction:** The decoder at line 521 calls 0x56 a "confirmed
+real wire tag" with 4 occurrences across 4 captures and a context hypothesis (always
+between 0x50 activity_info and 0x47 motion_event). But the parser comment at line 1598
+lists 0x56 explicitly as an example of a "mid-stream byte-alignment misparsed value
+that never appear at the start of a real notification." The decoder and parser disagree
+about whether this tag is real.
+
+**Assessment:** Either 0x56 is rare enough to have missed our 34-pull window, it's
+firmware-version specific (open_ring's 4 captures may be Gen4 or a different Gen3 build),
+or open_ring's 4 occurrences were themselves misparses. Not actionable without more data.
+
+*Logged 2026-06-30.*
