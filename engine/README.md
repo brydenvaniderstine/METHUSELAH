@@ -1,28 +1,46 @@
 # engine/
 
 Single source of truth for what the data means and what to do about it.
-This is the only layer `web/` is allowed to import from.
+The only layer `web/` is allowed to import from.
 
 ## Purpose
-- Threshold definitions (what HRV value is "suppressed" vs "optimal")
-- Scoring logic (readiness score, suppression tier calculation)
+- Threshold definitions (numeric cutoffs per biomarker)
+- Scoring logic (readiness tier, suppression level)
 - Command string generation (what METHUSELAH tells the user to do)
-- Cross-vector relationship logic (how HRV + glucose + sleep together change a recommendation)
-- Canonical biomarker schema (key names used by all parsers)
+- Cross-vector relationship logic (how HRV + glucose + sleep interact)
+- Canonical biomarker key schema (used by all parsers as their output contract)
 
-## Planned files
-- `thresholds.js` / `thresholds.py` — numeric cutoffs per biomarker. Single place to tune.
-- `scoring.js` — readiness and suppression tier calculation. No UI logic here.
-- `commands.js` — command string generation given a scored state.
-- `schema.py` — canonical biomarker key list. Parsers import this, not the reverse.
+## The scope-change rule
+Adding a new data vector, removing one, or reweighting cross-vector logic should only
+require touching `engine/`. If a scope change requires editing `web/` AND `engine/`
+AND `pipeline/`, a boundary has been violated somewhere. `web/` should need only to
+read a new key that `engine/` exposes — not know anything about where the data came from.
 
 ## Import rules
-- `engine/` imports from `parsers/` (to get biomarker values) and nowhere else.
+- `engine/` imports from `parsers/` to get biomarker values. Nothing else.
 - `web/` imports from `engine/` only.
 - `engine/` never imports from `pipeline/`, `web/`, or `firmware/`.
 
-## Current violations (do not fix yet — fix by extracting from src/App.js)
-- HRV/RHR/deep-sleep thresholds hardcoded in `src/App.js` lines 275–291. Move to `engine/thresholds.js`.
-- Scoring function (`score += 25` / `score += 15` tiers) in `src/App.js` lines 275–291. Move to `engine/scoring.js`.
-- Command string generation in `src/App.js` lines 481–522. Move to `engine/commands.js`.
-- Status label ternaries in `src/App.js` lines 637–655. Move to `engine/thresholds.js` as exported functions.
+## Removability
+This directory cannot be silently removed — `web/` depends on it. However, individual
+files within `engine/` are independently removable: removing `engine/scoring.js` removes
+the scoring feature from `web/` cleanly, without touching any other layer.
+
+If `engine/` itself needs to be replaced (e.g. server-side logic instead of client-side),
+`web/` only needs to update its import target. `pipeline/`, `parsers/`, and `firmware/`
+are unaffected.
+
+## Planned files
+| File | Purpose | Status |
+|---|---|---|
+| `thresholds.js` | Numeric cutoffs per biomarker. Single place to tune. | Not built — logic in `src/App.js` L637–655 |
+| `scoring.js` | Readiness and suppression tier calculation. | Not built — logic in `src/App.js` L275–291 |
+| `commands.js` | Command string generation from scored state. | Not built — logic in `src/App.js` L481–522 |
+| `schema.py` | Canonical biomarker key list. Parsers import this. | Not built |
+
+## Current violations (to fix by extracting from src/App.js)
+| Source file | Lines | What to move | Destination |
+|---|---|---|---|
+| `src/App.js` | 275–291 | HRV/RHR/deep-sleep thresholds + scoring ladder | `engine/thresholds.js` + `engine/scoring.js` |
+| `src/App.js` | 481–522 | Command strings and warn-level logic | `engine/commands.js` |
+| `src/App.js` | 637–655 | Status label ternaries inline in JSX | `engine/thresholds.js` (exported functions) |

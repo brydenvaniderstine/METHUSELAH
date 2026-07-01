@@ -1,25 +1,35 @@
 # pipeline/
 
 BLE reverse-engineering work: pull scripts, decoders, raw data, findings.
-This layer never gets imported by `web/`. It is offline tooling only.
+Offline tooling only — nothing in `web/`, `engine/`, or `parsers/` imports from here.
 
 ## Structure
-
 ```
 pipeline/
-├── tools/       ← Pull scripts. Connect to the ring, dump the buffer, write raw_pulls/.
-├── decoders/    ← One file per tag (0x6a.py, 0x5d.py, etc.). Shared helpers in utils.py only.
+├── tools/       ← Pull scripts. Connect to ring, dump buffer, write to raw_pulls/.
+├── decoders/    ← One file per tag. Shared helpers in decoders/utils.py only.
 └── data/
     ├── raw_pulls/
-    │   ├── gen3_morning/    ← Morning sleep-window pulls
-    │   └── gen3_evening/    ← Pre-bed and activity pulls
-    └── findings/            ← Decoder notes, roadmap, comparison CSVs, baselines
+    │   ├── gen3_morning/
+    │   └── gen3_evening/
+    └── findings/
 ```
 
 ## Import rules
-- `pipeline/` has no consumers. Nothing in `web/`, `engine/`, or `parsers/` imports from here.
-- Each decoder in `decoders/` is self-contained. Cross-imports between decoder files are forbidden.
-- Shared decoder utilities go in `decoders/utils.py` only.
+`pipeline/` has no runtime consumers. `web/` and `engine/` never import from here.
+Pull scripts in `tools/` import from `decoders/` — not the other way around.
 
-## Current violations (do not fix yet — listed for future cleanup)
-- `tools/oura_gen3_morning_pull.py` contains full decoder function definitions inline (`decode_sleep_period_info_2`, `decode_hrv_event`, `decode_spo2_event`, `decode_sleep_temp_event`, `decode_motion_event`, etc. — lines 46–145). These belong in `decoders/` as individual files. The pull script should import from `decoders/`, not define its own.
+## Removability
+This entire directory can be removed without breaking `web/`, `engine/`, `parsers/`,
+or `firmware/`. It is offline research tooling. If the BLE RE work is complete and
+decoders are productionised into `engine/`, this directory becomes archival.
+
+Individual subdirectories are also independently removable:
+- Remove `decoders/` → `tools/` scripts lose their imports but nothing outside `pipeline/` changes.
+- Remove `data/raw_pulls/` → findings docs become reference-only. No code breaks.
+- Remove `data/findings/` → documentation loss only. No code breaks.
+
+## Current violations (flagged, not yet fixed)
+| File | Lines | Violation | Correct home |
+|---|---|---|---|
+| `tools/oura_gen3_morning_pull.py` | 46–145 | Decoder functions (`decode_sleep_period_info_2`, `decode_hrv_event`, `decode_spo2_event`, `decode_sleep_temp_event`, `decode_motion_event`, etc.) defined inline in a pull script | `pipeline/decoders/0x6a.py`, `0x5d.py`, `0x6f.py`, `0x75.py`, `0x47.py`, etc. |
