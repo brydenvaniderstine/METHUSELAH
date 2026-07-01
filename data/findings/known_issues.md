@@ -2026,3 +2026,46 @@ INCONCLUSIVE — experiment design did not control for Oura app BLE contention.
 0x7E/0x7F decoder remains at structural ceiling pending a clean pull.
 
 *Logged 2026-06-30.*
+
+---
+
+## Morning Pull Timing — Confirmed Operational Pattern (logged 2026-06-30)
+
+The buffer-roll failure mode is now confirmed across 4 independent instances, not a
+one-off. Documenting as an established operational pattern.
+
+### Confirmed instances of buffer-rolled-past-sleep
+1. Original nap miss — pulled too late, sleep window gone
+2. 6am bathroom break — brief walking after waking flushed sleep data
+3. Walk experiment (2026-06-28) — Oura app BLE contention + timing; pulls 201810/201845/203635/203908 all returned SLEEP WINDOW classification but with no step-feature events
+4. Morning pull gen3_pull_20260630_101238.txt — pulled at 10:12am, ACTIVE WINDOW; last night's sleep fully rolled out of buffer by AM routine
+
+### Confirmed rule
+**Pull before standing up.** Not "soon after waking" — literally while still in bed,
+before first movement. Walking even 30 seconds at activity rates (~2.35 events/sec)
+begins replacing sleep events within 108 seconds. By the time a normal morning routine
+(bathroom, kitchen) completes, the buffer has cycled multiple times.
+
+*This is not a timing edge case — it is the default failure mode if the pull is not the
+first action of the day.*
+
+---
+
+## Pre-bed Pull Log — gen3_pull_20260630_215819.txt (2026-06-30 21:58)
+
+**Filed:** data/raw_pulls/gen3_morning/ (evening pre-bed pull)
+**Classifier:** SLEEP WINDOW — clean, no anomalies.
+
+| Signal | Value | Assessment |
+|---|---|---|
+| sleep_state | 1 throughout | Normal |
+| HR | 57–62 bpm | Normal resting baseline |
+| SpO2 | 92–98% | Within expected range |
+| Sleep temp | 35.2–35.6°C | Normal for Bryden |
+| pfsm pair | 6/128, seconds_in_pfsm=77/77 | Consistent with confirmed decoder |
+| Step features | None | Expected (pre-bed) |
+| Motion anomalies | None | Clean |
+
+Routine pull, no decoder gaps or anomalies requiring investigation.
+
+*Logged 2026-06-30.*
