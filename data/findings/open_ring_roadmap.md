@@ -217,7 +217,10 @@ sub-types. This supersedes the earlier partial roadmap.
       open_ring has internal contradiction: decoder calls it "confirmed real wire tag"
       (4 occurrences, 4 captures); parser lists it as example of mid-stream misparsed
       byte that "never appears at start of real notification." Not actionable.
-- [ ] 0x85 unknown_85 — 10-byte record with a timestamp + unexplained trailer
+- [ ] 0x85 unknown_85 — NOT OBSERVED (2026-06-30). Zero packets across 34 pulls.
+      open_ring: 16 samples May 2-6 2026, format confirmed: unix_s:u32 + 4×0x00 +
+      trailer:u16 (502/504 alternating). Low-cadence or condition-specific; not
+      actionable without catching it in a future pull.
 
 ## NOT STARTED — Tier 3, debug/diagnostic sub-types under 0x61 (24)
 All dispatched via sub-byte at payload offset 0, tag 0x61 itself.

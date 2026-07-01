@@ -2171,3 +2171,20 @@ firmware-version specific (open_ring's 4 captures may be Gen4 or a different Gen
 or open_ring's 4 occurrences were themselves misparses. Not actionable without more data.
 
 *Logged 2026-06-30.*
+
+---
+
+## 0x85 unknown_85 — NOT OBSERVED (2026-06-30)
+
+Zero packets across all 34 pulls (gen3_morning + gen3_autoloop directories).
+
+open_ring documents 16 samples across May 2-6 2026 with a well-characterized format:
+`<unix_s:u32 LE><00 00 00 00><trailer:u16>`. Trailer alternates 0x01f6/0x01f8 (502/504).
+The embedded unix timestamp is the ring's RTC at event time, with deltas from receive
+time ranging -16s (live) to -49820s (~13.8h catchup) — consistent with buffer dump.
+
+open_ring's captures are from a different pull window (May 2026). Our capture window
+(June 2026) has not caught this event. Low-cadence or condition-specific emitter.
+Not actionable from existing data.
+
+*Logged 2026-06-30.*
