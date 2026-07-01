@@ -48,12 +48,14 @@ conflict, this file takes precedence — it is version-controlled.
 - SESSION_HANDOFF.md created (this file) — version-controlled, supersedes SESSION_HANDOFF_v9.md.
 - Directory skeleton created: `pipeline/`, `engine/`, `parsers/`, `web/`, `firmware/` with READMEs in each.
 - Physical file migration (audit pass 1): `tools/` → `pipeline/tools/`, `data/findings/` → `pipeline/data/findings/`, stray pull files → `data/raw_pulls/gen3_evening/`.
-- Violation comments added to `src/App.js` and `pipeline/tools/oura_gen3_morning_pull.py`.
+- Violation comments added to `web/src/App.js` and `pipeline/tools/oura_gen3_morning_pull.py`.
 - `pipeline/data/findings/SCHEMA.md` created — full column schema for comparison CSV.
 - Update rules prepended to `known_issues.md` and `open_ring_roadmap.md`.
 - `data/raw_pulls/gen3_evening/` created with README. gitignore fixed to track README files in raw_pulls/.
 - Morning pull timing operational pattern documented (4 confirmed instances).
 - Pre-bed pull gen3_pull_20260630_215819.txt logged as clean SLEEP WINDOW.
+- **Decoder extraction (Session 1 of 2):** 9 inline decode_* functions extracted from `pipeline/tools/oura_gen3_morning_pull.py` into individual `pipeline/decoders/0x??.py` files. `pipeline/decoders/__init__.py` uses importlib.util to load digit-named modules (can't use dotted from-imports). `pipeline/decoders/utils.py` holds _i8/_u32 helpers. Pull script now imports from `pipeline.decoders`.
+- **Web layer migration (Session 2 of 2):** All web files (src/, public/, ios/, package.json, capacitor.config.ts, lockfiles, .eslintrc.json) moved into `web/`. Build verified passing from `web/`. `vercel.json` added at repo root so Vercel builds from `web/` without moving `api/`. Committed as "refactor: move web layer files into web/ directory".
 
 ---
 
@@ -63,9 +65,7 @@ conflict, this file takes precedence — it is version-controlled.
 
 2. **Fresh Gen4 export** — Export Gen4 data from 2026-06-08 onward. Unlocks same-night cross-validation for all June 2026 pulls (current export ends 2026-06-07).
 
-3. **Web layer migration (audit pass 2)** — Move `src/`, `public/`, `ios/`, `package.json`, `capacitor.config.ts`, lockfiles into `web/`. Requires npm/Capacitor path audit before executing. Do not do this without verifying build still works after each move.
-
-4. **Decoder migration** — Extract the 9 inline `decode_*` functions from `pipeline/tools/oura_gen3_morning_pull.py` into individual `pipeline/decoders/0x??.py` files. Update pull script to import from there.
+3. **Extract business logic from `web/src/App.js` into `engine/`** — Thresholds (L278-294), scoring, status labels (L640-658), and command strings (L484-525) are flagged violations sitting in the React component. Extract to `engine/thresholds.js`, `engine/scoring.js`, `engine/commands.js`. Update App.js to import from engine/.
 
 ---
 
