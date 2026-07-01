@@ -1,12 +1,23 @@
 #!/usr/bin/env python3
-# ARCHITECTURE VIOLATION — decoder functions defined inline in a pull script (pipeline/tools/)
-# Correct home: pipeline/decoders/0x6a.py, 0x5d.py, 0x6f.py, 0x75.py, 0x47.py, etc. (one file per tag)
-# Fix in a future session — do not move without updating all references
 import asyncio, struct, time, sys, re
 from pathlib import Path
 from bleak import BleakClient
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
+
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..'))
+from decoders import (
+    decode_sleep_period_info_2,
+    decode_hrv_event,
+    decode_debug_data_sleep_statistics,
+    decode_debug_data_battery_level,
+    decode_debug_data_fuel_gauge,
+    decode_spo2_event,
+    decode_sleep_temp_event,
+    decode_motion_event,
+    decode_bedtime_period,
+)
 
 ADDR        = "71E77907-1EE9-4949-801C-02979071309C"
 AUTH_KEY    = bytes.fromhex("bdc2c37e63ce24c445b7de1eba6e1a65")
@@ -39,109 +50,6 @@ EVENT_TAGS = {
 }
 
 PRIORITY_TAGS = {0x44, 0x47, 0x49, 0x4B, 0x4C, 0x4E, 0x4F, 0x53, 0x55, 0x58, 0x5D, 0x60, 0x69, 0x6A, 0x6B, 0x6E, 0x6F, 0x71, 0x72, 0x75, 0x76, 0x77, 0x7E, 0x7F}
-
-def _i8(b):
-    return b - 0x100 if b & 0x80 else b
-
-def _u32(p, off):
-    return p[off] | (p[off+1]<<8) | (p[off+2]<<16) | (p[off+3]<<24)
-
-def decode_sleep_period_info_2(p):
-    if len(p) < 10:
-        raise ValueError("too short")
-    motion_count = p[6]
-    if motion_count >= 0x79:
-        raise ValueError("motion_count out of range")
-    sleep_state = _i8(p[7])
-    if not (0 <= sleep_state < 3):
-        raise ValueError("sleep_state out of range")
-    cv_raw = p[8] | (p[9] << 8)
-    return {
-        "average_hr": p[0] * 0.5, "hr_trend": _i8(p[1]) * 0.0625,
-        "mzci": p[2] * 0.0625, "dzci": p[3] * 0.0625,
-        "breath": p[4] / 8.0, "breath_v": p[5] / 8.0,
-        "motion_count": motion_count, "sleep_state": sleep_state,
-        "cv": cv_raw / 65536.0,
-    }
-
-def decode_hrv_event(p):
-    n = len(p)
-    if n < 2 or n > 12 or n % 2 != 0:
-        raise ValueError("invalid HRV payload size")
-    pairs = []
-    for i in range(0, n, 2):
-        pairs.append({"hr_bpm": p[i], "rmssd_ms": p[i + 1]})
-    return {"samples_5min": pairs}
-
-def decode_debug_data_sleep_statistics(p):
-    if len(p) < 14:
-        raise ValueError("sleep_statistics payload too short")
-    if p[0] != 0x09:
-        raise ValueError(f"not a sleep_statistics record (sub_byte={p[0]:#x})")
-    return {
-        # offset-3 u16 LE confirmed 2026-06-26: seconds in current pfsm state
-        "seconds_in_pfsm_state": p[3] | (p[4] << 8),
-        "pfsm_state": p[13],
-        # remaining fields (offsets 1-2, 4-12) not yet decoded correctly —
-        # open_ring's u32 layout produces nonsense; excluded until resolved
-    }
-
-def decode_debug_data_battery_level(p):
-    if len(p) < 5:
-        raise ValueError("battery_level_changed payload too short")
-    if p[0] != 0x24:
-        raise ValueError(f"not a battery_level record (sub_byte={p[0]:#x})")
-    return {
-        "battery_percentage": p[1],
-        "battery_voltage_mv": p[2] | (p[3] << 8),
-        "reason": p[4],
-    }
-
-def decode_debug_data_fuel_gauge(p):
-    if len(p) < 14:
-        raise ValueError("fuel_gauge_statistics payload too short")
-    if p[0] != 0x14:
-        raise ValueError(f"not a fuel_gauge record (sub_byte={p[0]:#x})")
-    battery_pct_raw = p[1] | (p[2] << 8)
-    voltage = p[3] | (p[4] << 8)
-    return {
-        "battery_percentage": battery_pct_raw / 256.0,
-        "average_battery_voltage_mv": voltage,
-        "remaining_capacity": p[9] | (p[10] << 8),
-    }
-
-def decode_spo2_event(p):
-    if len(p) < 1:
-        raise ValueError("Spo2Event payload too short")
-    samples_end = len(p) - 1 if len(p) > 1 and p[-1] == 0xff else len(p)
-    SPO2_OFFSET = 6  # raw byte = true % + 6; see known_issues.md fix log 2026-06-24
-    return {
-        "header_high": p[0] >> 4,
-        "header_low": p[0] & 0x0F,
-        "spo2_percent": [b - SPO2_OFFSET for b in p[1:samples_end]],
-    }
-
-def decode_sleep_temp_event(p):
-    n = len(p)
-    if n == 0 or n & 1:
-        raise ValueError("SleepTempEvent payload size must be even and >0")
-    n_samples = n // 2
-    temps_c = [(p[i] | (p[i + 1] << 8)) / 100.0 for i in range(0, n, 2)]
-    return {"n_samples": n_samples, "temps_c": temps_c}
-
-def decode_motion_event(p):
-    n = len(p)
-    if n < 4 or n > 6:
-        raise ValueError("MotionEvent payload size must be in [4..6]")
-    return {
-        "flags_high": p[0] >> 5, "flags_low": p[0] & 0x1F,
-        "acm_x": _i8(p[1]) * 8, "acm_y": _i8(p[2]) * 8, "acm_z": _i8(p[3]) * 8,
-    }
-
-def decode_bedtime_period(p):
-    if len(p) < 8:
-        raise ValueError("BedtimePeriod payload must be >=8 bytes")
-    return {"start_ring_time": _u32(p, 0), "end_ring_time": _u32(p, 4)}
 
 def encrypt_nonce(nonce):
     return AES.new(AUTH_KEY, AES.MODE_ECB).encrypt(pad(nonce, 16))
