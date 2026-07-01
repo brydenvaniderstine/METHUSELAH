@@ -27,13 +27,45 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
-*To be filled in at end of session.*
+**Date:** 2026-06-30 / 2026-07-01
+
+**Decoder work completed:**
+- 0x80 green_ibi_quality_event: VALIDATED. Cross-validated against 0x6A avg_hr on 3 pulls (mean delta +0.9bpm). IBI=2000ms sentinel confirmed. Session-gated (9/29 pulls). Corrected wrong "activity-only" prior entry.
+- 0x72 sleep_acm_period: PARTIAL DECODE. Format corrected to 6×u16 LE (open_ring reads u8 — wrong). f1=gravity axis confirmed (0 violations of f1=max(f0,f1,f2) across 215 packets). sleep_state=0 has ~2× higher motion than state=1.
+- 0x5B ble_connection_ind: PARTIAL DECODE. 4-subtype structure discovered. BLE spec confirmed connection intervals (258.75ms sleep / 33.75ms active). MAC address in subtype 3.
+- 0x50 activity_info_event: PARTIAL DECODE. b[0]=activity class enum. 13-sample intensity array in trailing bytes (missed by open_ring auto-extractor).
+- 0x6C feature_session: b1 direction map extended to 5 values. b0=8=EHR_INHIBIT confirmed.
+- 0x77 spo2_dc_event: Structural ceiling confirmed. Diagonal correlation matrix proves b[1:14] are time-series, not independent fields. b[0] vs SpO2 r≈0.
+- 0x73 ehr_trace_event: PARTIAL DECODE. Firmware name confirmed as DHR (DHR_state:1 debug event). 4-packet burst structure: 14b(ch0)+5b(ch0)+14b(ch1)+5b(ch1) at ~1.58s intervals. open_ring decoder reads flat u8 — wrong.
+- 0x56 unknown_56: NOT OBSERVED (0 packets, open_ring internal contradiction documented).
+- 0x85 unknown_85: NOT OBSERVED (0 packets, low-cadence emitter).
+- Walk experiment: INCONCLUSIVE. Oura app BLE contention drained step-feature events before pull script connected. Revised protocol documented.
+
+**Infrastructure completed:**
+- Gen4 baseline reference: 359 nights imported, `pipeline/data/findings/gen4_baselines.md` created.
+- `gen3_vs_gen4_comparison.csv`: 3 new columns added (respiratory_rate, activity_balance, readiness_contributors_summary).
+- ARCHITECTURE.md created — five-layer architecture documented with import rules, removability contract, build status, deferred decisions.
+- SESSION_HANDOFF.md created (this file) — version-controlled, supersedes SESSION_HANDOFF_v9.md.
+- Directory skeleton created: `pipeline/`, `engine/`, `parsers/`, `web/`, `firmware/` with READMEs in each.
+- Physical file migration (audit pass 1): `tools/` → `pipeline/tools/`, `data/findings/` → `pipeline/data/findings/`, stray pull files → `data/raw_pulls/gen3_evening/`.
+- Violation comments added to `src/App.js` and `pipeline/tools/oura_gen3_morning_pull.py`.
+- `pipeline/data/findings/SCHEMA.md` created — full column schema for comparison CSV.
+- Update rules prepended to `known_issues.md` and `open_ring_roadmap.md`.
+- `data/raw_pulls/gen3_evening/` created with README. gitignore fixed to track README files in raw_pulls/.
+- Morning pull timing operational pattern documented (4 confirmed instances).
+- Pre-bed pull gen3_pull_20260630_215819.txt logged as clean SLEEP WINDOW.
 
 ---
 
 ## Next session priority
 
-*To be filled in at end of session.*
+1. **Walk experiment (retry)** — Kill Oura app *before* walking. BT off on phone during walk. 20+ min walk. Pull immediately on return before relaunching app. This is the single remaining physical-action blocker for 0x7E/0x7F step decoder validation.
+
+2. **Fresh Gen4 export** — Export Gen4 data from 2026-06-08 onward. Unlocks same-night cross-validation for all June 2026 pulls (current export ends 2026-06-07).
+
+3. **Web layer migration (audit pass 2)** — Move `src/`, `public/`, `ios/`, `package.json`, `capacitor.config.ts`, lockfiles into `web/`. Requires npm/Capacitor path audit before executing. Do not do this without verifying build still works after each move.
+
+4. **Decoder migration** — Extract the 9 inline `decode_*` functions from `pipeline/tools/oura_gen3_morning_pull.py` into individual `pipeline/decoders/0x??.py` files. Update pull script to import from there.
 
 ---
 
