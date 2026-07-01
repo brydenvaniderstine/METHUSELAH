@@ -3,7 +3,7 @@
 # that produces a new finding, confirmed pattern, or resolved/
 # unresolved decoder question. Do not wait to be asked explicitly.
 # If a session ends without touching this file and a finding occurred,
-# that is an error. Last updated: 2026-06-30
+# that is an error. Last updated: 2026-07-01
 # ─────────────────────────────────────────────────────────────
 
 # METHUSELAH // open_ring Decoder Roadmap (COMPLETE — all 38 decoders tracked)
@@ -326,3 +326,30 @@ Check a box, move an item between sections, or add a note inline as
 hypotheses get tested. This is the single source of truth for "have we
 tried this tag yet" across the entire 38-entry surface — check here before
 re-investigating anything.
+
+---
+
+## Infrastructure: decoder extraction — COMPLETE (2026-07-01)
+
+All 9 inline `decode_*` functions extracted from `pipeline/tools/oura_gen3_morning_pull.py`
+into individual files in `pipeline/decoders/`:
+
+| File | Decoder | Status |
+|---|---|---|
+| `pipeline/decoders/0x6a.py` | sleep_period_info_2 | VALIDATED |
+| `pipeline/decoders/0x5d.py` | hrv_event | VALIDATED |
+| `pipeline/decoders/0x61_09.py` | debug_data_sleep_statistics | PARTIAL |
+| `pipeline/decoders/0x61_14.py` | debug_data_fuel_gauge | VALIDATED |
+| `pipeline/decoders/0x61_24.py` | debug_data_battery_level | VALIDATED |
+| `pipeline/decoders/0x6f.py` | spo2_event | VALIDATED |
+| `pipeline/decoders/0x75.py` | sleep_temp_event | VALIDATED |
+| `pipeline/decoders/0x47.py` | motion_event | VALIDATED |
+| `pipeline/decoders/0x76.py` | bedtime_period | NEVER OBSERVED |
+
+Shared helpers (`_i8`, `_u32`) moved to `pipeline/decoders/utils.py`. Pull script now
+imports from `pipeline.decoders`. Output verified byte-for-byte identical against known
+good pull values (0x6A avg_hr=54.5, 0x6F spo2=[93,93,93], 0x75 temps confirmed).
+
+`pipeline/decoders/` is now the canonical source of truth for all decoder logic.
+
+*Logged 2026-07-01.*

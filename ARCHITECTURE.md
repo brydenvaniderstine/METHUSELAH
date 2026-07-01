@@ -122,6 +122,31 @@ They are not forgotten — they live here until conditions change.
 - Alternative: classifier output (sleep_window / active_window)
 - Status: provisional time-of-day convention in place — revisit once two-pulls-a-day rhythm is established
 
-### Track B completion definition
-- No formal definition of "done" exists yet
-- Status: needs owner decision before v2 work begins in earnest
+### Track B completion definition — DRAFT (not yet approved)
+
+Track B is considered complete when all of the following are true:
+
+1. **sleep_state (0x6A)** returns real stage transitions across a full night --
+   not a flat "100% state=1" result. At minimum: REM, Light, and Deep stages
+   must appear in a single night's pull with timestamps that roughly align
+   with Gen4 official app output.
+
+2. **HRV (0x5D)** fires consistently -- at least one 0x5D event present in
+   three consecutive morning pulls. Currently returning zero events.
+
+3. **SpO2 (0x6F)** cross-validation passes -- Gen3 decoded SpO2 avg within
+   +-5% of Gen4 official app reading for three consecutive nights.
+   Currently showing one confirmed inconsistency (88% vs 97%).
+
+4. **Five blocked decoders** (0x6E, 0x77, 0x7E/0x7F, 0x6B) either:
+   (a) decoded to a confirmed working state, or
+   (b) formally documented as unresolvable with available data and closed.
+
+5. **Comparison CSV** contains a minimum of 14 consecutive nightly rows
+   with both Gen3 and Gen4 data present (not Gen4-only rows).
+
+When all five conditions are met, Track B is closed and v2 parser work
+begins. This definition can be revised -- but only in a dedicated session
+with an explicit reason for changing the bar.
+
+**Current status: 0 of 5 conditions met.**

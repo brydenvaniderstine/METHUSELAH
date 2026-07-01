@@ -3,7 +3,7 @@
 # that produces a new finding, confirmed pattern, or resolved/
 # unresolved decoder question. Do not wait to be asked explicitly.
 # If a session ends without touching this file and a finding occurred,
-# that is an error. Last updated: 2026-06-30
+# that is an error. Last updated: 2026-07-01
 # ─────────────────────────────────────────────────────────────
 
 # METHUSELAH // Known Issues — Gen3 Decoders
@@ -2179,6 +2179,41 @@ firmware-version specific (open_ring's 4 captures may be Gen4 or a different Gen
 or open_ring's 4 occurrences were themselves misparses. Not actionable without more data.
 
 *Logged 2026-06-30.*
+
+---
+
+## Pull timing constraint — ACTIVE WINDOW contamination (2026-07-01)
+
+Morning pull timing discipline confirmed as a recurring operational constraint across
+multiple independent instances: nap pull, 6am walk pull, and 2026-06-30 10:12am pull
+all returned ACTIVE WINDOW results instead of SLEEP WINDOW. The buffer reliably rolls
+past sleep data before the pull completes if any activity occurs post-waking.
+
+This is now a confirmed pattern, not a one-off. The 255-event circular buffer fills
+within ~108s of sustained walking. Any activity between waking and pulling discards
+the sleep-window events.
+
+**Status:** documented — no code fix possible. Human discipline required. Pull must
+happen before leaving bed.
+
+*Logged 2026-07-01.*
+
+---
+
+## boot_ts rollover warning — seen twice (2026-07-01)
+
+A 30.5M-tick gap between consecutive pulls (~509,365 minutes / ~354 days) appeared in
+both the 2026-06-28 evening pull and the 2026-06-29 morning pull. Likely a boot_ts
+counter reset or rollover on the ring side, not real elapsed time.
+
+Seen twice now — this is a pattern, not noise. Unknown whether this is a hardware fact
+(counter wraps at 2^25 ticks = ~30.6M ticks at 77 ticks/s ≈ 4.6 days) or an open_ring
+interpretation artifact (boot_ts parsing bug or incorrect tick-rate assumption).
+
+**Status:** open — thread not resolved. Do not use raw boot_ts deltas for timing
+calculations without filtering outliers above 1M ticks.
+
+*Logged 2026-07-01.*
 
 ---
 
