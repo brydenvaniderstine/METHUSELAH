@@ -282,6 +282,7 @@ export default function MethuselahFinal() {
   const [glucoseInput,    setGlucoseInput]    = useState("");
   const [execState,       setExecState]       = useState("idle");
   const [briefingOpen,    setBriefingOpen]    = useState(false);
+  const [gen3Bridge,      setGen3Bridge]      = useState(null);
   const [logs,            setLogs]            = useState([{ time: ts(), msg: "BIOLOGICAL SYSTEMS ONLINE // STANDING BY", type: "" }]);
   const logRef = useRef(null);
 
@@ -437,6 +438,17 @@ export default function MethuselahFinal() {
   useEffect(() => {
     const t = setInterval(() => setClock(ts()), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    fetch('/gen3_latest.json')
+      .then(res => res.ok ? res.json() : null)
+      .catch(() => null)
+      .then(data => {
+        if (data && data.source === 'gen3_ble') {
+          setGen3Bridge(data);
+        }
+      });
   }, []);
 
   useEffect(() => {
@@ -629,6 +641,18 @@ onBLERead={readBLEGlucose}
           </div>
 
           <div className="sys-log" ref={logRef}>
+            {gen3Bridge && (
+              <div className="log-line">
+                <span className="log-time">[{new Date(gen3Bridge.timestamp).toLocaleTimeString()}]</span>
+                <span style={{ color: "cyan" }}>
+                  {`GEN3 INTERCEPT: ${gen3Bridge.classifier} // ` +
+                   `RHR ${gen3Bridge.vectors.rhr_bpm != null ? gen3Bridge.vectors.rhr_bpm.toFixed(1) + ' BPM' : 'N/A'} // ` +
+                   `SPO2 ${gen3Bridge.vectors.spo2_avg_pct != null ? gen3Bridge.vectors.spo2_avg_pct + '%' : 'N/A'} // ` +
+                   `TEMP ${gen3Bridge.vectors.sleep_temp_c != null ? gen3Bridge.vectors.sleep_temp_c + '°C' : 'N/A'} // ` +
+                   `BATTERY ${gen3Bridge.vectors.battery_pct != null ? gen3Bridge.vectors.battery_pct + '%' : 'N/A'}`}
+                </span>
+              </div>
+            )}
             {logs.map((l, i) => (
               <div key={i} className="log-line">
                 <span className="log-time">[{l.time}]</span>
