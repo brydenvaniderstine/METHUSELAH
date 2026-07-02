@@ -159,3 +159,55 @@ begins. This definition can be revised -- but only in a dedicated session
 with an explicit reason for changing the bar.
 
 **Current status: 0 of 5 conditions met.**
+
+---
+
+## Known design tensions
+
+These are not bugs and not deferred decisions — they are structural
+tensions surfaced by the design test and acknowledged as real. Every
+future feature must be checked against these before shipping.
+
+### #6 — Burnout: no adherence acknowledgment
+The command engine issues the same command text on day 1 and day 30
+of consecutive correct execution. A person who has executed
+"EXECUTE 45-MIN ZONE 2 OUTPUT" correctly for two weeks receives no
+acknowledgment of that effort — the briefing text is identical every
+time. This is the burnout failure mode from the founding rationale
+applied to METHUSELAH itself.
+
+Status: acknowledged, not resolved. The tap-to-expand briefing does
+not worsen this — but does not solve it. Future decision: should
+briefings include a consecutive-execution count or an adherence signal?
+Do not add this without a dedicated design session — it risks drift
+toward engagement mechanics.
+
+### #7 — Reliability: briefings cite values from hardware with known gaps
+The briefing templates cite specific measured values ("your HRV read
+35ms") derived from Gen3 BLE decoding. The Gen3 decoder has a
+documented cross-validation gap: SpO2 read 88% on a night where Gen4
+official read 97% (known_issues.md). A person reading a briefing will
+likely treat the cited value as authoritative, with no awareness of
+the measurement uncertainty.
+
+Status: acknowledged, not resolved. No reliability caveat exists in
+the briefing templates as written. Future decision: should briefings
+include a confidence qualifier or data-source attribution? Do not add
+this without confirming it doesn't tip the briefing into information
+overload.
+
+### #8 — Override: briefings add authority without an escape valve
+The tap-to-expand mechanic is opt-in — a person who ignores the tap
+never sees the authority claim. This partially mitigates the override
+risk. However, once tapped, the briefing has no acknowledgment that
+the person is the final authority. "Your HRV read 35ms, Zone 2
+stimulates parasympathetic recovery" carries implicit authority with
+no "if you feel genuinely fine, you may be right" qualifier.
+
+Status: partially mitigated by the opt-in tap mechanic, not fully
+resolved. The original silent command had no authority claim at all —
+the briefing adds one. Future decision: does the briefing need a
+single closing line that returns authority to the person? Candidate
+language: "You are the final authority. If this doesn't match how
+you feel, trust yourself." Do not add without pressure-testing against
+the prime directive — it risks softening the command into a suggestion.
