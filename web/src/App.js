@@ -1,7 +1,5 @@
-// ARCHITECTURE VIOLATION — business logic in React component (web/ must import from engine/ only)
-// Correct home: engine/thresholds.js (L275–291 thresholds + L637–655 status labels), engine/scoring.js (L275–291 scoring), engine/commands.js (L481–522 command strings)
-// Fix in a future session — do not move without updating all references
 import React, { useState, useEffect, useRef } from "react";
+import { evaluate, calculateBRI, THRESHOLDS } from "./engine/index.js";
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
@@ -213,7 +211,7 @@ function Metric({ label, val, unit, pct, color, status, isReal }) {
 
 function GlucosePanel({ reading, entryOpen, inputVal, onTap, onBLERead, onInputChange, onKeyDown, onSubmit }) {
   const hasReading = reading !== null;
-  const isElevated = hasReading && reading > 5.8;
+  const isElevated = hasReading && reading > THRESHOLDS.glucose;
   const color = !hasReading
     ? "var(--accent-amber)"
     : isElevated
@@ -264,38 +262,7 @@ function GlucosePanel({ reading, entryOpen, inputVal, onTap, onBLERead, onInputC
   );
 }
 
-function calculateBRI(glucose, hrv, rhr, deepSleepPct, glucosePending) {
-  let score = 0;
-
-  if (glucosePending) {
-    score += 15;
-  } else if (glucose < 5.0) {
-    score += 25;
-  } else if (glucose <= 5.8) {
-    score += 15;
-  }
-
-  if (hrv === null)        { score += 15; }
-  else if (hrv >= 55)      { score += 25; }
-  else if (hrv >= 22)      { score += 15; }
-
-  if (rhr === null)        { score += 15; }
-  else if (rhr < 50)       { score += 25; }
-  else if (rhr <= 63)      { score += 15; }
-
-  if (deepSleepPct === null)      { score += 15; }
-  else if (deepSleepPct >= 20)    { score += 25; }
-  else if (deepSleepPct >= 12)    { score += 15; }
-
-  let label, color;
-  if      (score >= 85) { label = "OPTIMAL";                color = "#00aaff"; }
-  else if (score >= 70) { label = "NOMINAL";                color = "#00ff66"; }
-  else if (score >= 50) { label = "MODERATE SUPPRESSION";   color = "#ffb300"; }
-  else if (score >= 25) { label = "SIGNIFICANT SUPPRESSION"; color = "#ff2a2a"; }
-  else                  { label = "CRITICAL";               color = "#cc0000"; }
-
-  return { score, label, color };
-}
+// calculateBRI moved to engine/index.js — imported above
 
 export default function MethuselahFinal() {
   const ts = () => new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -363,7 +330,7 @@ export default function MethuselahFinal() {
             addLog(`REPAIR DEPTH 7-DAY AVG: ${avgDeep.toFixed(0)}% // ${trendDeep}`, "roche");
           }
 
-          const briFetch = calculateBRI(null, hrv, rhr, deepSleepPct, true);
+          const briFetch = calculateBRI({ glucose: null, hrv, rhr, deepSleepPct, glucosePending: true });
           addLog(`BIOLOGICAL READINESS INDEX: ${briFetch.score} // ${briFetch.label} // GLUCOSE PENDING`, "", briFetch.color);
 
           return true;
@@ -437,7 +404,7 @@ export default function MethuselahFinal() {
         setGlucoseEntryOpen(false);
         setGlucoseInput("");
         addLog("BLE INTERCEPT: " + glucose.toFixed(1) + " MMOL/L // AUTO-LOGGED", "roche");
-        const bri = calculateBRI(glucose, ouraData.hrv, ouraData.rhr, ouraData.deepSleepPct, false);
+        const bri = calculateBRI({ glucose, hrv: ouraData.hrv, rhr: ouraData.rhr, deepSleepPct: ouraData.deepSleepPct, glucosePending: false });
         addLog("BIOLOGICAL READINESS INDEX: " + bri.score + " // " + bri.label + " // ALL VECTORS CONFIRMED", "", bri.color);
       } else {
         addLog("BLE // NO READING YET — ENTER MANUALLY", "event");
@@ -456,7 +423,7 @@ export default function MethuselahFinal() {
     localStorage.setItem("glucoseReading", val.toString());
     localStorage.setItem("glucoseDate", today);
     addLog(`GLYCEMIC INTERCEPT: ${val.toFixed(1)} MMOL/L // MANUAL ENTRY`, "roche");
-    const briGlucose = calculateBRI(val, ouraData.hrv, ouraData.rhr, ouraData.deepSleepPct, false);
+    const briGlucose = calculateBRI({ glucose: val, hrv: ouraData.hrv, rhr: ouraData.rhr, deepSleepPct: ouraData.deepSleepPct, glucosePending: false });
     addLog(`BIOLOGICAL READINESS INDEX: ${briGlucose.score} // ${briGlucose.label} // ALL VECTORS CONFIRMED`, "", briGlucose.color);
     setGlucoseEntryOpen(false);
     setGlucoseInput("");
@@ -479,58 +446,13 @@ export default function MethuselahFinal() {
 
   const { hrv, rhr, deepSleepPct } = ouraData;
 
-  let logic = {
-    name:   "",
-    cmd:    "BIOLOGY OPTIMAL.",
-    rat:    "",
-    color:  "var(--text-main)",
-    border: "var(--accent-green)",
-    level:  "optimal",
-  };
-
-  if (glucoseReading !== null && glucoseReading > 5.8) {
-    logic = {
-      name:   "24-HOUR WATER FAST",
-      cmd:    "INITIATE 24-HOUR WATER FAST.",
-      rat:    `GLYCEMIC FRICTION DETECTED (${glucoseReading.toFixed(1)} MMOL/L).`,
-      color:  "var(--accent-red)",
-      border: "var(--accent-red)",
-      level:  "critical",
-    };
-  } else if (hrv !== null && hrv < 22) {
-    logic = {
-      name:   "ZONE 2 OUTPUT",
-      cmd:    "EXECUTE 45-MIN ZONE 2 OUTPUT.",
-      rat:    `AUTONOMIC STRESS DETECTED (${Math.round(hrv)} MS HRV).`,
-      color:  "var(--text-main)",
-      border: "var(--accent-amber)",
-      level:  "warn",
-    };
-  } else if (rhr !== null && rhr > 63) {
-    logic = {
-      name:   "ACTIVE RECOVERY PROTOCOL",
-      cmd:    "INITIATE ACTIVE RECOVERY PROTOCOL.",
-      rat:    `CARDIAC LOAD ELEVATED (${rhr} BPM RHR).`,
-      color:  "var(--text-main)",
-      border: "var(--accent-amber)",
-      level:  "warn",
-    };
-  } else if (deepSleepPct !== null && deepSleepPct < 12) {
-    logic = {
-      name:   "SLEEP PROTOCOL",
-      cmd:    "INITIATE SLEEP PROTOCOL TONIGHT.",
-      rat:    `REPAIR DEPTH DEFICIENT (${deepSleepPct.toFixed(0)}% DEEP SLEEP).`,
-      color:  "var(--text-main)",
-      border: "var(--accent-amber)",
-      level:  "warn",
-    };
-  }
+  const logic = evaluate({ glucose: glucoseReading, hrv, rhr, deepSleepPct });
 
   const hrvPct  = hrv  !== null ? ((hrv  - 25) / (95 - 25))   * 100 : 0;
   const rhrPct  = rhr  !== null ? ((rhr  - 40) / (100 - 40))  * 100 : 0;
   const deepPct = deepSleepPct !== null ? Math.min(100, (deepSleepPct / 30) * 100) : 0;
 
-  const bri = calculateBRI(glucoseReading, hrv, rhr, deepSleepPct, glucoseReading === null);
+  const bri = calculateBRI({ glucose: glucoseReading, hrv, rhr, deepSleepPct, glucosePending: glucoseReading === null });
 
   const handleExecute = () => {
     setExecState("active");
@@ -636,8 +558,8 @@ onBLERead={readBLEGlucose}
               val={hrv !== null ? Math.round(hrv) : "--"}
               unit="ms"
               pct={hrvPct}
-              color={hrv === null ? "var(--text-dim)" : hrv < 22 ? "var(--accent-amber)" : "var(--accent-green)"}
-              status={hrv === null ? "AWAITING DATA" : hrv < 22 ? "SUPPRESSED" : "OPTIMAL"}
+              color={hrv === null ? "var(--text-dim)" : hrv < THRESHOLDS.hrv ? "var(--accent-amber)" : "var(--accent-green)"}
+              status={hrv === null ? "AWAITING DATA" : hrv < THRESHOLDS.hrv ? "SUPPRESSED" : "OPTIMAL"}
               isReal={ouraData.isLive}
             />
             <Metric
@@ -645,8 +567,8 @@ onBLERead={readBLEGlucose}
               val={rhr !== null ? rhr : "--"}
               unit="bpm"
               pct={rhrPct}
-              color={rhr === null ? "var(--text-dim)" : rhr > 63 ? "var(--accent-amber)" : "var(--accent-green)"}
-              status={rhr === null ? "AWAITING DATA" : rhr > 63 ? "ELEVATED" : "OPTIMAL"}
+              color={rhr === null ? "var(--text-dim)" : rhr > THRESHOLDS.rhr ? "var(--accent-amber)" : "var(--accent-green)"}
+              status={rhr === null ? "AWAITING DATA" : rhr > THRESHOLDS.rhr ? "ELEVATED" : "OPTIMAL"}
               isReal={ouraData.isLive}
             />
             <Metric
@@ -654,8 +576,8 @@ onBLERead={readBLEGlucose}
               val={deepSleepPct !== null ? deepSleepPct.toFixed(0) : "--"}
               unit="%"
               pct={deepPct}
-              color={deepSleepPct === null ? "var(--text-dim)" : deepSleepPct < 12 ? "var(--accent-amber)" : "var(--accent-green)"}
-              status={deepSleepPct === null ? "AWAITING DATA" : deepSleepPct < 12 ? "DEFICIENT" : "OPTIMAL"}
+              color={deepSleepPct === null ? "var(--text-dim)" : deepSleepPct < THRESHOLDS.deepSleep ? "var(--accent-amber)" : "var(--accent-green)"}
+              status={deepSleepPct === null ? "AWAITING DATA" : deepSleepPct < THRESHOLDS.deepSleep ? "DEFICIENT" : "OPTIMAL"}
               isReal={ouraData.isLive}
             />
           </div>

@@ -3,6 +3,18 @@
 Single source of truth for what the data means and what to do about it.
 The only layer `web/` is allowed to import from.
 
+## CRA build constraint
+CRA (create-react-app) blocks imports from outside `web/src/`. Engine files must
+also exist at `web/src/engine/` for the build to work. **Edit files here in `engine/`,
+then copy to `web/src/engine/` before committing.** Never edit `web/src/engine/` directly.
+
+```bash
+cp engine/*.js web/src/engine/
+```
+
+This copy is not automated. It is a known architectural friction point — acceptable
+until CRA is ejected or replaced with Vite.
+
 ## Purpose
 - Threshold definitions (numeric cutoffs per biomarker)
 - Scoring logic (readiness tier, suppression level)
