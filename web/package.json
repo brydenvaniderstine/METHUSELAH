@@ -18,6 +18,8 @@
     "typescript": "5.7.2"
   },
   "scripts": {
+    "prebuild": "cp ../engine/*.js src/engine/",
+    "prestart": "cp ../engine/*.js src/engine/",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test --env=jsdom",

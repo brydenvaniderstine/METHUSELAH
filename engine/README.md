@@ -5,15 +5,13 @@ The only layer `web/` is allowed to import from.
 
 ## CRA build constraint
 CRA (create-react-app) blocks imports from outside `web/src/`. Engine files must
-also exist at `web/src/engine/` for the build to work. **Edit files here in `engine/`,
-then copy to `web/src/engine/` before committing.** Never edit `web/src/engine/` directly.
+also exist at `web/src/engine/` for the build to work. Never edit `web/src/engine/`
+directly — it is overwritten on every build.
 
-```bash
-cp engine/*.js web/src/engine/
-```
-
-This copy is not automated. It is a known architectural friction point — acceptable
-until CRA is ejected or replaced with Vite.
+Engine files are automatically synced to `web/src/engine/` before every
+build and dev server start via the `prebuild`/`prestart` scripts in
+`web/package.json`. Do not manually copy — edit at `engine/` and let the
+build process handle the rest.
 
 ## Purpose
 - Threshold definitions (numeric cutoffs per biomarker)
