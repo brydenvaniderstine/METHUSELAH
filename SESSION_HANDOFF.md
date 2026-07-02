@@ -30,7 +30,12 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
-**Date:** 2026-07-01 (continued session)
+**Date:** 2026-07-02**
+
+**Three logging tasks complete (commit 9210d9b).**
+- CSV: First fully populated overnight row added for 2026-07-01/02 (Gen3 + Gen4).
+- known_issues.md: SpO2 cross-validation gap confirmed as recurring pattern — Night 1 (88% vs 97%, 9% gap), Night 2 (91.5% vs 97%, 5.5% gap). Systematic low bias in 0x6F. Track B condition #3 at 0/3.
+- Duplicate pulls (091718, 091802) deleted. gen3_morning/ now holds exactly two files: 000517_MIXED and 091253.
 
 **Task 2 complete — Python-to-React bridge fully wired (commit 641ee72).**
 - Pull script writes `pipeline/data/bridge/gen3_latest.json` after every run (classifier, vectors, pull_file, timestamp, source tag).
@@ -60,11 +65,13 @@ conflict, this file takes precedence — it is version-controlled.
 
 1. **Set up iOS Shortcuts** — follow `pipeline/tools/SHORTCUT_SETUP.md`. Add both shortcuts to lock screen. Tap morning shortcut immediately on next wake. Verify `pipeline/data/bridge/gen3_latest.json` updates and GEN3 INTERCEPT line appears on methuselah.ca.
 
-2. **Morning Gen3 pull** — immediately at waking, before any movement. Log to `known_issues.md`.
+2. **Morning Gen3 pull** — immediately at waking, before any movement.
 
-3. **Gen4 Oura screenshots** — two sets: (a) tonight's sleep to complete the 2026-07-01 evening row (HR, SpO2, sleep stages), (b) tonight's full overnight sleep for a new row. Add both to `gen3_vs_gen4_comparison.csv`.
+3. **SpO2 decoder investigation** — 0x6F has a confirmed systematic low bias (91.5% vs 97%, two nights in a row). Investigation entry point: `known_issues.md` → "2026-07-02 SpO2 cross-validation gap confirmed recurring pattern." Track B condition #3 blocked until resolved.
 
-4. **Walk experiment (retry)** — Kill Oura app BEFORE walking. BT off. 20+ min walk. Pull on return. Blocker for 0x7E/0x7F.
+4. **Gen4 Oura screenshots** — tonight's sleep for a new CSV row. Complete the 2026-07-01 evening row if Gen4 data is available (HR, SpO2, sleep stages).
+
+5. **Walk experiment (retry)** — Kill Oura app BEFORE walking. BT off. 20+ min walk. Pull on return. Blocker for 0x7E/0x7F.
 
 ---
 
