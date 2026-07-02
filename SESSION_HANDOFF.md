@@ -4,6 +4,9 @@ sections at the end of any session that produces a finding, structural change, o
 update. Do not skip this step.
 -->
 
+> North Star: pipeline/data/findings/why_not_conventional_trackers.md
+> Read this before making any product decision this session.
+
 # METHUSELAH — Session Handoff
 
 This file is the single source of truth for picking up where the last session left off.
@@ -29,18 +32,22 @@ conflict, this file takes precedence — it is version-controlled.
 
 **Date:** 2026-07-01
 
-**Infrastructure completed:**
-- methuselah.ca confirmed live on Vercel. All deployments `● Ready`. `api/oura.js` serving (400 on bare call = correct). `vercel.json` picked up correctly — build reads from `web/`, output from `web/build`.
-- `engine/index.js` created: priority-order comment, all-clear fallback, correct `return {` in RHR block. THRESHOLDS/COMMANDS are stubs — fill from `web/src/App.js` (L278-294, L484-525, L640-658) during engine build session.
-- `known_issues.md`: appended pull timing ACTIVE WINDOW constraint (confirmed recurring pattern) and boot_ts rollover warning (30.5M-tick gap seen in 2 consecutive pulls, open issue).
-- `open_ring_roadmap.md`: appended decoder extraction completion record with per-file validation status table.
-- `ARCHITECTURE.md`: Track B placeholder replaced with five-condition draft completion definition. Current status: 0 of 5 conditions met.
+**Session 1 — North Star document filed:**
+- `pipeline/data/findings/why_not_conventional_trackers.md` created — founding rationale, 10 failure modes, design test checklist. Version-controlled.
+- `ARCHITECTURE.md`: Founding rationale section added above layers breakdown.
+- `SESSION_HANDOFF.md`: North Star pointer added to file header.
+- Design test run against tap-to-expand briefing: 3 flags (#6 burnout — no adherence acknowledgment; #7 reliability — no confidence caveat on cited values; #8 override — no escape valve in briefing template). None block shipping. #8 is highest-priority to revisit.
+
+**Prior session (infrastructure):**
+- methuselah.ca confirmed live on Vercel. `vercel.json` picked up correctly.
+- `engine/index.js` created with correct structure (stubs for THRESHOLDS/COMMANDS).
+- `known_issues.md` and `open_ring_roadmap.md` updated. Track B definition drafted in ARCHITECTURE.md.
 
 ---
 
 ## Next session priority
 
-1. **Extract business logic from `web/src/App.js` into `engine/`** — `engine/index.js` stub is ready. Extract THRESHOLDS from App.js L278-294, COMMANDS from L484-525, status labels from L640-658. Move into `engine/thresholds.js`, `engine/scoring.js`, `engine/commands.js`. Fill the stubs in `engine/index.js`. Update App.js to import from `engine/` only.
+1. **Session 2 — Extract business logic from `web/src/App.js` into `engine/`** — `engine/index.js` stub is ready. Extract THRESHOLDS from App.js L278-294, COMMANDS from L484-525. Create `engine/thresholds.js` and `engine/commands.js`. Update App.js to import from `engine/` only. App must behave identically before and after — same commands, same thresholds, no visual changes.
 
 2. **Walk experiment (retry)** — Kill Oura app *before* walking. BT off on phone during walk. 20+ min walk. Pull immediately on return before relaunching app. This is the single remaining physical-action blocker for 0x7E/0x7F step decoder validation.
 

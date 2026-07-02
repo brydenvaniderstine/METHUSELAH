@@ -14,6 +14,15 @@ device unless the user explicitly chooses to export it.
 
 ---
 
+## Founding rationale
+Before making any product or feature decision, read:
+`pipeline/data/findings/why_not_conventional_trackers.md`
+This document defines what METHUSELAH is explicitly built against.
+Every feature must pass the design test at the bottom of that file
+before it ships. This is not optional — it is the North Star.
+
+---
+
 ## The five layers
 
 ```
