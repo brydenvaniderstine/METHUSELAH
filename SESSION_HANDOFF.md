@@ -32,6 +32,9 @@ conflict, this file takes precedence — it is version-controlled.
 
 **Date:** 2026-07-01
 
+**Live site verified 2026-07-01 22:xx — all systems nominal, tap-to-expand confirmed working in production.**
+- Smoke test found: 8 local commits had never been pushed. Also found npm/typescript peer dep conflict (react-scripts@5 requires TS ^3||^4, package.json has TS 5.7.2) — was silently handled by pnpm, fatal under npm. Fixed with `web/.npmrc` legacy-peer-deps=true. Deployed, bundle hash updated to c8fa7be5, 200/400 confirmed.
+
 **Evening pull filed — first day of two-pulls-a-day rhythm.**
 - `gen3_pull_20260701_220314.txt`: SLEEP WINDOW at 22:03 — daytime rest event captured (not overnight sleep). HR 63–67 bpm trending upward, consistent with sleep-to-waking transition. Distinct from deep overnight baseline (54–56 bpm).
 - `known_issues.md`: evening pull finding appended — HR signature distinguishes sleep quality before stage decoding is working. Battery 51.9%/50% at 10pm (~30% daily drain, first baseline data point). SpO2 avg ~94%, no outlier.
