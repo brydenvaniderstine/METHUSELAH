@@ -2264,3 +2264,31 @@ Status: logged, no action required. Confirms two-pulls-a-day rhythm
 is capturing different sleep event types depending on pull timing.
 
 *Logged 2026-07-01.*
+
+---
+
+## 2026-07-02 — SpO2 cross-validation gap confirmed recurring pattern
+
+Date: 2026-07-02
+Pull file: pipeline/data/raw_pulls/gen3_morning/gen3_pull_20260702_091253.txt
+
+Finding: Gen3 SpO2 avg 91.5% vs Gen4 official 97% for night of
+2026-07-01/02. Gap of 5.5%. This is the second significant
+cross-validation discrepancy:
+- Night 1 (2026-06-28/29): Gen3 88% vs Gen4 97% — 9% gap
+- Night 2 (2026-07-01/02): Gen3 91.5% vs Gen4 97% — 5.5% gap
+
+Pattern: Gen3 SpO2 decoder consistently reads lower than Gen4
+official. Gap is narrowing slightly (9% → 5.5%) but remains
+significant. Not a one-off sensor anomaly — the decoder has a
+systematic low bias.
+
+Track B completion condition #3 (SpO2 within ±5% of Gen4 for
+three consecutive nights) is not met. Current status: 0 of 3
+nights passing.
+
+Status: open — decoder calibration investigation needed. Do not
+promote 0x6F to confirmed decoder until three consecutive nights
+pass the ±5% cross-validation gate.
+
+*Logged 2026-07-02.*
