@@ -32,22 +32,27 @@ conflict, this file takes precedence — it is version-controlled.
 
 **Date:** 2026-07-01
 
-**Session 1 — North Star document filed:**
-- `pipeline/data/findings/why_not_conventional_trackers.md` created — founding rationale, 10 failure modes, design test checklist. Version-controlled.
-- `ARCHITECTURE.md`: Founding rationale section added above layers breakdown.
-- `SESSION_HANDOFF.md`: North Star pointer added to file header.
-- Design test run against tap-to-expand briefing: 3 flags (#6 burnout — no adherence acknowledgment; #7 reliability — no confidence caveat on cited values; #8 override — no escape valve in briefing template). None block shipping. #8 is highest-priority to revisit.
+**Session 3 — Tap-to-expand briefing live. V1 architecture complete.**
+- `web/src/App.js`: `briefingOpen` state added. Tapping `cmd-text` toggles briefing. Briefing is visually subordinate (11px, text-dim, left border). Resets on protocol change. Build verified passing.
+- Design test (as built): 3 flags (#6 burnout, #7 reliability, #8 override). #8 partially mitigated — briefing is opt-in, hidden by default. None block shipping. All three flags remain open for a future session.
 
-**Prior session (infrastructure):**
-- methuselah.ca confirmed live on Vercel. `vercel.json` picked up correctly.
-- `engine/index.js` created with correct structure (stubs for THRESHOLDS/COMMANDS).
-- `known_issues.md` and `open_ring_roadmap.md` updated. Track B definition drafted in ARCHITECTURE.md.
+**Session 2 — Engine extraction complete:**
+- `engine/thresholds.js`, `engine/commands.js`, `engine/index.js` — thresholds and commands canonical.
+- `web/src/App.js`: zero hardcoded thresholds, zero hardcoded command strings. Imports from engine/ only.
+- CRA constraint: `web/src/engine/` is a required physical copy. Edit `engine/` at root, then `cp engine/*.js web/src/engine/`.
+
+**Session 1 — North Star document filed:**
+- `pipeline/data/findings/why_not_conventional_trackers.md` created.
 
 ---
 
 ## Next session priority
 
-1. **Session 2 — Extract business logic from `web/src/App.js` into `engine/`** — `engine/index.js` stub is ready. Extract THRESHOLDS from App.js L278-294, COMMANDS from L484-525. Create `engine/thresholds.js` and `engine/commands.js`. Update App.js to import from `engine/` only. App must behave identically before and after — same commands, same thresholds, no visual changes.
+1. **Walk experiment (retry)** — Kill Oura app BEFORE walking. BT off on phone. 20+ min walk. Pull immediately on return. This is the single remaining physical-action blocker for 0x7E/0x7F step decoder validation.
+
+2. **Fresh Gen4 export** — Export Gen4 data from 2026-06-08 onward. Unlocks same-night cross-validation for June 2026 pulls (current export ends 2026-06-07).
+
+3. **Track B decoder work** — Next unworked decoder in open_ring_roadmap.md. Check the roadmap before starting.
 
 2. **Walk experiment (retry)** — Kill Oura app *before* walking. BT off on phone during walk. 20+ min walk. Pull immediately on return before relaunching app. This is the single remaining physical-action blocker for 0x7E/0x7F step decoder validation.
 
