@@ -173,11 +173,13 @@ async def main():
 
         print(f"\n=== SLEEP STATE DECODE (0x6a) ===")
         sleep_states = []
+        hr_avgs = []  # bridge accumulator
         for p in parsed:
             if p["tag"] == 0x6A:
                 try:
                     decoded = decode_sleep_period_info_2(p["payload"])
                     sleep_states.append(decoded["sleep_state"])
+                    hr_avgs.append(decoded["average_hr"])
                     print(f"  boot_ts={p['boot_ts']:>10}  state={decoded['sleep_state']}  "
                           f"hr={decoded['average_hr']:.1f}  breath={decoded['breath']:.1f}  "
                           f"motion={decoded['motion_count']}")
@@ -211,12 +213,14 @@ async def main():
 
         print(f"\n=== SPO2 DECODE (0x6f) ===")
         spo2_found = False
+        spo2_avgs = []  # bridge accumulator
         for p in parsed:
             if p["tag"] == 0x6F:
                 spo2_found = True
                 try:
                     d = decode_spo2_event(p["payload"])
                     avg = sum(d["spo2_percent"])/len(d["spo2_percent"]) if d["spo2_percent"] else 0
+                    spo2_avgs.append(avg)
                     print(f"  boot_ts={p['boot_ts']:>10}  samples={d['spo2_percent']}  avg={avg:.1f}%")
                 except ValueError as e:
                     print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
@@ -225,11 +229,13 @@ async def main():
 
         print(f"\n=== SLEEP TEMP DECODE (0x75) ===")
         temp_found = False
+        temps = []  # bridge accumulator
         for p in parsed:
             if p["tag"] == 0x75:
                 temp_found = True
                 try:
                     d = decode_sleep_temp_event(p["payload"])
+                    temps.extend(d["temps_c"])
                     print(f"  boot_ts={p['boot_ts']:>10}  temps_c={d['temps_c']}")
                 except ValueError as e:
                     print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
@@ -264,6 +270,7 @@ async def main():
 
         print(f"\n=== DEBUG DATA DECODE (0x61) - sleep stats / battery ===")
         debug_found = False
+        fuel_gauge_pct = None  # bridge accumulator
         for p in parsed:
             if p["tag"] == 0x61 and len(p["payload"]) > 0:
                 sub = p["payload"][0]
@@ -289,6 +296,7 @@ async def main():
                     debug_found = True
                     try:
                         d = decode_debug_data_fuel_gauge(p["payload"])
+                        fuel_gauge_pct = round(d["battery_percentage"], 1)
                         print(f"  boot_ts={p['boot_ts']:>10}  [FUEL GAUGE] "
                               f"{d['battery_percentage']:.1f}%  {d['average_battery_voltage_mv']}mV  "
                               f"remaining_capacity={d['remaining_capacity']}")
@@ -303,5 +311,55 @@ async def main():
             for p in parsed:
                 f.write(f"[{p['tag_name']}] boot_ts={p['boot_ts']} payload={p['payload'].hex()}\n")
         print(f"\nFull output saved to: {outpath}")
+
+        # ── AUTO-FILE BY CLASSIFIER ────────────────────────────────────────────
+        import shutil
+        base_dir = _os.path.dirname(_os.path.abspath(__file__))
+        repo_root = _os.path.join(base_dir, '..', '..')
+
+        if pull_class == "SLEEP WINDOW":
+            dest_dir = _os.path.join(repo_root, 'pipeline', 'data', 'raw_pulls', 'gen3_morning')
+        elif pull_class == "ACTIVE WINDOW":
+            dest_dir = _os.path.join(repo_root, 'pipeline', 'data', 'raw_pulls', 'gen3_evening')
+        elif pull_class == "MIXED WINDOW":
+            dest_dir = _os.path.join(repo_root, 'pipeline', 'data', 'raw_pulls', 'gen3_morning')
+            outpath = outpath.replace('.txt', '_MIXED.txt')
+        else:
+            dest_dir = _os.path.join(repo_root, 'pipeline', 'data', 'raw_pulls', 'gen3_morning')
+            outpath = outpath.replace('.txt', '_UNCLEAR.txt')
+
+        _os.makedirs(dest_dir, exist_ok=True)
+        dest_path = _os.path.join(dest_dir, _os.path.basename(outpath))
+        shutil.move(outpath, dest_path)
+        print(f"[AUTO-FILE] {pull_class} → {dest_path}")
+
+        # ── BRIDGE WRITER — feeds Gen3 data to the web app ───────────────────
+        import json
+        from datetime import datetime
+
+        bridge_data = {
+            "source": "gen3_ble",
+            "timestamp": datetime.now().isoformat(),
+            "pull_file": _os.path.basename(dest_path),
+            "classifier": pull_class,
+            "vectors": {
+                "hrv_ms": None,
+                "rhr_bpm": round(sum(hr_avgs) / len(hr_avgs), 1) if hr_avgs else None,
+                "deep_sleep_pct": None,
+                "sleep_temp_c": round(sum(temps) / len(temps), 2) if temps else None,
+                "spo2_avg_pct": round(sum(spo2_avgs) / len(spo2_avgs), 1) if spo2_avgs else None,
+                "battery_pct": fuel_gauge_pct,
+            },
+            "raw_sample_count": len(priority_events),
+        }
+
+        bridge_dir = _os.path.join(repo_root, 'pipeline', 'data', 'bridge')
+        _os.makedirs(bridge_dir, exist_ok=True)
+        bridge_path = _os.path.join(bridge_dir, 'gen3_latest.json')
+
+        with open(bridge_path, 'w') as f:
+            json.dump(bridge_data, f, indent=2)
+
+        print(f"[BRIDGE] Written → {bridge_path}")
 
 asyncio.run(main())
