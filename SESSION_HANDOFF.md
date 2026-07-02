@@ -32,31 +32,22 @@ conflict, this file takes precedence — it is version-controlled.
 
 **Date:** 2026-07-01
 
-**Session 3 — Tap-to-expand briefing live. V1 architecture complete.**
-- `web/src/App.js`: `briefingOpen` state added. Tapping `cmd-text` toggles briefing. Briefing is visually subordinate (11px, text-dim, left border). Resets on protocol change. Build verified passing.
-- Design test (as built): 3 flags (#6 burnout, #7 reliability, #8 override). #8 partially mitigated — briefing is opt-in, hidden by default. None block shipping. All three flags remain open for a future session.
-
-**Session 2 — Engine extraction complete:**
-- `engine/thresholds.js`, `engine/commands.js`, `engine/index.js` — thresholds and commands canonical.
-- `web/src/App.js`: zero hardcoded thresholds, zero hardcoded command strings. Imports from engine/ only.
-- CRA constraint: `web/src/engine/` is a required physical copy. Edit `engine/` at root, then `cp engine/*.js web/src/engine/`.
-
-**Session 1 — North Star document filed:**
-- `pipeline/data/findings/why_not_conventional_trackers.md` created.
+**V1 architecture fully closed.**
+- Auto-sync fix: `prebuild`/`prestart` scripts in `web/package.json` copy `engine/*.js` to `web/src/engine/` before every build and dev server start. Manual copy step eliminated. Build verified.
+- Known design tensions (#6 burnout, #7 reliability, #8 override) documented permanently in `ARCHITECTURE.md` — surfaced by design test during tap-to-expand build. Not bugs, not deferred — standing reference for every future feature decision.
+- Tap-to-expand briefing live: tapping command reveals briefing in subordinate text, tapping collapses. Engine fully wired to UI.
+- Engine is canonical source of truth: `engine/thresholds.js`, `engine/commands.js`, `engine/index.js`. `web/src/App.js` imports only from engine/. Zero hardcoded thresholds or command strings in web layer.
+- North Star document: `pipeline/data/findings/why_not_conventional_trackers.md`. Referenced in `ARCHITECTURE.md` and this file header.
 
 ---
 
 ## Next session priority
 
-1. **Walk experiment (retry)** — Kill Oura app BEFORE walking. BT off on phone. 20+ min walk. Pull immediately on return. This is the single remaining physical-action blocker for 0x7E/0x7F step decoder validation.
+1. **Track B resumes — morning Gen3 pull** — Run `pipeline/tools/oura_gen3_morning_pull.py`, log result to `pipeline/data/findings/known_issues.md`, add row to `gen3_vs_gen4_comparison.csv` if cross-validation data is available. Continue dataset building.
 
-2. **Fresh Gen4 export** — Export Gen4 data from 2026-06-08 onward. Unlocks same-night cross-validation for June 2026 pulls (current export ends 2026-06-07).
+2. **Walk experiment (retry)** — Kill Oura app BEFORE walking. BT off on phone. 20+ min walk. Pull immediately on return. Physical-action blocker for 0x7E/0x7F step decoder validation.
 
-3. **Track B decoder work** — Next unworked decoder in open_ring_roadmap.md. Check the roadmap before starting.
-
-2. **Walk experiment (retry)** — Kill Oura app *before* walking. BT off on phone during walk. 20+ min walk. Pull immediately on return before relaunching app. This is the single remaining physical-action blocker for 0x7E/0x7F step decoder validation.
-
-3. **Fresh Gen4 export** — Export Gen4 data from 2026-06-08 onward. Unlocks same-night cross-validation for all June 2026 pulls (current export ends 2026-06-07).
+3. **Fresh Gen4 export** — Export Gen4 data from 2026-06-08 onward. Unlocks same-night cross-validation for June 2026 pulls (export ends 2026-06-07).
 
 ---
 
