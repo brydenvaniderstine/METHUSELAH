@@ -32,22 +32,26 @@ conflict, this file takes precedence — it is version-controlled.
 
 **Date:** 2026-07-01
 
-**V1 architecture fully closed.**
-- Auto-sync fix: `prebuild`/`prestart` scripts in `web/package.json` copy `engine/*.js` to `web/src/engine/` before every build and dev server start. Manual copy step eliminated. Build verified.
-- Known design tensions (#6 burnout, #7 reliability, #8 override) documented permanently in `ARCHITECTURE.md` — surfaced by design test during tap-to-expand build. Not bugs, not deferred — standing reference for every future feature decision.
-- Tap-to-expand briefing live: tapping command reveals briefing in subordinate text, tapping collapses. Engine fully wired to UI.
-- Engine is canonical source of truth: `engine/thresholds.js`, `engine/commands.js`, `engine/index.js`. `web/src/App.js` imports only from engine/. Zero hardcoded thresholds or command strings in web layer.
-- North Star document: `pipeline/data/findings/why_not_conventional_trackers.md`. Referenced in `ARCHITECTURE.md` and this file header.
+**Evening pull filed — first day of two-pulls-a-day rhythm.**
+- `gen3_pull_20260701_220314.txt`: SLEEP WINDOW at 22:03 — daytime rest event captured (not overnight sleep). HR 63–67 bpm trending upward, consistent with sleep-to-waking transition. Distinct from deep overnight baseline (54–56 bpm).
+- `known_issues.md`: evening pull finding appended — HR signature distinguishes sleep quality before stage decoding is working. Battery 51.9%/50% at 10pm (~30% daily drain, first baseline data point). SpO2 avg ~94%, no outlier.
+- `gen3_vs_gen4_comparison.csv`: partial Gen3-only row added for 2026-07-01 evening. Gen4 fields n/a — pending tomorrow morning screenshots.
+
+**V1 architecture fully closed (earlier today):**
+- Auto-sync: `prebuild`/`prestart` scripts in `web/package.json`. Engine-to-web copy is automatic.
+- Known design tensions (#6, #7, #8) in `ARCHITECTURE.md`. Engine canonical. Tap-to-expand live.
 
 ---
 
 ## Next session priority
 
-1. **Track B resumes — morning Gen3 pull** — Run `pipeline/tools/oura_gen3_morning_pull.py`, log result to `pipeline/data/findings/known_issues.md`, add row to `gen3_vs_gen4_comparison.csv` if cross-validation data is available. Continue dataset building.
+⚠️ **PULL BEFORE MOVING** — morning pull must happen before leaving bed. Phone within reach. Script ready.
 
-2. **Walk experiment (retry)** — Kill Oura app BEFORE walking. BT off on phone. 20+ min walk. Pull immediately on return. Physical-action blocker for 0x7E/0x7F step decoder validation.
+1. **Morning Gen3 pull** — immediately at waking, before any movement. Log to `known_issues.md`.
 
-3. **Fresh Gen4 export** — Export Gen4 data from 2026-06-08 onward. Unlocks same-night cross-validation for June 2026 pulls (export ends 2026-06-07).
+2. **Gen4 Oura screenshots** — two sets: (a) tonight's sleep to complete the 2026-07-01 evening row (HR, SpO2, sleep stages), (b) tonight's full overnight sleep for a new row. Add both to `gen3_vs_gen4_comparison.csv`.
+
+3. **Walk experiment (retry)** — Kill Oura app BEFORE walking. BT off. 20+ min walk. Pull on return. Blocker for 0x7E/0x7F.
 
 ---
 

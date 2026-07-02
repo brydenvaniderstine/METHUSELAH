@@ -2231,3 +2231,36 @@ open_ring's captures are from a different pull window (May 2026). Our capture wi
 Not actionable from existing data.
 
 *Logged 2026-06-30.*
+
+---
+
+## 2026-07-01 — Evening pull: SLEEP WINDOW at 10pm — daytime sleep event captured
+
+Date: 2026-07-01
+Pull file: pipeline/data/raw_pulls/gen3_evening/gen3_pull_20260701_220314.txt
+Pull time: 22:03 local
+
+Finding: Evening pull returned SLEEP WINDOW classification despite being
+pulled at 10pm while awake. The buffer captured a real sleep event from
+earlier in the day — confirmed by HR signature (63.5–67.0 bpm trending
+upward, consistent with sleep-to-waking transition) and boot_ts range
+completely separate from the 2026-06-29 morning pull. This is a daytime
+rest/nap event, not last night's sleep.
+
+Significance: The decoder is sensitive enough to distinguish sleep quality
+by HR signature alone — deep overnight sleep (54–56 bpm) vs lighter
+daytime rest (63–67 bpm) — before sleep stage decoding is working.
+This is a meaningful data point, not noise.
+
+Battery observation: 51.9% / 50% at 10pm vs 82.4% at morning pull.
+~30% drop across one day of wear. First baseline consumption rate
+data point — log for future reference.
+
+SpO2 observation: 21 windows, 92.8–97.2%, avg ~93.5–94%. More
+consistent than the 88% outlier night. Not confirmed calibrated but
+not the outlier behavior that triggered the known issue flag.
+
+Status: logged, no action required. Confirms two-pulls-a-day rhythm
+is capturing different sleep event types depending on pull timing.
+
+*Logged 2026-07-01.*
