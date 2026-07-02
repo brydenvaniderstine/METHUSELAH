@@ -30,9 +30,17 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
-**Date:** 2026-07-01
+**Date:** 2026-07-01 (continued session)
 
-**Live site verified 2026-07-01 22:xx — all systems nominal, tap-to-expand confirmed working in production.**
+**Task 2 complete — Python-to-React bridge fully wired (commit 641ee72).**
+- Pull script writes `pipeline/data/bridge/gen3_latest.json` after every run (classifier, vectors, pull_file, timestamp, source tag).
+- `web/package.json` prebuild/prestart copies bridge JSON to `web/public/` so CRA can serve it.
+- `web/src/App.js`: bridge fetch useEffect on mount; `gen3Bridge` state; GEN3 INTERCEPT line renders at top of sys-log when data present (shows classifier, RHR, SpO2, temp, battery — cyan, timestamped).
+- Bridge file gitignored (data); `.gitkeep` committed to track directory.
+- iOS Shortcut wrappers at `pipeline/tools/pull_morning.sh` / `pull_evening.sh`; setup guide at `pipeline/tools/SHORTCUT_SETUP.md`.
+- Build clean at 67.61 kB gzip.
+
+**Earlier this session — Live site verified 2026-07-01 22:xx — all systems nominal, tap-to-expand confirmed working in production.**
 - Smoke test found: 8 local commits had never been pushed. Also found npm/typescript peer dep conflict (react-scripts@5 requires TS ^3||^4, package.json has TS 5.7.2) — was silently handled by pnpm, fatal under npm. Fixed with `web/.npmrc` legacy-peer-deps=true. Deployed, bundle hash updated to c8fa7be5, 200/400 confirmed.
 
 **Evening pull filed — first day of two-pulls-a-day rhythm.**
@@ -48,13 +56,15 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Next session priority
 
-⚠️ **PULL BEFORE MOVING** — morning pull must happen before leaving bed. Phone within reach. Script ready.
+⚠️ **PULL BEFORE MOVING** — morning pull must happen before leaving bed. Tap iOS shortcut. Script ready.
 
-1. **Morning Gen3 pull** — immediately at waking, before any movement. Log to `known_issues.md`.
+1. **Set up iOS Shortcuts** — follow `pipeline/tools/SHORTCUT_SETUP.md`. Add both shortcuts to lock screen. Tap morning shortcut immediately on next wake. Verify `pipeline/data/bridge/gen3_latest.json` updates and GEN3 INTERCEPT line appears on methuselah.ca.
 
-2. **Gen4 Oura screenshots** — two sets: (a) tonight's sleep to complete the 2026-07-01 evening row (HR, SpO2, sleep stages), (b) tonight's full overnight sleep for a new row. Add both to `gen3_vs_gen4_comparison.csv`.
+2. **Morning Gen3 pull** — immediately at waking, before any movement. Log to `known_issues.md`.
 
-3. **Walk experiment (retry)** — Kill Oura app BEFORE walking. BT off. 20+ min walk. Pull on return. Blocker for 0x7E/0x7F.
+3. **Gen4 Oura screenshots** — two sets: (a) tonight's sleep to complete the 2026-07-01 evening row (HR, SpO2, sleep stages), (b) tonight's full overnight sleep for a new row. Add both to `gen3_vs_gen4_comparison.csv`.
+
+4. **Walk experiment (retry)** — Kill Oura app BEFORE walking. BT off. 20+ min walk. Pull on return. Blocker for 0x7E/0x7F.
 
 ---
 
