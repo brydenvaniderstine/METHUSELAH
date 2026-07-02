@@ -125,6 +125,7 @@ body::before {
 .cmd-meta { font-size: 9px; color: var(--text-dim); margin-bottom: 10px; letter-spacing: 2px; }
 .cmd-text { font-size: 16px; font-weight: 700; margin-bottom: 10px; transition: color 0.5s; max-width: 100%; line-height: 1.3; }
 .cmd-rationale { font-size: 10px; color: var(--text-mid); line-height: 1.6; max-width: 100%; margin-bottom: 18px; letter-spacing: 0.5px; }
+.cmd-briefing { font-size: 11px; color: var(--text-dim); line-height: 1.7; max-width: 100%; margin-bottom: 14px; letter-spacing: 0.3px; border-left: 1px solid var(--text-dim); padding-left: 10px; }
 
 .btn-execute {
   background: var(--text-main); color: var(--bg); border: none; padding: 12px 20px;
@@ -280,6 +281,7 @@ export default function MethuselahFinal() {
   const [glucoseEntryOpen, setGlucoseEntryOpen] = useState(false);
   const [glucoseInput,    setGlucoseInput]    = useState("");
   const [execState,       setExecState]       = useState("idle");
+  const [briefingOpen,    setBriefingOpen]    = useState(false);
   const [logs,            setLogs]            = useState([{ time: ts(), msg: "BIOLOGICAL SYSTEMS ONLINE // STANDING BY", type: "" }]);
   const logRef = useRef(null);
 
@@ -448,6 +450,8 @@ export default function MethuselahFinal() {
 
   const logic = evaluate({ glucose: glucoseReading, hrv, rhr, deepSleepPct });
 
+  useEffect(() => { setBriefingOpen(false); }, [logic.level]);
+
   const hrvPct  = hrv  !== null ? ((hrv  - 25) / (95 - 25))   * 100 : 0;
   const rhrPct  = rhr  !== null ? ((rhr  - 40) / (100 - 40))  * 100 : 0;
   const deepPct = deepSleepPct !== null ? Math.min(100, (deepSleepPct / 30) * 100) : 0;
@@ -588,7 +592,16 @@ onBLERead={readBLEGlucose}
             <div className="cmd-meta">PROTOCOL // {logic.level.toUpperCase()} // {clock}</div>
             {execState === "idle" ? (
               <>
-                <div className="cmd-text" style={{ color: logic.color }}>{logic.cmd}</div>
+                <div
+                  className="cmd-text"
+                  style={{ color: logic.color, cursor: "pointer" }}
+                  onClick={() => setBriefingOpen(o => !o)}
+                >
+                  {logic.cmd}
+                </div>
+                {briefingOpen && (
+                  <div className="cmd-briefing">{logic.briefing}</div>
+                )}
                 <div className="cmd-rationale">{logic.rat}</div>
                 {logic.level !== "optimal" ? (
                   <button className="btn-execute" onClick={handleExecute}>
