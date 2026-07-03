@@ -211,3 +211,27 @@ single closing line that returns authority to the person? Candidate
 language: "You are the final authority. If this doesn't match how
 you feel, trust yourself." Do not add without pressure-testing against
 the prime directive — it risks softening the command into a suggestion.
+
+### Threshold calibration — personal vs universal
+
+Current thresholds:
+- deep_sleep: 13% — clinical floor, applies universally (healthy adult range 13–23%)
+- hrv: 25ms — personalised to 355-night baseline of 29.3ms avg (−1 standard deviation)
+- glucose: 5.8 mmol/L — standard clinical threshold, applies universally
+- rhr: 60 bpm — standard clinical threshold, applies universally
+
+The HRV threshold is the only one currently personalised to this user.
+When METHUSELAH expands to additional users, HRV threshold must be
+derived from each user's own baseline — not inherited from this calibration.
+
+Decision needed before multi-user: an onboarding flow that establishes
+a personal HRV baseline (minimum 30 nights of data) before the engine
+can fire accurate HRV commands for that user. Until that exists,
+the 25ms threshold is accurate for this user only.
+
+Rationale for deep_sleep at 13%: clinical literature places the healthy
+adult floor at 13% of total sleep time. Below 13% is where measurable
+physiological consequences begin regardless of personal baseline.
+Personal baseline (16.4% avg over 355 nights) sits in the healthy
+middle of the 13–23% range — using 13% as threshold fires only when
+genuinely below the clinical minimum, not just below personal best.

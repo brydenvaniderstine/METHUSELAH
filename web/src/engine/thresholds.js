@@ -4,9 +4,9 @@
 // Command thresholds — determine which protocol fires
 export const THRESHOLDS = {
   glucose:   5.8,  // mmol/L — fast if above
-  hrv:       22,   // ms — Zone 2 if below
+  hrv:       25,   // ms — personal baseline −1SD (355-night avg 29.3ms); personalised to this user
   rhr:       63,   // bpm — active recovery if above
-  deepSleep: 12,   // % — sleep protocol if below
+  deepSleep: 13,   // % — clinical floor for healthy adults (13–23% range); universal
 };
 
 // BRI scoring brackets — determine the readiness index score

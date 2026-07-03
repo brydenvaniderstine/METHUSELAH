@@ -32,11 +32,11 @@ conflict, this file takes precedence — it is version-controlled.
 
 **Date:** 2026-07-03
 
+- **Thresholds calibrated and live** — `engine/thresholds.js` updated: `deepSleep: 13` (clinical floor, universal), `hrv: 25` (personal baseline −1SD, 355-night avg 29.3ms). Prebuild synced to `web/src/engine/`. Build clean at 67.64 kB.
+- **Architecture note added** — `ARCHITECTURE.md` → "Threshold calibration — personal vs universal" section. HRV threshold flagged as the only personalised value. Multi-user decision logged: 30-night baseline required before engine can fire accurate HRV commands per user.
 - **First confirmed 0x5d HRV event** — evening activity pull 2026-07-02 22:29. Decoder confirmed working. Four RMSSD windows: 22/30/23/23 ms at HR 70–72 bpm. Sleep HRV not yet captured.
-- **Auto-file MIXED bug fixed** — destination renamed, not source. FileNotFoundError resolved. `outpath` no longer mutated before `shutil.move()`.
-- **Gen4-only comparison row logged for 2026-07-02/03** — deep sleep 11% (lowest in dataset, below 12% threshold). HRV 26ms (lowest recorded, down 36→32→31→26ms four consecutive nights). Buffer rolled before morning pull — ACTIVE WINDOW at 09:16.
-- **Morning pull buffer rollover confirmed again** — ACTIVE WINDOW at 09:16. Lock screen widget is the fix.
-- **Sleep protocol threshold breached** — HRV 26ms below 22ms threshold and deep sleep 11% below 12% threshold. Sleep protocol command should fire tonight.
+- **Auto-file MIXED bug fixed** — destination renamed, not source. FileNotFoundError resolved.
+- **Gen4-only comparison row logged for 2026-07-02/03** — deep sleep 11% (lowest in dataset, now below 13% threshold). HRV 26ms (above new 25ms threshold — engine reads NOMINAL for HRV tonight). Buffer rolled before morning pull — ACTIVE WINDOW at 09:16.
 
 **Task 2 complete — Python-to-React bridge fully wired (commit 641ee72).**
 - Pull script writes `pipeline/data/bridge/gen3_latest.json` after every run (classifier, vectors, pull_file, timestamp, source tag).
@@ -68,9 +68,9 @@ conflict, this file takes precedence — it is version-controlled.
 
 2. **Evening pull tonight** — open Shortcuts app, tap Morning Pull (or Evening Pull) before sleep.
 
-3. **Monitor deep sleep recovery tonight** — after sleep protocol fires today. Log result to CSV.
+3. **Monitor deep sleep recovery tonight** — after sleep protocol fires today. Log result to CSV. Deep sleep was 11% last two nights; threshold is now 13%.
 
-4. **Begin 0x5d sleep HRV investigation** — why does HRV fire during evening activity pulls but not overnight sleep pulls. Start by comparing the boot_ts ranges and pfsm_state windows between the one HRV pull and the overnight sleep pulls.
+4. **Begin 0x5d sleep HRV investigation** — why does HRV fire during evening activity pulls but not overnight sleep pulls. Start by comparing the boot_ts ranges and pfsm_state windows between the one confirmed HRV pull and overnight sleep pulls.
 
 ---
 
