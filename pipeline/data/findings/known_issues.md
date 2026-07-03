@@ -2322,3 +2322,62 @@ Status: partial progress. Decoder confirmed working.
 Sleep HRV capture is the next milestone.
 
 *Logged 2026-07-03.*
+
+---
+
+## 2026-07-03 — Lock screen widget confirmed working
+
+Date: 2026-07-03
+Finding: iOS lock screen widget for Morning Pull shortcut confirmed
+working. One tap from lock screen → Terminal opens on Mac →
+pull runs → auto-files → bridge JSON updates. No need to open
+Shortcuts app. This is the confirmed working method for the
+morning pull discipline.
+
+Operational note: tapping the home screen shortcut icon opens
+the Shortcuts app but does NOT run the shortcut. Must either:
+(a) tap from inside the Shortcuts app, or
+(b) tap the lock screen widget.
+Lock screen widget is the correct frictionless method.
+
+Status: resolved — lock screen widget is the operational standard.
+
+---
+
+## 2026-07-03 — boot_ts rollover confirmed recurring pattern
+
+Date: 2026-07-03
+Finding: boot_ts span of 4,232,371,953 seconds (~1,175,658 hours)
+observed in 10:08am pull — boot_ts counter wrapping and resetting.
+This is the same rollover behavior seen in previous sessions.
+Not a data integrity issue — just the uint32 counter cycling.
+Seen now across multiple independent pulls confirming this is
+a hardware counter property, not an anomaly.
+
+Status: documented, no action required.
+
+---
+
+## 2026-07-03 — Threshold calibration locked
+
+Date: 2026-07-03
+Finding: Two thresholds updated in engine/thresholds.js with
+documented rationale:
+
+deep_sleep: 12% → 13%
+  Rationale: 13% is the clinical floor for healthy adults
+  (published range 13-23%). Below 13% is where measurable
+  physiological consequences begin. User 355-night baseline
+  average is 16.4% — threshold fires only when genuinely
+  below the clinical minimum, not just below personal best.
+  Applies universally.
+
+hrv: 22ms → 25ms
+  Rationale: 25ms is approximately one standard deviation
+  below the user's 355-night baseline of 29.3ms avg.
+  Fires only in genuinely suppressed states, not on routine
+  below-average nights. Currently personalised to this user —
+  future users need their own baseline calibration.
+
+Status: complete — thresholds live in engine/thresholds.js
+and web/src/engine/thresholds.js (auto-synced via prebuild).
