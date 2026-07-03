@@ -30,12 +30,13 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
-**Date:** 2026-07-02**
+**Date:** 2026-07-03
 
-**Three logging tasks complete (commit 9210d9b).**
-- CSV: First fully populated overnight row added for 2026-07-01/02 (Gen3 + Gen4).
-- known_issues.md: SpO2 cross-validation gap confirmed as recurring pattern — Night 1 (88% vs 97%, 9% gap), Night 2 (91.5% vs 97%, 5.5% gap). Systematic low bias in 0x6F. Track B condition #3 at 0/3.
-- Duplicate pulls (091718, 091802) deleted. gen3_morning/ now holds exactly two files: 000517_MIXED and 091253.
+- **First confirmed 0x5d HRV event** — evening activity pull 2026-07-02 22:29. Decoder confirmed working. Four RMSSD windows: 22/30/23/23 ms at HR 70–72 bpm. Sleep HRV not yet captured.
+- **Auto-file MIXED bug fixed** — destination renamed, not source. FileNotFoundError resolved. `outpath` no longer mutated before `shutil.move()`.
+- **Gen4-only comparison row logged for 2026-07-02/03** — deep sleep 11% (lowest in dataset, below 12% threshold). HRV 26ms (lowest recorded, down 36→32→31→26ms four consecutive nights). Buffer rolled before morning pull — ACTIVE WINDOW at 09:16.
+- **Morning pull buffer rollover confirmed again** — ACTIVE WINDOW at 09:16. Lock screen widget is the fix.
+- **Sleep protocol threshold breached** — HRV 26ms below 22ms threshold and deep sleep 11% below 12% threshold. Sleep protocol command should fire tonight.
 
 **Task 2 complete — Python-to-React bridge fully wired (commit 641ee72).**
 - Pull script writes `pipeline/data/bridge/gen3_latest.json` after every run (classifier, vectors, pull_file, timestamp, source tag).
@@ -63,15 +64,13 @@ conflict, this file takes precedence — it is version-controlled.
 
 ⚠️ **PULL BEFORE MOVING** — morning pull must happen before leaving bed. Tap iOS shortcut. Script ready.
 
-1. **Set up iOS Shortcuts** — follow `pipeline/tools/SHORTCUT_SETUP.md`. Add both shortcuts to lock screen. Tap morning shortcut immediately on next wake. Verify `pipeline/data/bridge/gen3_latest.json` updates and GEN3 INTERCEPT line appears on methuselah.ca.
+1. **Lock screen widget** — add Morning Pull shortcut as a lock screen widget so one tap from the lock screen runs it without opening the Shortcuts app. This is the fix for the buffer rollover problem.
 
-2. **Morning Gen3 pull** — immediately at waking, before any movement.
+2. **Evening pull tonight** — open Shortcuts app, tap Morning Pull (or Evening Pull) before sleep.
 
-3. **SpO2 decoder investigation** — 0x6F has a confirmed systematic low bias (91.5% vs 97%, two nights in a row). Investigation entry point: `known_issues.md` → "2026-07-02 SpO2 cross-validation gap confirmed recurring pattern." Track B condition #3 blocked until resolved.
+3. **Monitor deep sleep recovery tonight** — after sleep protocol fires today. Log result to CSV.
 
-4. **Gen4 Oura screenshots** — tonight's sleep for a new CSV row. Complete the 2026-07-01 evening row if Gen4 data is available (HR, SpO2, sleep stages).
-
-5. **Walk experiment (retry)** — Kill Oura app BEFORE walking. BT off. 20+ min walk. Pull on return. Blocker for 0x7E/0x7F.
+4. **Begin 0x5d sleep HRV investigation** — why does HRV fire during evening activity pulls but not overnight sleep pulls. Start by comparing the boot_ts ranges and pfsm_state windows between the one HRV pull and the overnight sleep pulls.
 
 ---
 

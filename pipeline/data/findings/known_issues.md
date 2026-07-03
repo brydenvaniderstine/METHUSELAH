@@ -3,7 +3,7 @@
 # that produces a new finding, confirmed pattern, or resolved/
 # unresolved decoder question. Do not wait to be asked explicitly.
 # If a session ends without touching this file and a finding occurred,
-# that is an error. Last updated: 2026-07-01
+# that is an error. Last updated: 2026-07-03
 # ─────────────────────────────────────────────────────────────
 
 # METHUSELAH // Known Issues — Gen3 Decoders
@@ -2292,3 +2292,33 @@ promote 0x6F to confirmed decoder until three consecutive nights
 pass the ±5% cross-validation gate.
 
 *Logged 2026-07-02.*
+
+---
+
+## 2026-07-02 — HRV decoder (0x5d) fired for the first time — Track B milestone
+
+Date: 2026-07-02
+Pull file: pipeline/data/raw_pulls/gen3_evening/gen3_pull_20260702_222915_MIXED.txt
+Pull time: 22:29 local — evening activity pull
+
+Finding: First confirmed 0x5d HRV event across all Track B pulls.
+Four 5-minute RMSSD windows decoded from a single payload:
+
+  window -20min: hr=72 bpm  rmssd=22 ms
+  window -15min: hr=71 bpm  rmssd=30 ms
+  window -10min: hr=70 bpm  rmssd=23 ms
+  window -5min:  hr=72 bpm  rmssd=23 ms
+
+Context: This was an evening ACTIVE/MIXED WINDOW pull during
+physical activity — not sleep HRV. The decoder is confirmed
+working. Sleep HRV (overnight 0x5d events during low-HR rest
+periods) has not yet been captured.
+
+Track B condition #2 (HRV fires consistently — at least one
+0x5d event in three consecutive morning pulls) is not yet met.
+This is the first of three required confirmed events.
+
+Status: partial progress. Decoder confirmed working.
+Sleep HRV capture is the next milestone.
+
+*Logged 2026-07-03.*

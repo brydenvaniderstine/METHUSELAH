@@ -317,20 +317,23 @@ async def main():
         base_dir = _os.path.dirname(_os.path.abspath(__file__))
         repo_root = _os.path.join(base_dir, '..', '..')
 
+        src = outpath  # original timestamped name — always exists on disk
         if pull_class == "SLEEP WINDOW":
             dest_dir = _os.path.join(repo_root, 'pipeline', 'data', 'raw_pulls', 'gen3_morning')
+            dest_name = _os.path.basename(outpath)
         elif pull_class == "ACTIVE WINDOW":
             dest_dir = _os.path.join(repo_root, 'pipeline', 'data', 'raw_pulls', 'gen3_evening')
+            dest_name = _os.path.basename(outpath)
         elif pull_class == "MIXED WINDOW":
             dest_dir = _os.path.join(repo_root, 'pipeline', 'data', 'raw_pulls', 'gen3_morning')
-            outpath = outpath.replace('.txt', '_MIXED.txt')
+            dest_name = _os.path.basename(outpath).replace('.txt', '_MIXED.txt')
         else:
             dest_dir = _os.path.join(repo_root, 'pipeline', 'data', 'raw_pulls', 'gen3_morning')
-            outpath = outpath.replace('.txt', '_UNCLEAR.txt')
+            dest_name = _os.path.basename(outpath).replace('.txt', '_UNCLEAR.txt')
 
         _os.makedirs(dest_dir, exist_ok=True)
-        dest_path = _os.path.join(dest_dir, _os.path.basename(outpath))
-        shutil.move(outpath, dest_path)
+        dest_path = _os.path.join(dest_dir, dest_name)
+        shutil.move(src, dest_path)
         print(f"[AUTO-FILE] {pull_class} → {dest_path}")
 
         # ── BRIDGE WRITER — feeds Gen3 data to the web app ───────────────────
