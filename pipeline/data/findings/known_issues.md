@@ -2381,3 +2381,48 @@ hrv: 22ms → 25ms
 
 Status: complete — thresholds live in engine/thresholds.js
 and web/src/engine/thresholds.js (auto-synced via prebuild).
+
+---
+
+## 2026-07-03 — First real sleep state transitions captured — Track B milestone
+
+Date: 2026-07-03
+Pull file: pipeline/data/raw_pulls/gen3_morning/gen3_pull_20260703_225853.txt
+Pull time: 22:58 local — evening pull capturing earlier sleep window
+
+Finding: First pull ever showing real sleep state transitions in 0x6A.
+All previous pulls were 100% flat (either all state=1 or all state=0).
+This pull shows both states across 8 samples:
+
+  boot_ts=56343884  state=1  hr=76.0  breath=11.2  motion=17
+  boot_ts=56344157  state=1  hr=75.0  breath=11.9  motion=17
+  boot_ts=56344488  state=0  hr=73.5  breath=11.0  motion=16
+  boot_ts=56344799  state=0  hr=71.5  breath=11.2  motion=0
+  boot_ts=56345064  state=0  hr=67.0  breath=12.0  motion=0
+  boot_ts=56345374  state=0  hr=68.0  breath=11.9  motion=0
+  boot_ts=56345669  state=0  hr=69.5  breath=12.4  motion=0
+  boot_ts=56345964  state=0  hr=71.0  breath=12.5  motion=0
+
+State distribution: state=1 25% (2 samples), state=0 75% (6 samples)
+
+Physiological interpretation: state=1 at start (HR 76→75 bpm, higher,
+motion=17 — earlier lighter sleep), transitioning to state=0 (HR
+dropping 73→67 bpm, motion dropping to 0 — deeper/settling sleep).
+This is the first real sleep state transition captured by the decoder.
+
+Track B condition #1 (sleep_state returns real stage transitions) —
+first evidence confirmed. Full condition requires REM/Light/Deep
+alignment with Gen4 official output across a complete night.
+Current status: partial progress — transitions captured, full
+stage mapping not yet validated.
+
+SpO2: 20 windows, 90.0–94.8%, avg ~91.5% — consistent with
+systematic low bias documented in prior entries.
+
+Sleep temp: two windows — 34.32–34.94°C, slightly lower than
+previous nights, normal variation.
+
+Status: milestone — first state transition evidence. Not yet
+sufficient to close Track B condition #1.
+
+*Logged 2026-07-03.*

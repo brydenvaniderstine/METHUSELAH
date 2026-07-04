@@ -32,11 +32,11 @@ conflict, this file takes precedence — it is version-controlled.
 
 **Date:** 2026-07-03
 
-- **Wrapper scripts updated to osascript** — `pull_morning.sh` and `pull_evening.sh` now use `osascript -e 'tell app "Terminal" to do script "..."'` instead of direct python3 call. Direct python3 via SSH fails (CoreBluetooth blocks in headless context); osascript opens Terminal with GUI context and is confirmed working.
-- **North Star doc confirmed present** — `pipeline/data/findings/why_not_conventional_trackers.md` verified in repo. No action needed.
-- **Three findings logged to known_issues.md** — lock screen widget operational standard confirmed, boot_ts rollover documented as recurring hardware property, threshold calibration locked with rationale.
-- **Thresholds calibrated and live** — `engine/thresholds.js`: `deepSleep: 13` (clinical floor, universal), `hrv: 25` (personal baseline −1SD). Architecture note added to `ARCHITECTURE.md`.
-- **First confirmed 0x5d HRV event** — evening activity pull 2026-07-02 22:29. Decoder working. Sleep HRV not yet captured.
+- **MILESTONE: First real sleep state transitions captured** — evening pull 22:58 from `gen3_pull_20260703_225853.txt`. First pull in Track B history showing state=1 → state=0 transitions across 8 x6A samples (25%/75% split). HR 76→67 bpm across transition consistent with physiological settling. Track B condition #1 has first evidence — full stage mapping not yet validated.
+- **Partial Gen3 row logged** — 2026-07-03 evening: HR 67.0–76.0 bpm, SpO2 90.0–94.8% avg 91.5%, temp 34.32–34.94°C. Gen4 screenshots pending — row to be completed tomorrow morning.
+- **Wrapper scripts updated to osascript** — `pull_morning.sh` and `pull_evening.sh` now use `osascript` instead of direct python3 (headless SSH blocks CoreBluetooth).
+- **Thresholds calibrated and live** — `deepSleep: 13`, `hrv: 25`. Architecture note added.
+- **First confirmed 0x5d HRV event** — evening activity pull 2026-07-02. Decoder working. Sleep HRV not yet captured.
 
 ---
 
@@ -46,7 +46,7 @@ conflict, this file takes precedence — it is version-controlled.
 
 1. **Morning pull** — tap lock screen widget immediately on waking. Do not get up first.
 
-2. **Log deep sleep result** — was last night's deep sleep above 13% (recovery from two consecutive 11% nights)? Add to `gen3_vs_gen4_comparison.csv` with Gen4 screenshots.
+2. **Complete 2026-07-03 evening comparison row** — take Gen4 Oura screenshots (sleep stages, HR, SpO2) for tonight's sleep and add to `gen3_vs_gen4_comparison.csv` row dated "2026-07-03 evening." This row is partial — Gen4 fields are all n/a.
 
 3. **Evening pull tonight** — tap lock screen widget before sleep.
 
