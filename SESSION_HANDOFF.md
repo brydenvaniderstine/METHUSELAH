@@ -34,7 +34,9 @@ conflict, this file takes precedence — it is version-controlled.
 
 - **Gen4-only comparison row logged for 2026-07-05/06** — deep sleep 20% best night in dataset, recovery bounce confirmed. HRV 22ms — sixth consecutive night below 25ms threshold. Zone 2 command firing correctly.
 - **Track B condition #3 still at 1/3** — no Gen3 sleep data from morning shortcut (ring out of BLE range).
-- **Track B walk experiment prepped** — PRIORITY_TAGS confirmed (all 5 targets already present). open_ring layouts read for 0x6B/0x6E/0x77/0x7E/0x7F. Existing corpus audited: 0x6E and 0x77 packets already present (ceiling-blocked on variance); 0x7E/0x7F and 0x6B absent (need the walk). Protocol doc created: `pipeline/tools/WALK_EXPERIMENT.md`. Roadmap updated with walk experiment as next unblocking action.
+- **0x6E IBI layout CONFIRMED from existing sleep corpus** — 549 packets analysed. Layout: b0=channel byte (bit7=optical channel A/B), b1-5=5× IBI high, b6-10=5× IBI low+amp, b11=mid bits, b12=shift nibble. Same bit-pack as 0x60 but 5 pairs instead of 6. Cross-validated vs 0x6A avg_hr: −1.1 to +1.3 bpm delta across 5 sleep files (−0.1 bpm tightest). Walk experiment no longer needed for 0x6E IBI.
+- **0x77 prior analysis confirmed** — 384 packets, 14-byte dominant (226). b0 channel bands (mean 58.3 low / 185.4 high, separation ≈128) and i8 time-series structure (lag-1 r=+0.34 to +0.61) both consistent with prior work. Red/IR assignment still ceiling-blocked.
+- **Walk experiment still required for 0x7E/0x7F** — zero packets in corpus. Protocol documented in `pipeline/tools/WALK_EXPERIMENT.md`.
 - **⚠️ Oura token valid until 2026-07-13 — seven days remaining.**
 
 ---
@@ -43,7 +45,7 @@ conflict, this file takes precedence — it is version-controlled.
 
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
 
-1. **Execute timed walk experiment** — 500 steps, phone Bluetooth OFF before starting, pull immediately on return. Protocol: `pipeline/tools/WALK_EXPERIMENT.md`. Decodes 0x7E/0x7F (zero packets; needs walk), 0x6E/0x77 (ceiling-blocked on variance), and 0x6B (needs activity).
+1. **Execute timed walk experiment** — 500 steps, phone Bluetooth OFF before starting, pull immediately on return. Protocol: `pipeline/tools/WALK_EXPERIMENT.md`. Primary target: 0x7E/0x7F (zero packets — confirmed still needed). Secondary: 0x6E amplitude units, 0x77 band identity, 0x6B motion context.
 
 2. **Morning pull in BLE range** — ring must be near Mac before shortcut fires. Buffer rolls in ~2 min of walking.
 

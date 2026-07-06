@@ -88,14 +88,18 @@ sub-types. This supersedes the earlier partial roadmap.
       failure. REVISED PROTOCOL: kill Oura app BEFORE walk begins; disable
       phone BT during walk; pull immediately on return before relaunching app;
       walk 20+ min to fill more of the 255-event buffer.
-- [ ] 0x6E spo2_ibi_and_amplitude_event — 3 hypotheses killed (channel-
-      split, byte-0 counter, bytes-1-6 SpO2 correlation). Raw u8 values
-      of bytes 1-6 are almost entirely 93-108 (= 87-102% under offset-6),
-      consistent with SpO2 samples; b1/b2 r=0.626 and b2/b3 r=0.493 at
-      lag=0 suggest b1-b3 are consecutive samples of the same slow signal.
-      b4-b6 mutually independent — likely a different field (IBI or amp).
-      Structural ceiling reached on sleep-session data; needs a higher-
-      variance pull to confirm via correlation.
+- [~] 0x6E spo2_ibi_and_amplitude_event — IBI LAYOUT CONFIRMED (2026-07-06).
+      549 packets, all 13 bytes fixed. b0=channel byte (bit7=optical channel
+      A/B, alternates per-beat near-perfectly within a pull); b1..b5=5× IBI
+      high bytes; b6..b10=5× IBI low+amp; b11=mid bits; b12=shift nibble.
+      Same bit-pack formula as 0x60 but for 5 pairs instead of 6.
+      Cross-validation vs 0x6A avg_hr (5 sleep files): delta −1.1 to +1.3 bpm.
+      96.7% of packets produce physiologically plausible IBI [300-2000ms].
+      OPEN: amplitude encoding (large shifted integers, physical units unknown);
+      IBI[4] mid bits (b11 only covers 4 values, b12 high nibble candidate);
+      red vs IR channel assignment (same dual-band pattern as 0x77).
+      Walk experiment no longer needed for IBI validation.
+      CEILING: amplitude units and channel wavelength assignment remain.
 (0x80 moved to DONE — see above)
 - [ ] 0x6B motion_period — 4 real packets captured (2026-06-27). open_ring
       decoder maps b[0] to MOTION_STATE (0-3), but all 4 observed b[0]
@@ -123,10 +127,12 @@ sub-types. This supersedes the earlier partial roadmap.
 
 **NEXT UNBLOCKING ACTION (2026-07-06): Timed walk experiment.**
 Protocol documented in `pipeline/tools/WALK_EXPERIMENT.md`.
-Applies to 0x7E/0x7F (zero packets — needs activity), 0x6E (existing sleep
-packets ceiling-blocked — needs variance), 0x77 (existing packets ceiling-blocked
-— needs L/H wavelength identification via activity). Also may unblock 0x6B
-(motion_period — only 4 packets observed, needs more activity context).
+Updated scope after pre-walk corpus analysis (2026-07-06):
+- 0x7E/0x7F: STILL REQUIRED — zero packets in corpus
+- 0x6E IBI: NO LONGER NEEDED — layout confirmed from sleep corpus (−1.1 to +1.3 bpm delta vs 0x6A)
+- 0x6E amplitude: still useful for physical units, not blocking
+- 0x77: still useful for red/IR band identification via SpO2 variance, not blocking
+- 0x6B: still useful, few packets in sleep context
 Critical fix from prior inconclusive attempt (2026-06-28): phone Bluetooth
 must be OFF before starting walk so Oura app cannot drain buffer before pull.
 

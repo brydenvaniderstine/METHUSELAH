@@ -3,7 +3,7 @@
 # that produces a new finding, confirmed pattern, or resolved/
 # unresolved decoder question. Do not wait to be asked explicitly.
 # If a session ends without touching this file and a finding occurred,
-# that is an error. Last updated: 2026-07-03
+# that is an error. Last updated: 2026-07-06
 # ─────────────────────────────────────────────────────────────
 
 # METHUSELAH // Known Issues — Gen3 Decoders
@@ -2457,3 +2457,83 @@ site loses three of four vectors.
 Status: resolved for now. Token expiry on 2026-07-13 is a hard deadline.
 
 *Logged 2026-07-05.*
+
+---
+
+## 2026-07-06 — 0x6E SPO2 IBI+amplitude: byte layout confirmed from sleep corpus
+
+Date: 2026-07-06
+Tag: 0x6E (SPO2 IBI+amplitude)
+Corpus: 549 packets across 8 pull files, all exactly 13 bytes
+
+**Confirmed layout:**
+
+```
+b0:       channel byte — bit7=optical channel (1=B/high, 0=A/low);
+          bit6..0 = beat/sequence index (value within current measurement window)
+          Alternates A/B within each pull: confirmed 72/72 and 98/98 tested files
+b1..b5:   5× IBI high bytes — same bit-pack formula as 0x60 (p[i] << 3 gives bits 3..10)
+b6..b10:  5× IBI low bit (bit0) + amplitude (bits 1..7, pre-shift)
+b11:      mid bits for IBI[0..3], 2 bits each, same packing as 0x60 byte 12
+          (mid_bits[i] = (b11 >> (5-2*i)) & 0x6 for i in 0..3; IBI[4] mid = 0 pending)
+b12:      amplitude shift nibble (same as 0x60 byte 13 low nibble)
+          nibble=7 → shift=0; else shift=nibble+1
+```
+
+IBI formula: `ibi_ms[i] = (b[1+i]<<3) | mid_bits[i] | (b[6+i]&0x1)`
+Amplitude:   `amp[i] = (b[6+i]>>1) << shift`
+
+**Validation:**
+- 531/549 packets (96.7%) produce IBI in [300, 2000]ms — physiologically plausible range
+- 18 implausible packets all come from MIXED window files (transition/activity context)
+- Mean IBI across sleep corpus: 921.9ms → 65.1 bpm
+
+**Cross-validation vs 0x6A avg_hr (sleep context only):**
+| File | 0x6E IBI HR | 0x6A avg_hr | Delta |
+|------|------------|-------------|-------|
+| gen3_pull_20260701_220314.txt | 66.2 bpm | 65.3 bpm | +0.9 bpm |
+| gen3_pull_20260702_091253.txt | 67.2 bpm | 67.3 bpm | −0.1 bpm |
+| gen3_pull_20260702_093539.txt | 66.0 bpm | 64.7 bpm | +1.3 bpm |
+| gen3_pull_20260703_225853.txt | 70.3 bpm | 71.4 bpm | −1.1 bpm |
+| gen3_pull_20260704_233702.txt | 62.0 bpm | 61.6 bpm | +0.4 bpm |
+
+Delta in sleep context: −1.1 to +1.3 bpm. Activity context (MIXED/awake): +7-8 bpm gap (expected — SpO2 optical measurement degrades during motion).
+
+**Open questions:**
+- Amplitude encoding: shift nibble produces large integers (tens of thousands). Physical units unknown. Needs activity-context packets for variance analysis.
+- IBI[4] mid bits: treated as 0 in current formula (byte 11 only holds 4×2=8 bits). The true mid bits for IBI[4] may live in byte 12 alongside the shift nibble. Needs re-examination.
+- Why dual-channel (A/B)? 0x6E fires at the same rate as 0x77 (which also alternates two optical bands). These are likely red and IR (660nm/880nm) interleaved per-beat.
+
+**Status:** IBI layout confirmed, amplitude encoding pending. Walk experiment no longer needed to confirm IBI. Amplitude and channel assignment still benefit from activity-context variance.
+
+*Logged 2026-07-06.*
+
+---
+
+## 2026-07-06 — 0x77 SPO2 DC event: prior analysis confirmed, new corpus stats
+
+Date: 2026-07-06
+Tag: 0x77 (SPO2 DC event)
+Corpus: 384 packets across 8 pull files
+
+**Length distribution:** 14-byte dominant (226 pkts, 58.9%), 4-byte common (90 pkts, 23.4%), others (68 pkts across lengths 2,3,5-13)
+
+**14-byte form confirmed structure:**
+- b0: optical channel identifier, two bands:
+  - Low band: range 1-125, mean 58.3 (n=114 packets)
+  - High band: range 130-252, mean 185.4 (n=112 packets)
+  - Band separation ≈ 128 — consistent with prior analysis (16-107 / 146-222)
+- b1..b13: 13 signed i8 samples, time-series structure confirmed
+  - SD per byte: 35-46 (full dynamic range, not a narrow signal)
+  - Lag-1 autocorrelation: r=+0.34 to +0.61 (consistent with prior 0.43-0.54 estimate on smaller corpus)
+
+**4-byte form (sentinel packets):**
+- 90 packets. 25/90 have trailing bytes `aaaab2` (hex) — likely a fill/null sentinel (0xAA = common fill byte, 0xB2 = unknown flag)
+- b0 values cluster at 64-79 and 192-196 — may indicate subtype or error state
+- Seen frequently at end of SpO2 session windows
+
+**Ceiling unchanged:** Red vs IR band assignment, raw vs delta-encoded i8, DC reference value — all remain unresolved without firmware disassembly or simultaneous SpO2 variance during activity.
+
+**Walk experiment:** Activity-context pull would provide SpO2 changes detectable in 0x6F; correlating 0x77 b[1:14] samples against 0x6F values could resolve band identity. Still useful but not required for 0x6E IBI.
+
+*Logged 2026-07-06.*
