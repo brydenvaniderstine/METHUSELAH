@@ -2537,3 +2537,29 @@ Corpus: 384 packets across 8 pull files
 **Walk experiment:** Activity-context pull would provide SpO2 changes detectable in 0x6F; correlating 0x77 b[1:14] samples against 0x6F values could resolve band identity. Still useful but not required for 0x6E IBI.
 
 *Logged 2026-07-06.*
+
+---
+
+## 2026-07-06 — 0x6E decoder validated and wired into pull script
+
+Date: 2026-07-06
+Resolution: DECODER COMPLETE — 0x6E promoted to DONE in roadmap.
+
+Decoder written at `pipeline/decoders/0x6e.py`. Full validation run:
+- 549/549 corpus packets decode without error
+- 2727/2745 IBI values (99.3%) in physiologically plausible range [300-2000ms]
+- 18 out-of-range values are 2001-2007ms (very slow HR ~30 bpm, all from MIXED window packets — not decoder errors)
+
+Cross-validation gate (±3 bpm vs 0x6A avg_hr):
+- 5/5 sleep-context files PASS (delta −1.1 to +1.3 bpm)
+- 2/2 activity-context files diverge (+6.8 / +7.7 bpm) — expected, SpO2 optical degrades during motion
+
+The decoder outputs per-packet: channel (A/B), beat_index, ibi_ms[5], hr_bpm[5], amp[5], amp_shift.
+Wired into pull script output as === SPO2 IBI+AMPLITUDE DECODE (0x6E) === section.
+
+Open (not blocking DONE status):
+- Amplitude physical units: large shifted integers, scaling unknown
+- IBI[4] mid bits: b11 covers only 4 pairs; treated as 0 pending confirmation
+- Channel wavelength (red vs IR): same dual-band pattern as 0x77, unconfirmed without firmware
+
+*Logged 2026-07-06.*

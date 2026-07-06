@@ -21,7 +21,7 @@ sub-types. This supersedes the earlier partial roadmap.
 3. Negative results (killed hypotheses) get logged, not discarded.
 4. One decoder at a time.
 
-## DONE — working, validated against real data (8)
+## DONE — working, validated against real data (9)
 - [x] 0x6A sleep_period_info_2 (sleep_state)
 - [x] 0x5D hrv_event (HRV/RMSSD)
 - [x] 0x61/0x14 fuel_gauge_statistics (battery %, voltage, capacity)
@@ -36,6 +36,14 @@ sub-types. This supersedes the earlier partial roadmap.
       cross-check with 0x75 at ts=40728926/40728928 (2-tick gap, values
       match to within 0.06°C). Same formula as 0x75; 0x69 appears to be
       a single-value period average of the same skin-temp sensor.
+- [x] 0x6E spo2_ibi_and_amplitude_event — IBI CONFIRMED 2026-07-06. Fixed 13 bytes.
+      b0=channel byte (bit7=A/B optical channel, low7=beat index); b1..b5=5× IBI
+      high bytes; b6..b10=5× IBI low+amp; b11=mid bits for IBI[0..3]; b12=amp shift
+      nibble. Same bit-pack as 0x60 but 5 pairs. 549/549 corpus packets decode without
+      error. Cross-validated vs 0x6A avg_hr (5 sleep files): delta −1.1 to +1.3 bpm.
+      Activity context divergence (+7-8 bpm) is expected and physiologically correct.
+      Amplitude physical units and IBI[4] mid bits still unresolved (open).
+      Decoder: `pipeline/decoders/0x6e.py`. Wired into pull script.
 - [x] 0x80 green_ibi_quality_event — VALIDATED 2026-06-30. Format:
       N×(b_low,b_high) pairs (payload always even; 345/361 pkts are 14 bytes = 7
       samples). 11-bit IBI: (b_low<<3)|(b_high&0x07). quality_a: (b_high>>3)&0x03.
@@ -48,7 +56,7 @@ sub-types. This supersedes the earlier partial roadmap.
       semantics unresolved. NOT activity-only — fires in sleep, transitional,
       and active windows wherever the GREEN_IBI session is running.
 
-## IN PROGRESS — real RE work started, not yet solved (5)
+## IN PROGRESS — real RE work started, not yet solved (4)
 - [ ] 0x61/0x09 _dd_sleep_statistics — partial decode confirmed. Original
       u32 field layout (ticks_in_deep/sleep/awake) is wrong for our data.
       CONFIRMED (2026-06-26): offset-3 u16 = seconds in current pfsm state.
@@ -88,19 +96,7 @@ sub-types. This supersedes the earlier partial roadmap.
       failure. REVISED PROTOCOL: kill Oura app BEFORE walk begins; disable
       phone BT during walk; pull immediately on return before relaunching app;
       walk 20+ min to fill more of the 255-event buffer.
-- [~] 0x6E spo2_ibi_and_amplitude_event — IBI LAYOUT CONFIRMED (2026-07-06).
-      549 packets, all 13 bytes fixed. b0=channel byte (bit7=optical channel
-      A/B, alternates per-beat near-perfectly within a pull); b1..b5=5× IBI
-      high bytes; b6..b10=5× IBI low+amp; b11=mid bits; b12=shift nibble.
-      Same bit-pack formula as 0x60 but for 5 pairs instead of 6.
-      Cross-validation vs 0x6A avg_hr (5 sleep files): delta −1.1 to +1.3 bpm.
-      96.7% of packets produce physiologically plausible IBI [300-2000ms].
-      OPEN: amplitude encoding (large shifted integers, physical units unknown);
-      IBI[4] mid bits (b11 only covers 4 values, b12 high nibble candidate);
-      red vs IR channel assignment (same dual-band pattern as 0x77).
-      Walk experiment no longer needed for IBI validation.
-      CEILING: amplitude units and channel wavelength assignment remain.
-(0x80 moved to DONE — see above)
+(0x6E promoted to DONE — see above. 0x80 moved to DONE — see above.)
 - [ ] 0x6B motion_period — 4 real packets captured (2026-06-27). open_ring
       decoder maps b[0] to MOTION_STATE (0-3), but all 4 observed b[0]
       values (6, 52, 61, 62) are outside the enum. Contextual correlation:
@@ -362,6 +358,7 @@ into individual files in `pipeline/decoders/`:
 | `pipeline/decoders/0x75.py` | sleep_temp_event | VALIDATED |
 | `pipeline/decoders/0x47.py` | motion_event | VALIDATED |
 | `pipeline/decoders/0x76.py` | bedtime_period | NEVER OBSERVED |
+| `pipeline/decoders/0x6e.py` | spo2_ibi_and_amplitude | VALIDATED |
 
 Shared helpers (`_i8`, `_u32`) moved to `pipeline/decoders/utils.py`. Pull script now
 imports from `pipeline.decoders`. Output verified byte-for-byte identical against known

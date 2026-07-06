@@ -17,6 +17,7 @@ from decoders import (
     decode_sleep_temp_event,
     decode_motion_event,
     decode_bedtime_period,
+    decode_spo2_ibi_amplitude,
 )
 
 ADDR        = "71E77907-1EE9-4949-801C-02979071309C"
@@ -267,6 +268,27 @@ async def main():
                     print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
         if not bedtime_found:
             print("  No 0x76 bedtime period events found in this pull.")
+
+        print(f"\n=== SPO2 IBI+AMPLITUDE DECODE (0x6E) ===")
+        ibi6e_found = False
+        ibi6e_all = []
+        for p in parsed:
+            if p["tag"] == 0x6E:
+                ibi6e_found = True
+                try:
+                    d = decode_spo2_ibi_amplitude(p["payload"])
+                    ibi6e_all.extend(v for v in d["ibi_ms"] if 300 <= v <= 2000)
+                    hr_str = " ".join(f"{v:.0f}" for v in d["hr_bpm"] if v is not None)
+                    print(f"  boot_ts={p['boot_ts']:>10}  ch={d['channel']}  "
+                          f"ibi_ms={d['ibi_ms']}  hr=[{hr_str}]bpm")
+                except ValueError as e:
+                    print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
+        if ibi6e_all:
+            import statistics as _stats
+            hr_mean = 60000 / _stats.mean(ibi6e_all)
+            print(f"  → {len(ibi6e_all)} valid IBI samples  HR mean={hr_mean:.1f}bpm")
+        if not ibi6e_found:
+            print("  No 0x6E SPO2 IBI+amplitude events found in this pull.")
 
         print(f"\n=== DEBUG DATA DECODE (0x61) - sleep stats / battery ===")
         debug_found = False
