@@ -30,30 +30,25 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
-**Date:** 2026-07-05
+**Date:** 2026-07-06
 
-- **Oura API connection restored** — token expired (created 2026-06-20), new token valid until 2026-07-13. Date parameter bug fixed in commit a5681db — `toISOString()` replaces `toLocaleDateString`, `res.ok` check added. OURA LIVE confirmed on methuselah.ca.
-- **⚠️ Hard deadline: 2026-07-13** — Oura Personal Access Token expires. After that date the Gen4 API connection drops permanently unless subscription renewed. Track B sovereign BLE pipeline must be primary data source by then or the live site loses three of four vectors.
-- **EXECUTE 45-MIN ZONE 2 OUTPUT firing correctly** — HRV 18ms triggered command with briefing on live site.
-- **Track B condition #3 night 1 of 3 passed** — Gen3 SpO2 95.1% vs Gen4 97%, gap 1.9%, within ±5% gate. Two more consecutive nights required to close condition.
-- **Comparison CSV row completed for 2026-07-04/05** — HRV 18ms lowest recorded, five-night declining trend (36→32→31→26→18ms). Deep sleep 16%, clean baseline.
-- **Shortcut absolute path fix committed** — `SHORTCUT_SCRIPT.txt` created for iPhone copy-paste.
+- **Gen4-only comparison row logged for 2026-07-05/06** — deep sleep 20% best night in dataset, recovery bounce confirmed after Zone 2 protocol. HRV 22ms — sixth consecutive night below 25ms threshold, not recovering yet. Zone 2 command still firing correctly.
+- **Track B condition #3 still at 1/3** — no Gen3 sleep pull captured this morning. Morning shortcut fired but ring was out of Bluetooth range — checkmark on phone but no data.
+- **⚠️ Oura token valid until 2026-07-13 — seven days remaining.**
 
 ---
 
 ## Next session priority
 
-⚠️ **PULL BEFORE MOVING** — tap lock screen widget before feet hit floor.
+⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
 
-1. **Update iPhone Morning Pull shortcut Script field** — paste content of `pipeline/tools/SHORTCUT_SCRIPT.txt`. Absolute paths fix the silent failure.
+1. **Decide morning pull approach** — Mac to nightstand vs immediate manual pull at desk vs shortcut with ring near Mac. Buffer rolls in ~2 min of walking; shortcut must fire before movement.
 
-2. **Execute Zone 2 protocol today** — HRV command is live and correct.
+2. **Evening pull before sleep tonight**.
 
-3. **Evening pull before sleep tonight**.
+3. **Execute Zone 2 today** — HRV command still firing at 22ms.
 
-4. **Morning pull immediately at waking tomorrow** — lock screen widget. Track B condition #3 night 2 of 3.
-
-5. **Watch the 2026-07-13 token expiry** — if subscription not renewed, Gen4 API vectors go dark. Decide before that date.
+4. **Track B condition #3 night 2 needs both Gen3 AND Gen4 data** — ring must be in BLE range at pull time.
 
 ---
 
