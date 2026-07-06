@@ -3,7 +3,7 @@
 # that produces a new finding, confirmed pattern, or resolved/
 # unresolved decoder question. Do not wait to be asked explicitly.
 # If a session ends without touching this file and a finding occurred,
-# that is an error. Last updated: 2026-07-01
+# that is an error. Last updated: 2026-07-06
 # ─────────────────────────────────────────────────────────────
 
 # METHUSELAH // open_ring Decoder Roadmap (COMPLETE — all 38 decoders tracked)
@@ -120,6 +120,15 @@ sub-types. This supersedes the earlier partial roadmap.
       delta-encoded, and DC reference relationship to b[0] value all need firmware
       disassembly or simultaneous raw PPG capture. Needs activity pull with SpO2
       active for physiological variance to progress further.
+
+**NEXT UNBLOCKING ACTION (2026-07-06): Timed walk experiment.**
+Protocol documented in `pipeline/tools/WALK_EXPERIMENT.md`.
+Applies to 0x7E/0x7F (zero packets — needs activity), 0x6E (existing sleep
+packets ceiling-blocked — needs variance), 0x77 (existing packets ceiling-blocked
+— needs L/H wavelength identification via activity). Also may unblock 0x6B
+(motion_period — only 4 packets observed, needs more activity context).
+Critical fix from prior inconclusive attempt (2026-06-28): phone Bluetooth
+must be OFF before starting walk so Oura app cannot drain buffer before pull.
 
 ## NOT STARTED — Tier 1, high biometric value (3)
 - [ ] 0x76 bedtime_period — wired into script, never caught a real packet
@@ -275,12 +284,14 @@ All dispatched via sub-byte at payload offset 0, tag 0x61 itself.
 Tier 2 entry not previously on roadmap. 0x49/4C/4F confirmed Gen3 does not emit —
 can be deprioritized. 0x82/0x83 same. Count is approximate due to bundles.)
 
-## Suggested next-session order (updated 2026-06-28)
+## Suggested next-session order (updated 2026-07-06)
 
-**BLOCKED until controlled walk (tomorrow, 2026-06-29 or later):**
-- 0x7E/0x7F: timed walk with phone BT disabled, kill Oura app before walk
-- 0x6E / 0x77: same activity pull (need SpO2 activation during activity)
-- 0x61/0x09: Oura app sleep-stage cross-reference for same night
+**BLOCKED until controlled walk:**
+Protocol: `pipeline/tools/WALK_EXPERIMENT.md` — 500 steps, phone BT OFF, pull immediately.
+- 0x7E/0x7F: zero packets in corpus — need the walk
+- 0x6E / 0x77: existing sleep packets ceiling-blocked — need activity variance from the walk
+- 0x6B: only 4 packets observed — needs more activity context
+- 0x61/0x09: Oura app sleep-stage cross-reference for same night (structural confirmed, physical meaning blocked)
 
 **IMMEDIATELY actionable from existing 27 pulls:**
 

@@ -32,8 +32,9 @@ conflict, this file takes precedence — it is version-controlled.
 
 **Date:** 2026-07-06
 
-- **Gen4-only comparison row logged for 2026-07-05/06** — deep sleep 20% best night in dataset, recovery bounce confirmed after Zone 2 protocol. HRV 22ms — sixth consecutive night below 25ms threshold, not recovering yet. Zone 2 command still firing correctly.
-- **Track B condition #3 still at 1/3** — no Gen3 sleep pull captured this morning. Morning shortcut fired but ring was out of Bluetooth range — checkmark on phone but no data.
+- **Gen4-only comparison row logged for 2026-07-05/06** — deep sleep 20% best night in dataset, recovery bounce confirmed. HRV 22ms — sixth consecutive night below 25ms threshold. Zone 2 command firing correctly.
+- **Track B condition #3 still at 1/3** — no Gen3 sleep data from morning shortcut (ring out of BLE range).
+- **Track B walk experiment prepped** — PRIORITY_TAGS confirmed (all 5 targets already present). open_ring layouts read for 0x6B/0x6E/0x77/0x7E/0x7F. Existing corpus audited: 0x6E and 0x77 packets already present (ceiling-blocked on variance); 0x7E/0x7F and 0x6B absent (need the walk). Protocol doc created: `pipeline/tools/WALK_EXPERIMENT.md`. Roadmap updated with walk experiment as next unblocking action.
 - **⚠️ Oura token valid until 2026-07-13 — seven days remaining.**
 
 ---
@@ -42,11 +43,11 @@ conflict, this file takes precedence — it is version-controlled.
 
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
 
-1. **Decide morning pull approach** — Mac to nightstand vs immediate manual pull at desk vs shortcut with ring near Mac. Buffer rolls in ~2 min of walking; shortcut must fire before movement.
+1. **Execute timed walk experiment** — 500 steps, phone Bluetooth OFF before starting, pull immediately on return. Protocol: `pipeline/tools/WALK_EXPERIMENT.md`. Decodes 0x7E/0x7F (zero packets; needs walk), 0x6E/0x77 (ceiling-blocked on variance), and 0x6B (needs activity).
 
-2. **Evening pull before sleep tonight**.
+2. **Morning pull in BLE range** — ring must be near Mac before shortcut fires. Buffer rolls in ~2 min of walking.
 
-3. **Execute Zone 2 today** — HRV command still firing at 22ms.
+3. **Evening pull before sleep tonight**.
 
 4. **Track B condition #3 night 2 needs both Gen3 AND Gen4 data** — ring must be in BLE range at pull time.
 
