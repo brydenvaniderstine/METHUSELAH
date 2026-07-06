@@ -18,6 +18,7 @@ from decoders import (
     decode_motion_event,
     decode_bedtime_period,
     decode_spo2_ibi_amplitude,
+    decode_spo2_dc_event,
 )
 
 ADDR        = "71E77907-1EE9-4949-801C-02979071309C"
@@ -289,6 +290,29 @@ async def main():
             print(f"  → {len(ibi6e_all)} valid IBI samples  HR mean={hr_mean:.1f}bpm")
         if not ibi6e_found:
             print("  No 0x6E SPO2 IBI+amplitude events found in this pull.")
+
+        print(f"\n=== SPO2 DC EVENT DECODE (0x77) [PARTIAL — DC samples confirmed, field sub-structure uncertain] ===")
+        dc77_found = False
+        dc77_sentinels = 0
+        dc77_real = 0
+        for p in parsed:
+            if p["tag"] == 0x77:
+                dc77_found = True
+                try:
+                    d = decode_spo2_dc_event(p["payload"])
+                    if d["is_sentinel"]:
+                        dc77_sentinels += 1
+                    else:
+                        dc77_real += 1
+                        samp_str = " ".join(str(v) for v in d["dc_samples"][:5])
+                        print(f"  boot_ts={p['boot_ts']:>10}  ch={d['channel']}({d['beat_counter']:3d})"
+                              f"  n={d['n_samples']:2d}  samples=[{samp_str}{'...' if d['n_samples']>5 else ''}]")
+                except ValueError as e:
+                    print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
+        if dc77_found:
+            print(f"  → {dc77_real} real packets  {dc77_sentinels} sentinels")
+        else:
+            print("  No 0x77 SPO2 DC events found in this pull.")
 
         print(f"\n=== DEBUG DATA DECODE (0x61) - sleep stats / battery ===")
         debug_found = False

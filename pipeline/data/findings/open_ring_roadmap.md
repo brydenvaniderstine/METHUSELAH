@@ -105,21 +105,18 @@ sub-types. This supersedes the earlier partial roadmap.
       Variable payload length (8 or 14 bytes). 0xaa bytes appear as filler
       in unused slots of the 14-byte form. CEILING: need more packets across
       a range of activities to resolve b[0] and map the trailing bytes.
-- [ ] 0x77 spo2_dc_event — PARTIAL DECODE, ceiling confirmed (2026-06-30).
-      1352 packets; dominant form is 14-byte (870 pkts). b[0] = optical channel
-      identifier, alternates L/H bands (16-107 / 146-222) at 90.2% rate; most
-      common consecutive b[0] delta = 128 (the band separation). b[0] does NOT
-      correlate with SpO2 (r≈0 vs 0x6F, n=556 pairs) — it identifies the channel,
-      not the amplitude.
-      b[1:14] = 13 sequential i8 samples (NOT independent): diagonal correlation
-      matrix confirms time-series structure — r=0.43-0.54 at lag-1, decays to ~0
-      at lag-12. Means -5.5 to +9.3, SD ~35, full -128/+127 range used.
-      Two interleaved optical streams (L+H alternating) represent two wavelengths;
-      SpO2 ratio is derived from AC/DC ratio across both channels per beat.
-      CEILING: which band = red/IR (660nm/880nm), whether i8 = raw AC samples or
-      delta-encoded, and DC reference relationship to b[0] value all need firmware
-      disassembly or simultaneous raw PPG capture. Needs activity pull with SpO2
-      active for physiological variance to progress further.
+- [ ] 0x77 spo2_dc_event — PARTIAL DECODE, decoder written and validated 2026-07-06.
+      384/384 corpus packets decode without error. 357 real, 27 sentinel (aaaab2 tail).
+      b[0] = channel byte (bit7=A/B, bit6..0=beat_counter). Channel balance A=178/B=179.
+      b[1..n-1] = signed i8 DC samples (Hyp A — conservative; all remaining bytes).
+      Dominant 14-byte form → 13 samples. DC range −128 to +127 (full range used),
+      mean −3.70, stdev 43.84. Time-series structure confirmed: lag-1 r=+0.49.
+      Cross-channel A/B correlation for matched pairs: r=+0.80 to +0.93 (real signal).
+      Decoder: `pipeline/decoders/0x77.py`. Wired into pull script.
+      CEILING: whether b1..b3 are a header (beat_index + u16 ts) leaving b4..= as samples,
+      or all b1..= are DC samples — indistinguishable from corpus. Band identity (red/IR),
+      i8 encoding (raw/gain/delta), DC reference units — all need firmware disassembly.
+      NOT promoted to DONE — ceiling maintained per working rules.
 
 **NEXT UNBLOCKING ACTION (2026-07-06): Timed walk experiment.**
 Protocol documented in `pipeline/tools/WALK_EXPERIMENT.md`.
@@ -359,6 +356,7 @@ into individual files in `pipeline/decoders/`:
 | `pipeline/decoders/0x47.py` | motion_event | VALIDATED |
 | `pipeline/decoders/0x76.py` | bedtime_period | NEVER OBSERVED |
 | `pipeline/decoders/0x6e.py` | spo2_ibi_and_amplitude | VALIDATED |
+| `pipeline/decoders/0x77.py` | spo2_dc_event | PARTIAL DECODE |
 
 Shared helpers (`_i8`, `_u32`) moved to `pipeline/decoders/utils.py`. Pull script now
 imports from `pipeline.decoders`. Output verified byte-for-byte identical against known

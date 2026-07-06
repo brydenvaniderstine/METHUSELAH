@@ -2563,3 +2563,44 @@ Open (not blocking DONE status):
 - Channel wavelength (red vs IR): same dual-band pattern as 0x77, unconfirmed without firmware
 
 *Logged 2026-07-06.*
+
+---
+
+## 2026-07-06 — 0x77 spo2_dc_event decoder written and validated
+
+Date: 2026-07-06
+Status: PARTIAL DECODE — decoder written, corpus validated, ceiling maintained.
+
+Full validation run (pipeline/decoders/0x77.py):
+- 384/384 corpus packets decode without error (0 exceptions)
+- 357 real data packets, 27 sentinel packets (is_sentinel=True)
+- Sentinel pattern `0xAAAAB2` in trailing 3 bytes: confirmed session-end marker
+
+Real packet sample count distribution:
+{1: 4, 2: 2, 3: 65, 4: 19, 5: 7, 6: 10, 7: 6, 8: 2, 9: 4, 10: 3, 11: 4, 12: 5, 13: 226}
+- 14-byte dominant (13 samples, 226/357 = 63.3%)
+- 4-byte common (3 samples, 65/357 = 18.2%)
+
+DC sample statistics across all 357 real packets (3540 samples):
+- Range: −128 to +127 (full i8 range used)
+- Mean: −3.70, Stdev: 43.84
+- Channel balance: A=178, B=179 (near-perfect alternation confirmed)
+
+Decoder outputs per-packet: channel (A/B), beat_counter, is_sentinel, dc_samples[], n_samples.
+Wired into pull script output as === SPO2 DC EVENT DECODE (0x77) === section.
+
+Ceiling unchanged (NOT promoted to DONE):
+- Whether b1..b3 are a header (beat_index + u16 timestamp) leaving b4..b(n-1) as samples,
+  or all b1..b(n-1) are DC samples — indistinguishable from corpus statistics alone
+- Which optical band = red (660nm) vs IR (880nm)
+- Whether i8 values are raw ADC, gain-corrected, or delta-encoded
+- Physical DC reference units
+
+Cross-channel correlation for A/B matched pairs (same beat_counter): r=+0.80 to +0.93.
+This confirms real physiological PPG signal, not noise. The time-series structure is
+internally consistent (lag-1 autocorrelation r=+0.49 intra-packet).
+
+0x77 stays IN PROGRESS in roadmap. Walk experiment would add SpO2 variance context
+for band identity but would not resolve the b1..b3 header question.
+
+*Logged 2026-07-06.*

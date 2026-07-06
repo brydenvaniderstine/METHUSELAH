@@ -34,8 +34,8 @@ conflict, this file takes precedence — it is version-controlled.
 
 - **Gen4-only comparison row logged for 2026-07-05/06** — deep sleep 20% best night in dataset, recovery bounce confirmed. HRV 22ms — sixth consecutive night below 25ms threshold. Zone 2 command firing correctly.
 - **Track B condition #3 still at 1/3** — no Gen3 sleep data from morning shortcut (ring out of BLE range).
-- **0x6E IBI layout CONFIRMED from existing sleep corpus** — 549 packets analysed. Layout: b0=channel byte (bit7=optical channel A/B), b1-5=5× IBI high, b6-10=5× IBI low+amp, b11=mid bits, b12=shift nibble. Same bit-pack as 0x60 but 5 pairs instead of 6. Cross-validated vs 0x6A avg_hr: −1.1 to +1.3 bpm delta across 5 sleep files (−0.1 bpm tightest). Walk experiment no longer needed for 0x6E IBI.
-- **0x77 prior analysis confirmed** — 384 packets, 14-byte dominant (226). b0 channel bands (mean 58.3 low / 185.4 high, separation ≈128) and i8 time-series structure (lag-1 r=+0.34 to +0.61) both consistent with prior work. Red/IR assignment still ceiling-blocked.
+- **0x6E IBI decoder WRITTEN AND VALIDATED** — 549/549 corpus packets decode without error. Layout confirmed: b0=channel byte (bit7=A/B), b1-5=5× IBI high, b6-10=5× IBI low+amp, b11=mid bits, b12=shift nibble. Cross-validated vs 0x6A avg_hr: −1.1 to +1.3 bpm across 5 sleep files. Wired into pull script. Promoted to DONE.
+- **0x77 spo2_dc_event decoder WRITTEN AND VALIDATED** — 384/384 corpus packets decode without error. 357 real (13 i8 samples dominant), 27 sentinel (aaaab2). DC range −128 to +127, mean −3.70, stdev 43.84. Cross-channel A/B correlation r=+0.80 to +0.93 confirms real PPG signal. Wired into pull script. Stays IN PROGRESS (ceiling: b1..b3 header vs all-samples indistinguishable, band identity unknown).
 - **Walk experiment still required for 0x7E/0x7F** — zero packets in corpus. Protocol documented in `pipeline/tools/WALK_EXPERIMENT.md`.
 - **⚠️ Oura token valid until 2026-07-13 — seven days remaining.**
 
