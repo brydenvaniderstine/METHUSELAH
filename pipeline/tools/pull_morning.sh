@@ -1,7 +1,11 @@
 #!/bin/bash
 # METHUSELAH — Morning pull wrapper
-# Triggered via iOS Shortcut over SSH
-# Uses osascript to open Terminal with GUI context so CoreBluetooth has permission
-# Direct python3 via SSH fails silently — osascript is the confirmed working method
+# Triggered via iOS Shortcut over SSH using osascript
+# Uses absolute paths throughout — relative paths and ~ fail via osascript
 
-osascript -e 'tell app "Terminal" to do script "cd ~/Desktop/METHUSELAH && python3 pipeline/tools/oura_gen3_morning_pull.py"'
+REPO="/Users/brydenvaniderstine/Desktop/METHUSELAH"
+LOG="$REPO/pipeline/data/logs/morning_pull.log"
+ERR="$REPO/pipeline/data/logs/morning_pull_error.log"
+
+cd "$REPO"
+/usr/bin/python3 "$REPO/pipeline/tools/oura_gen3_morning_pull.py" >> "$LOG" 2>> "$ERR"

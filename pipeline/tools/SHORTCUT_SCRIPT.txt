@@ -1,0 +1,1 @@
+osascript -e 'tell app "Terminal" to do script "cd /Users/brydenvaniderstine/Desktop/METHUSELAH && /usr/bin/python3 /Users/brydenvaniderstine/Desktop/METHUSELAH/pipeline/tools/oura_gen3_morning_pull.py"'

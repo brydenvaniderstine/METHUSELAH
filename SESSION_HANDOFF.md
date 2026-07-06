@@ -30,13 +30,13 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
-**Date:** 2026-07-03
+**Date:** 2026-07-05
 
-- **MILESTONE: First real sleep state transitions captured** — evening pull 22:58 from `gen3_pull_20260703_225853.txt`. First pull in Track B history showing state=1 → state=0 transitions across 8 x6A samples (25%/75% split). HR 76→67 bpm across transition consistent with physiological settling. Track B condition #1 has first evidence — full stage mapping not yet validated.
-- **Partial Gen3 row logged** — 2026-07-03 evening: HR 67.0–76.0 bpm, SpO2 90.0–94.8% avg 91.5%, temp 34.32–34.94°C. Gen4 screenshots pending — row to be completed tomorrow morning.
-- **Wrapper scripts updated to osascript** — `pull_morning.sh` and `pull_evening.sh` now use `osascript` instead of direct python3 (headless SSH blocks CoreBluetooth).
-- **Thresholds calibrated and live** — `deepSleep: 13`, `hrv: 25`. Architecture note added.
-- **First confirmed 0x5d HRV event** — evening activity pull 2026-07-02. Decoder working. Sleep HRV not yet captured.
+- **Shortcut absolute path fix applied** — `pull_morning.sh` and `pull_evening.sh` rewritten with absolute paths (`REPO=`, `LOG=`, `ERR=` vars). Tilde expansion and relative paths silently fail via SSH → osascript → Terminal. Fix confirmed working: `gen3_pull_20260705_213406.txt` filed to `gen3_evening/` at 21:34 by tonight's test run.
+- **Error log clarification** — `morning_pull_error.log` contains errors from a previous run with OLD code (before the auto-file `outpath` mutation fix). Not a regression. The fixed code is confirmed working.
+- **`SHORTCUT_SCRIPT.txt` created** — `pipeline/tools/SHORTCUT_SCRIPT.txt` contains the exact string to paste into iPhone shortcut Script field (absolute paths, no tilde).
+- **MILESTONE: First real sleep state transitions captured** — `gen3_pull_20260703_225853.txt`. Track B condition #1 has first evidence.
+- **Partial Gen3 row logged for 2026-07-03 evening** — Gen4 screenshots still pending.
 
 ---
 
@@ -44,13 +44,13 @@ conflict, this file takes precedence — it is version-controlled.
 
 ⚠️ **PULL BEFORE MOVING** — tap lock screen widget before feet hit floor. Confirmed working method.
 
-1. **Morning pull** — tap lock screen widget immediately on waking. Do not get up first.
+1. **Update iPhone shortcut** — paste content of `pipeline/tools/SHORTCUT_SCRIPT.txt` into the shortcut's Script field. This replaces the old `~/` path that was silently failing.
 
-2. **Complete 2026-07-03 evening comparison row** — take Gen4 Oura screenshots (sleep stages, HR, SpO2) for tonight's sleep and add to `gen3_vs_gen4_comparison.csv` row dated "2026-07-03 evening." This row is partial — Gen4 fields are all n/a.
+2. **Morning pull** — tap lock screen widget immediately on waking. Do not get up first.
 
-3. **Evening pull tonight** — tap lock screen widget before sleep.
+3. **Complete 2026-07-03 evening comparison row** — Gen4 Oura screenshots (sleep stages, HR, SpO2) to fill the n/a fields in `gen3_vs_gen4_comparison.csv`.
 
-4. **Begin 0x5d sleep HRV investigation** — why does HRV fire during evening activity pulls but not overnight sleep pulls. Compare boot_ts ranges and pfsm_state windows between the confirmed HRV pull and overnight sleep pulls.
+4. **Evening pull tonight** — tap lock screen widget before sleep.
 
 ---
 
