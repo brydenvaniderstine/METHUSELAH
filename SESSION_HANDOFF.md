@@ -32,25 +32,28 @@ conflict, this file takes precedence — it is version-controlled.
 
 **Date:** 2026-07-05
 
-- **Shortcut absolute path fix applied** — `pull_morning.sh` and `pull_evening.sh` rewritten with absolute paths (`REPO=`, `LOG=`, `ERR=` vars). Tilde expansion and relative paths silently fail via SSH → osascript → Terminal. Fix confirmed working: `gen3_pull_20260705_213406.txt` filed to `gen3_evening/` at 21:34 by tonight's test run.
-- **Error log clarification** — `morning_pull_error.log` contains errors from a previous run with OLD code (before the auto-file `outpath` mutation fix). Not a regression. The fixed code is confirmed working.
-- **`SHORTCUT_SCRIPT.txt` created** — `pipeline/tools/SHORTCUT_SCRIPT.txt` contains the exact string to paste into iPhone shortcut Script field (absolute paths, no tilde).
-- **MILESTONE: First real sleep state transitions captured** — `gen3_pull_20260703_225853.txt`. Track B condition #1 has first evidence.
-- **Partial Gen3 row logged for 2026-07-03 evening** — Gen4 screenshots still pending.
+- **Oura API connection restored** — token expired (created 2026-06-20), new token valid until 2026-07-13. Date parameter bug fixed in commit a5681db — `toISOString()` replaces `toLocaleDateString`, `res.ok` check added. OURA LIVE confirmed on methuselah.ca.
+- **⚠️ Hard deadline: 2026-07-13** — Oura Personal Access Token expires. After that date the Gen4 API connection drops permanently unless subscription renewed. Track B sovereign BLE pipeline must be primary data source by then or the live site loses three of four vectors.
+- **EXECUTE 45-MIN ZONE 2 OUTPUT firing correctly** — HRV 18ms triggered command with briefing on live site.
+- **Track B condition #3 night 1 of 3 passed** — Gen3 SpO2 95.1% vs Gen4 97%, gap 1.9%, within ±5% gate. Two more consecutive nights required to close condition.
+- **Comparison CSV row completed for 2026-07-04/05** — HRV 18ms lowest recorded, five-night declining trend (36→32→31→26→18ms). Deep sleep 16%, clean baseline.
+- **Shortcut absolute path fix committed** — `SHORTCUT_SCRIPT.txt` created for iPhone copy-paste.
 
 ---
 
 ## Next session priority
 
-⚠️ **PULL BEFORE MOVING** — tap lock screen widget before feet hit floor. Confirmed working method.
+⚠️ **PULL BEFORE MOVING** — tap lock screen widget before feet hit floor.
 
-1. **Update iPhone shortcut** — paste content of `pipeline/tools/SHORTCUT_SCRIPT.txt` into the shortcut's Script field. This replaces the old `~/` path that was silently failing.
+1. **Update iPhone Morning Pull shortcut Script field** — paste content of `pipeline/tools/SHORTCUT_SCRIPT.txt`. Absolute paths fix the silent failure.
 
-2. **Morning pull** — tap lock screen widget immediately on waking. Do not get up first.
+2. **Execute Zone 2 protocol today** — HRV command is live and correct.
 
-3. **Complete 2026-07-03 evening comparison row** — Gen4 Oura screenshots (sleep stages, HR, SpO2) to fill the n/a fields in `gen3_vs_gen4_comparison.csv`.
+3. **Evening pull before sleep tonight**.
 
-4. **Evening pull tonight** — tap lock screen widget before sleep.
+4. **Morning pull immediately at waking tomorrow** — lock screen widget. Track B condition #3 night 2 of 3.
+
+5. **Watch the 2026-07-13 token expiry** — if subscription not renewed, Gen4 API vectors go dark. Decide before that date.
 
 ---
 

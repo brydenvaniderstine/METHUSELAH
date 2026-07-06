@@ -2426,3 +2426,34 @@ Status: milestone — first state transition evidence. Not yet
 sufficient to close Track B condition #1.
 
 *Logged 2026-07-03.*
+
+---
+
+## 2026-07-05 — Oura API connection dropped — token expired, date parameter bug found
+
+Date: 2026-07-05
+Finding: methuselah.ca showed OFFLINE / AWAITING DATA. Two root causes:
+
+1. Personal Access Token expired (created 2026-06-20, shown in red on
+   Oura developer page). Fixed by creating new token
+   Q4GSZGRWFMQN6FR2EVJLZAFPW7CAX4UJ (valid until 2026-07-13) and
+   setting it in browser localStorage via console.
+
+2. App.js was calling /api/oura without start_date and end_date
+   parameters. api/oura.js requires both in YYYY-MM-DD format.
+   The toLocaleDateString("en-CA") format was also replaced with
+   toISOString().split('T')[0] for locale safety. A missing res.ok
+   check meant 400 errors were silently swallowed and logged as
+   "NO SLEEP DATA FOUND" rather than surfacing the real error.
+
+Fix: both issues resolved in commit a5681db. OURA LIVE restored.
+
+Important: Oura Personal Access Token expires 2026-07-13 with the
+subscription. After that date the Gen4 API connection will drop again
+permanently unless subscription is renewed. Track B sovereign BLE
+pipeline must be the primary data source by that date or the live
+site loses three of four vectors.
+
+Status: resolved for now. Token expiry on 2026-07-13 is a hard deadline.
+
+*Logged 2026-07-05.*
