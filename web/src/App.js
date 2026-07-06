@@ -293,10 +293,11 @@ export default function MethuselahFinal() {
       const today = new Date();
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
-      const fmt = (d) => d.toLocaleDateString("en-CA");
-      const res = await fetch(
-        `/api/oura?token=${token}&start_date=${fmt(yesterday)}&end_date=${fmt(today)}`
-      );
+      const fmt = (d) => d.toISOString().split('T')[0];
+      const start = fmt(yesterday);
+      const end = fmt(today);
+      const res = await fetch(`/api/oura?token=${token}&start_date=${start}&end_date=${end}`);
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
       const data = await res.json();
       if (data.data && data.data.length > 0) {
         const mainSleep = data.data.find(s => s.type === "long_sleep") || data.data[0];
