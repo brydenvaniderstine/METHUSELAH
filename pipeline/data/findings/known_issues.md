@@ -2604,3 +2604,27 @@ internally consistent (lag-1 autocorrelation r=+0.49 intra-packet).
 for band identity but would not resolve the b1..b3 header question.
 
 *Logged 2026-07-06.*
+
+---
+
+## 2026-07-06 — 0x6E and 0x77 first live pull confirmation
+
+Date: 2026-07-06 (evening pull, ACTIVE WINDOW)
+
+**0x6E spo2_ibi_and_amplitude_event — LIVE CONFIRMED:**
+- Channels A and B alternating correctly
+- IBI values 857–909ms → HR ~66–70 bpm
+- Mean HR from 0x6E: 67.8 bpm
+- Context: ACTIVE WINDOW evening pull — motion artifact expected, divergence from 0x6A HR consistent with corpus validation findings
+- Wiring into pull script confirmed working
+
+**0x77 spo2_dc_event — LIVE CONFIRMED:**
+- DC samples captured and decoded correctly
+- Sentinel packets (aaaab2) correctly identified and separated from real data
+- Wiring into pull script confirmed working
+
+Auto-file fired correctly (ACTIVE WINDOW → gen3_evening/). Bridge JSON updated. Battery 82.4%.
+
+Both decoders producing real output in a live pull for the first time. No errors reported.
+
+*Logged 2026-07-06.*
