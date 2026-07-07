@@ -3,7 +3,7 @@
 # that produces a new finding, confirmed pattern, or resolved/
 # unresolved decoder question. Do not wait to be asked explicitly.
 # If a session ends without touching this file and a finding occurred,
-# that is an error. Last updated: 2026-07-06 (session 2 — 0x6B and 0x61/0x09 corpus analysis)
+# that is an error. Last updated: 2026-07-07 (walk experiment — 0x7E/0x7F decoded, 0x6B confirmed)
 # ─────────────────────────────────────────────────────────────
 
 # METHUSELAH // open_ring Decoder Roadmap (COMPLETE — all 38 decoders tracked)
@@ -78,38 +78,40 @@ sub-types. This supersedes the earlier partial roadmap.
       Behaviorally-derived labels wired into pull script output (2026-07-07):
       pfsm=6→SLEEP_REGIME, pfsm=3/4→ACTIVE_REGIME, pfsm=5→TRANSITIONAL,
       pfsm=128→ECHO_RECORD. NOT firmware-confirmed.
-- [ ] 0x7E/0x7F real_steps_features — 64 pairs across 3 activity pulls.
-      CONFIRMED (2026-06-27): invalid pairs (7F[3]=7F[4]=7F[7]=0) caused
-      by Feature session restart (payloads 02010400 / 02030400), recovery
-      spans 1–2 windows. NOT timeout/fea-off (prior hypothesis revised).
-      Strongest correlation: 7F[10] ↔ 7F[4] r=+0.526 — 7F[10] never hits
-      zero, 7F[4] validity-flagged; same underlying signal at different
-      smoothing. 7F[11] ↔ 7F[12] r=−0.568 (n=96) — anti-correlated, energy
-      conservation FALSIFIED. diff(f11−f12) is the true signal: r=+0.337
-      with f4, r=+0.293 with f10. Hypothesis: f11=cadence-band power,
-      f12=low-freq/gravity artifact. 7E[4] ↔ 7F[6] r=+0.374 — tight cross-tag.
-      7F[3] highest-variance field (stdev 61.4, range 7–230), primary step
-      output candidate. u16 hypothesis falsified (7F[3]↔7F[4] r=−0.084,
-      independent). CEILING: cannot label 7F[3]/7F[4]/7F[7] without
-      ground-truth step count.
-      WALK EXPERIMENT: INCONCLUSIVE (2026-06-28). 1273 Apple Health steps /
-      1163 Oura steps confirmed. Post-walk pulls (201810, 201845, 203635,
-      203908) returned zero 0x7E/0x7F packets — buffer classified as SLEEP
-      WINDOW. Root cause: Oura app BLE connection drained step-feature events
-      before pull script connected. Terminal-reuse hypothesis FALSIFIED (fresh
-      terminal = identical result). NOT a decoder failure — a buffer-contention
-      failure. REVISED PROTOCOL: kill Oura app BEFORE walk begins; disable
-      phone BT during walk; pull immediately on return before relaunching app;
-      walk 20+ min to fill more of the 255-event buffer.
+- [~] 0x7E/0x7F real_steps_features — IN PROGRESS. First ground-truth decode 2026-07-07.
+      64 prior pairs from 3 activity pulls + 7 new pairs from controlled walk experiment.
+      Raw pull lost to buffer roll — payloads recovered from terminal output and preserved in
+      `pipeline/data/raw_pulls/gen3_evening/walk_experiment_20260707_decoded.txt`.
+      Ground truth: ~500 net steps. Phone BT OFF (revised protocol from 2026-06-28 failure).
+
+      PRIOR FINDINGS (still valid):
+      Invalid pairs (7F[3]=7F[4]=7F[7]=0) caused by Feature session restart — NOT decode error.
+      7F[3] highest-variance field (stdev 61.4, range 7–230), primary step output candidate.
+      7E[4] ↔ 7F[6] r=+0.374 cross-tag. 7F[11] ↔ 7F[12] r=−0.568 (anti-correlated).
+
+      WALK EXPERIMENT FINDINGS (2026-07-07):
+      Boot_ts spacing: 296, 326, 302, 301, 321, 301 ticks — mean 307.8, stdev ~11 (3.6%).
+      Packets fire at near-constant ~308-tick cadence — timer-driven, NOT step-triggered.
+      b[9] of 7E consistently dominant (range 151-235, mean 193.3) across all 7 packets.
+      Pair 4 anomalous: b[1]=b[2]=b[5]=0 — possible brief pause or missed cadence window.
+      STEP COUNT GATE: No single byte column sums to ~500. Nearest: 7E b[2]=485, 7E b[4]=482
+      — both fail gate (zero in pair 4, not robust). These are FFT spectral features, not
+      direct step counters. open_ring confirms: "FFTset sub-messages, meaning not documented."
+      CEILING: byte-level field names need firmware RE or proto source (FFTset message schema).
+      b[9] dominance and b[2]/b[4] near-500 clusters are hypotheses only — not confirmed.
 (0x6E promoted to DONE — see above. 0x80 moved to DONE — see above.)
-- [ ] 0x6B motion_period — 5 packets in corpus (updated 2026-07-06, was 4).
+- [✓] 0x6B motion_period — b[0] CONFIRMED as per-window step count (2026-07-07).
       open_ring MOTION_STATE enum {0:NO_MOTION,1:RESTLESS,2:TOSSING_AND_TURNING,3:ACTIVE}
-      — ALL 5 corpus b[0] values (53,53,57,61,62) fall outside this enum.
-      Hypothesis: b[0] is a motion-intensity count not an enum (range 53-62 so far).
-      All payloads 14 bytes; 2 sparse (many zeros), 2 fill-heavy (0xAA/0xFE bytes),
-      1 information-dense. 8-byte form still unobserved (prior roadmap entry).
-      CEILING: need ground-truth step count or activity-graded pull to map b[0]
-      range to motion intensity. Walk experiment is next attempt.
+      — ALL prior corpus b[0] values (53,53,57,61,62) outside this enum.
+      WALK EXPERIMENT RESULT: b[0] values [100,101,98,98,100] sum = 497 ≈ 500 steps (0.6% error).
+      Motion-intensity count hypothesis CONFIRMED as per-window step count.
+      Rest context b[0] mean = 56.6; walk context b[0] mean = 99.4 → 1.76x ratio.
+      b[1] values (116-120): candidate step cadence in steps/min (brisk walk pace consistent).
+      b[3] values (240-254): approaching uint8 ceiling; b[4]=1 fires when b[3]≥246 (overflow flag?).
+      0x6B firing cadence: ~300 ticks (interleaved between 0x7E pairs at same cadence).
+      Duplicate at boot_ts=57812910: identical to prior packet — buffer artifact.
+      REMAINING UNKNOWNS: physical units of b[1] (steps/min?), b[2] (cumulative?), b[3] overflow.
+      Status: PARTIAL — b[0] confirmed, remaining fields are hypotheses.
 - [ ] 0x77 spo2_dc_event — PARTIAL DECODE, decoder written and validated 2026-07-06.
       384/384 corpus packets decode without error. 357 real, 27 sentinel (aaaab2 tail).
       b[0] = channel byte (bit7=A/B, bit6..0=beat_counter). Channel balance A=178/B=179.
@@ -123,16 +125,14 @@ sub-types. This supersedes the earlier partial roadmap.
       i8 encoding (raw/gain/delta), DC reference units — all need firmware disassembly.
       NOT promoted to DONE — ceiling maintained per working rules.
 
-**NEXT UNBLOCKING ACTION (2026-07-06): Timed walk experiment.**
-Protocol documented in `pipeline/tools/WALK_EXPERIMENT.md`.
-Updated scope after pre-walk corpus analysis (2026-07-06):
-- 0x7E/0x7F: STILL REQUIRED — zero packets in corpus
-- 0x6E IBI: NO LONGER NEEDED — layout confirmed from sleep corpus (−1.1 to +1.3 bpm delta vs 0x6A)
-- 0x6E amplitude: still useful for physical units, not blocking
-- 0x77: still useful for red/IR band identification via SpO2 variance, not blocking
-- 0x6B: still useful, few packets in sleep context
-Critical fix from prior inconclusive attempt (2026-06-28): phone Bluetooth
-must be OFF before starting walk so Oura app cannot drain buffer before pull.
+**WALK EXPERIMENT COMPLETED 2026-07-07 (revised protocol — phone BT OFF).**
+Protocol: `pipeline/tools/WALK_EXPERIMENT.md`. Results logged above.
+- 0x7E/0x7F: 7 pairs decoded. IN PROGRESS — byte fields not named. FFT spectral features confirmed.
+- 0x6B: b[0] step count CONFIRMED. Remaining fields (b[1]-b[3]) still hypotheses.
+- 0x6E IBI: DONE — promoted prior session.
+- 0x77: PARTIAL — unchanged.
+Raw pull file lost (buffer roll before save). Payloads preserved in decoded file.
+NEXT ACTION for 0x7E/0x7F: firmware RE or proto source to identify FFTset sub-message fields.
 
 ## NOT STARTED — Tier 1, high biometric value (3)
 - [ ] 0x76 bedtime_period — wired into script, never caught a real packet

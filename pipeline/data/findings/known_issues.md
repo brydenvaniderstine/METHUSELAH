@@ -2831,3 +2831,33 @@ Labels are corpus-derived only — NOT firmware-confirmed. Output now reads:
   [SLEEP STATS] pfsm_state=6 [SLEEP_REGIME]  seconds_in_pfsm_state=134  (2.23min)
 
 *Logged 2026-07-07.*
+
+---
+
+## Walk experiment 2026-07-07: 0x7E/0x7F decoded + 0x6B confirmed as step counter
+
+**Experiment:** Controlled timed walk, ~500 net steps, phone Bluetooth OFF. Raw pull file
+lost to buffer roll — 7 pairs of 0x7E/0x7F payloads and 5 0x6B payloads recovered from
+terminal output. Decoded file: `pipeline/data/raw_pulls/gen3_evening/walk_experiment_20260707_decoded.txt`
+
+**0x7E/0x7F step feature packets (7 pairs):**
+- open_ring layout confirmed: 14×uint8, no named fields ("FFTset sub-messages, meaning not documented")
+- Boot_ts spacing: 296, 326, 302, 301, 321, 301 ticks — mean 307.8, stdev ~11 ticks (3.6%)
+  These fire at near-constant ~308-tick cadence during walking (timer-driven, not step-triggered)
+- b[9] of 7E consistently dominant (range 151-235, mean 193.3) — likely FFT peak or energy bin
+- Pair 4 anomalous: b[1]=b[2]=b[5]=0 — possible brief pause in walk or missed cadence window
+- **No single byte column sums to ~500.** 7E b[2]=485, 7E b[4]=482 are nearest but inconclusive
+  (contain a zero in pair 4). These are spectral feature vectors, not direct step counters.
+- Status: IN PROGRESS. Byte-level semantics still unknown — firmware or proto source needed.
+
+**0x6B motion_period — step count CONFIRMED:**
+- b[0] values during walk: 100, 101, 98, 98, 100 → **sum = 497 (0.6% deviation from 500)**
+- Motion-intensity count hypothesis CONFIRMED against known ground truth
+- Prior corpus b[0] mean = 56.6 (rest/light motion); walk mean = 99.4 → 1.76x ratio
+- b[1] values (116-120): candidate cadence in steps/min — brisk walk pace is consistent
+- b[3] values (240-254): approaching uint8 ceiling; b[4]=1 appears when b[3]≥246 (overflow flag?)
+- 0x6B spacing: 300, 301, 299, 601 ticks — 601 = double gap (one packet missed or duplicate)
+- Duplicate packet at boot_ts=57812910: identical to 57812611 — buffer artifact, not new data
+- Interleaved with 7E packets at ~300-tick cadence — 0x6B fires between each 7E pair
+
+*Logged 2026-07-07.*

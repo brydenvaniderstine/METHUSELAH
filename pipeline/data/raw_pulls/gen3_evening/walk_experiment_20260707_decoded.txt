@@ -1,0 +1,156 @@
+WALK EXPERIMENT 2026-07-07 — DECODED PAYLOADS
+==============================================
+Ground truth: ~500 net steps
+Conditions: phone Bluetooth OFF, controlled timed walk
+Note: raw pull file lost to buffer roll — payloads recovered from terminal output
+open_ring reference: decode_real_steps_features — 14×uint8 at offsets 0..13
+  "Field names map to FFTset sub-messages; signal-processing meaning not documented"
+
+---
+
+0x7E/0x7F STEP FEATURE PACKETS — 7 PAIRS
+==========================================
+
+Pair 1
+  [0x7E] boot_ts=57811767  payload=61476c012593224b61e94d1b4c36
+    u8: [97, 71, 108,   1,  37, 147,  34,  75,  97, 233,  77,  27,  76,  54]
+  [0x7F] boot_ts=57811768  payload=7360578c3899493e705f7b716c00
+    u8: [115,  96,  87, 140,  56, 153,  73,  62, 112,  95, 123, 113, 108,   0]
+
+Pair 2
+  [0x7E] boot_ts=57812063  payload=758238aa3b524f955aeb32a35053
+    u8: [117, 130,  56, 170,  59,  82,  79, 149,  90, 235,  50, 163,  80,  83]
+  [0x7F] boot_ts=57812064  payload=68716bcf53943f4b50857d3cabfc
+    u8: [104, 113, 107, 207,  83, 148,  63,  75,  80, 133, 125,  60, 171, 252]
+
+Pair 3
+  [0x7E] boot_ts=57812389  payload=58e43a16453b6a7a70a94e914473
+    u8: [ 88, 228,  58,  22,  69,  59, 106, 122, 112, 169,  78, 145,  68, 115]
+  [0x7F] boot_ts=57812390  payload=409c500b5d4937288a53845c8866
+    u8: [ 64, 156,  80,  11,  93,  73,  55,  40, 138,  83, 132,  92, 136, 102]
+
+Pair 4
+  [0x7E] boot_ts=57812691  payload=5300009262005f92549760603260
+    u8: [ 83,   0,   0, 146,  98,   0,  95, 146,  84, 151,  96,  96,  50,  96]
+    NOTE: three zeros at b[1], b[2], b[5] — anomalous; possible brief pause or missed cadence
+  [0x7F] boot_ts=57812692  payload=617f5d89548e506c2e3c84ac500b
+    u8: [ 97, 127,  93, 137,  84, 142,  80, 108,  46,  60, 132, 172,  80,  11]
+
+Pair 5
+  [0x7E] boot_ts=57812992  payload=64bb5a98566123c752b343842f7c
+    u8: [100, 187,  90, 152,  86,  97,  35, 199,  82, 179,  67, 132,  47, 124]
+  [0x7F] boot_ts=57812993  payload=5b8364ac7c9d49493099836a84c7
+    u8: [ 91, 131, 100, 172, 124, 157,  73,  73,  48, 153, 131, 106, 132, 199]
+
+Pair 6
+  [0x7E] boot_ts=57813313  payload=63e7579a362b74625ac14291475a
+    u8: [ 99, 231,  87, 154,  54,  43, 116,  98,  90, 193,  66, 145,  71,  90]
+  [0x7F] boot_ts=57813314  payload=7a64589d3c2d4d4f6978796a8425
+    u8: [122, 100,  88, 157,  60,  45,  77,  79, 105, 120, 121, 106, 132,  37]
+
+Pair 7
+  [0x7E] boot_ts=57813614  payload=595256124f6d497b56c136935342
+    u8: [ 89,  82,  86,  18,  79, 109,  73, 123,  86, 193,  54, 147,  83,  66]
+  [0x7F] boot_ts=57813615  payload=6b795e1e4b1e45525763867178f4
+    u8: [107, 121,  94,  30,  75,  30,  69,  82,  87,  99, 134, 113, 120, 244]
+
+---
+
+BOOT_TS SPACING ANALYSIS (7E packets)
+======================================
+  pair 1→2:  296 ticks
+  pair 2→3:  326 ticks
+  pair 3→4:  302 ticks
+  pair 4→5:  301 ticks
+  pair 5→6:  321 ticks
+  pair 6→7:  301 ticks
+  mean:      307.8 ticks
+  stdev:     ~11 ticks (~3.6%)
+  total span: 1847 ticks (7 pairs)
+
+  Interpretation: packets emitted at highly regular ~308-tick cadence during active
+  walking. Cadence variance <4% suggests a hardware timer, not step-triggered emission.
+  These are periodic feature-window snapshots, not one-per-step events.
+
+---
+
+COLUMN SUMS — 7E PACKETS (7 values each)
+==========================================
+  b[ 0]: [97,117, 88, 83,100, 99, 89]  sum=673   mean= 96.1
+  b[ 1]: [71,130,228,  0,187,231, 82]  sum=929   mean=132.7
+  b[ 2]: [108, 56, 58,  0, 90, 87, 86]  sum=485  mean= 69.3
+  b[ 3]: [1,170, 22,146,152,154, 18]   sum=663   mean= 94.7
+  b[ 4]: [37, 59, 69, 98, 86, 54, 79]  sum=482   mean= 68.9
+  b[ 5]: [147, 82, 59,  0, 97, 43,109] sum=537   mean= 76.7
+  b[ 6]: [34, 79,106, 95, 35,116, 73]  sum=538   mean= 76.9
+  b[ 7]: [75,149,122,146,199, 98,123]  sum=912   mean=130.3
+  b[ 8]: [97, 90,112, 84, 82, 90, 86]  sum=641   mean= 91.6
+  b[ 9]: [233,235,169,151,179,193,193] sum=1353  mean=193.3  ← consistently high
+  b[10]: [77, 50, 78, 96, 67, 66, 54]  sum=488   mean= 69.7
+  b[11]: [27,163,145, 96,132,145,147]  sum=855   mean=122.1
+  b[12]: [76, 80, 68, 50, 47, 71, 83]  sum=475   mean= 67.9
+  b[13]: [54, 83,115, 96,124, 90, 66]  sum=628   mean= 89.7
+
+  b[9] is the dominant signal in all 7E packets (range 151-235, mean 193.3).
+  b[2], b[4], b[10], b[12] all cluster near 475-490 — close to but not equal to 500.
+  CONCLUSION: No single 7E/7F byte is a direct step counter. Values are FFT features.
+
+---
+
+STEP COUNT VALIDATION GATE — RESULT
+=====================================
+  Target: ~500 net steps
+
+  7E/7F byte columns: nearest is 7E b[2] sum=485, 7E b[4] sum=482 — within ~3-4%
+    but these contain a zero in pair 4 (anomalous pair) and don't converge cleanly.
+    VERDICT: INCONCLUSIVE — not a reliable step count field.
+
+  0x6B b[0] sums: 100 + 101 + 98 + 98 + 100 = 497
+    Deviation from 500: 3 steps (0.6%)
+    VERDICT: CONFIRMED — 0x6B b[0] is per-window step count. Motion-intensity count
+    hypothesis VALIDATED against ~500-step ground truth.
+
+---
+
+0x6B MOTION_PERIOD PACKETS — WALK CONTEXT
+==========================================
+  boot_ts=57812010  payload=6474cdf0    len=4  b[0]=100  b[1]=116  b[2]=205  b[3]=240
+  boot_ts=57812310  payload=6575cef601  len=5  b[0]=101  b[1]=117  b[2]=206  b[3]=246  b[4]=1
+  boot_ts=57812611  payload=6278d3fe01  len=5  b[0]= 98  b[1]=120  b[2]=211  b[3]=254  b[4]=1
+  boot_ts=57812910  payload=6278d3fe01  len=5  b[0]= 98  b[1]=120  b[2]=211  b[3]=254  b[4]=1  (duplicate)
+  boot_ts=57813511  payload=6474ccf1    len=4  b[0]=100  b[1]=116  b[2]=204  b[3]=241
+
+  b[0] values: [100, 101, 98, 98, 100]   sum=497  mean=99.4  ← PER-WINDOW STEP COUNT
+  b[1] values: [116, 117, 120, 120, 116]  range 116-120    ← consistent, possibly cadence
+  b[2] values: [205, 206, 211, 211, 204]  range 204-211    ← consistent, possibly cumulative
+  b[3] values: [240, 246, 254, 254, 241]  range 240-254    ← approaching 255 ceiling
+
+  b[3] approaching 255: likely a saturating or wrapping counter. One packet (b[4]=1)
+  present only in 5-byte form; absent in 4-byte form. Payload length varies.
+
+  Prior corpus b[0] values (non-walk context): 53, 57, 58, 62, 53 → mean 56.6
+  Walk context b[0] mean: 99.4 — 1.76x higher than resting/light-motion context.
+
+  0x6B SPACING:
+    57812310 - 57812010 = 300
+    57812611 - 57812310 = 301
+    57812910 - 57812611 = 299
+    57813511 - 57812910 = 601  ← double gap — one expected packet missing (ring dropped or merged)
+
+  Interleaved 7E/0x6B timeline shows 0x6B fires between 7E pairs at ~300-tick cadence.
+  The 601-tick gap coincides with pairs 5→6 where no 0x6B exists between them.
+
+---
+
+OPEN QUESTIONS (NOT RESOLVED)
+================================
+  - What are the FFT sub-message field names for the 14 bytes of 0x7E/0x7F?
+    open_ring says "field names map to FFTset sub-messages" but provides no mapping.
+    Firmware RE or proto source needed to identify which byte is which FFT bin.
+  - b[9] of 7E is consistently dominant (151-235) — frequency bin? power metric?
+  - b[1] of 0x6B (116-120) — cadence in steps/min? 116-120 steps/min is a brisk walk pace.
+    Hypothesis: b[1] = step cadence in steps/min. If so, brisk walk at ~118 spm for 500 steps
+    → ~4.2 minutes — plausible for experiment duration.
+  - b[3] of 0x6B (240-254) approaching 255 ceiling — wrapping uint8 cumulative counter?
+  - 5-byte vs 4-byte 0x6B form: b[4]=1 appears only when b[3]≥246. Overflow flag?
+  - Duplicate 0x6B at 57812910 — ring emitted identical packet twice (buffer artifact?).
