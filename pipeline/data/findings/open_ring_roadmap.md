@@ -3,7 +3,7 @@
 # that produces a new finding, confirmed pattern, or resolved/
 # unresolved decoder question. Do not wait to be asked explicitly.
 # If a session ends without touching this file and a finding occurred,
-# that is an error. Last updated: 2026-07-06
+# that is an error. Last updated: 2026-07-06 (session 2 — 0x6B and 0x61/0x09 corpus analysis)
 # ─────────────────────────────────────────────────────────────
 
 # METHUSELAH // open_ring Decoder Roadmap (COMPLETE — all 38 decoders tracked)
@@ -57,22 +57,20 @@ sub-types. This supersedes the earlier partial roadmap.
       and active windows wherever the GREEN_IBI session is running.
 
 ## IN PROGRESS — real RE work started, not yet solved (4)
-- [ ] 0x61/0x09 _dd_sleep_statistics — partial decode confirmed. Original
-      u32 field layout (ticks_in_deep/sleep/awake) is wrong for our data.
-      CONFIRMED (2026-06-26): offset-3 u16 = seconds in current pfsm state.
-      CONFIRMED (2026-06-27): full layout is 6×u16 LE + 1×u8 pfsm_state.
-      Layout: b1-b2=f0(unknown), b3-b4=o3(seconds in pfsm state), b5-b6=f2
-      (dynamic, pfsm-dependent decay), b7-b8=0(padding), b9-b10=f4(dynamic,
-      opposite direction to f2 in pfsm=6), b11-b12=f5(flag ∈{0,1}), b13=pfsm.
-      KEY FINDING: f2 and f4 are dynamically updating — proven via orig/echo
-      pair comparison (47 pairs). f2 always decays orig→echo; decay rate is
-      pfsm-dependent: pfsm=6 retains 60%, pfsm=3 retains only 2.6%.
-      f4 INCREASES in pfsm=6 echo (+20K avg/5s) and DECREASES in pfsm=3.
-      Interpretation: f2/f4 appear to be biosignal metrics with short time
-      constants, NOT simple cumulative time-in-state. f0 uncorrelated with
-      everything. f5 flag (4 occurrences) has no clear predictor identified.
-      CEILING: physical meaning of f0/f2/f4 unconfirmed without ground truth.
-      STATUS: structure confirmed / meaning open — same ceiling as 0x6E/0x77.
+- [ ] 0x61/0x09 _dd_sleep_statistics — 68 packets across corpus (updated 2026-07-06).
+      Layout confirmed: b1-b2=f0, b3-b4=o3(secs_in_pfsm), b5-b6=f2(decaying),
+      b7-b8=pad(0), b9-b10=f4(dynamic), b11-b12=f5(flag), b13=pfsm_state.
+      pfsm_state values in corpus: {3, 4, 5, 6, 128}.
+      NEW FINDING (2026-07-06): pfsm_state values segregate by sleep vs activity
+      context. pfsm=6 fires ONLY in sleep context (co-present with 0x6A packets).
+      pfsm=3/4 fire ONLY in activity/waking context. pfsm=5 fires in both.
+      pfsm=128 = always companion/echo record (ts gap <12 ticks from primary).
+      f2 decay rate by state: pfsm=3→128: ~4.5% retention (fast-decaying, active);
+      pfsm=5→128: ~10-12% retention; pfsm=6→128: ~55% retention (slow, sleep).
+      open_ring has NO enum for pfsm_state — raw u8 only. No pfsm=0,1,2 seen.
+      CEILING: exact state machine enum needs firmware. Physical meaning of f0/f2/f4
+      unconfirmed. Whether pfsm=5 is boundary state or parallel state unknown.
+      STATUS: structure confirmed / pfsm context hypothesis new / meaning open.
 - [ ] 0x7E/0x7F real_steps_features — 64 pairs across 3 activity pulls.
       CONFIRMED (2026-06-27): invalid pairs (7F[3]=7F[4]=7F[7]=0) caused
       by Feature session restart (payloads 02010400 / 02030400), recovery
@@ -97,14 +95,14 @@ sub-types. This supersedes the earlier partial roadmap.
       phone BT during walk; pull immediately on return before relaunching app;
       walk 20+ min to fill more of the 255-event buffer.
 (0x6E promoted to DONE — see above. 0x80 moved to DONE — see above.)
-- [ ] 0x6B motion_period — 4 real packets captured (2026-06-27). open_ring
-      decoder maps b[0] to MOTION_STATE (0-3), but all 4 observed b[0]
-      values (6, 52, 61, 62) are outside the enum. Contextual correlation:
-      b[0]=62 during active stepping, b[0]=6 near ring removal (wear event),
-      consistent with a motion-intensity count rather than an enum.
-      Variable payload length (8 or 14 bytes). 0xaa bytes appear as filler
-      in unused slots of the 14-byte form. CEILING: need more packets across
-      a range of activities to resolve b[0] and map the trailing bytes.
+- [ ] 0x6B motion_period — 5 packets in corpus (updated 2026-07-06, was 4).
+      open_ring MOTION_STATE enum {0:NO_MOTION,1:RESTLESS,2:TOSSING_AND_TURNING,3:ACTIVE}
+      — ALL 5 corpus b[0] values (53,53,57,61,62) fall outside this enum.
+      Hypothesis: b[0] is a motion-intensity count not an enum (range 53-62 so far).
+      All payloads 14 bytes; 2 sparse (many zeros), 2 fill-heavy (0xAA/0xFE bytes),
+      1 information-dense. 8-byte form still unobserved (prior roadmap entry).
+      CEILING: need ground-truth step count or activity-graded pull to map b[0]
+      range to motion intensity. Walk experiment is next attempt.
 - [ ] 0x77 spo2_dc_event — PARTIAL DECODE, decoder written and validated 2026-07-06.
       384/384 corpus packets decode without error. 357 real, 27 sentinel (aaaab2 tail).
       b[0] = channel byte (bit7=A/B, bit6..0=beat_counter). Channel balance A=178/B=179.

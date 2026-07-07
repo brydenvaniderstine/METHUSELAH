@@ -2648,3 +2648,91 @@ Both decoders confirmed working in live pull output after corpus
 validation (0x6E: 549/549, 0x77: 384/384).
 
 Status: confirmed live — both decoders promoted to production.
+
+---
+
+## 2026-07-06 — 0x6B motion_period corpus analysis
+
+Date: 2026-07-06
+Status: PARTIAL DECODE — ceiling unchanged from prior entry. 5 packets now in corpus (was 4).
+
+**All 5 corpus packets:**
+| boot_ts | file | b[0] (hex) | b[0] decimal | enum name | payload |
+|---|---|---|---|---|---|
+| 55955355 | gen3_pull_20260703_091701.txt | 0x3D | 61 | OUTSIDE_ENUM | 3dfeefaafeeff5abfefbebfaaa6f |
+| 56751555 | gen3_pull_20260704_091402.txt | 0x35 | 53 | OUTSIDE_ENUM | 3596aaffbfbbbeafebffd2fbfaab |
+| 56345054 | gen3_pull_20260703_225853.txt | 0x39 | 57 | OUTSIDE_ENUM | 3900000000000000000000001800 |
+| 57212910 | gen3_pull_20260704_233702.txt | 0x35 | 53 | OUTSIDE_ENUM | 354410000659a954015140004400 |
+| 58293510 | gen3_pull_20260706_105459.txt | 0x3E | 62 | OUTSIDE_ENUM | 3e05100000000001404000000000 |
+
+**b[0] pattern:** All values 53–62. open_ring's MOTION_STATE enum is {0:NO_MOTION, 1:RESTLESS, 2:TOSSING_AND_TURNING, 3:ACTIVE}. All 5 corpus values fall outside this enum. Hypothesis: b[0] is a motion-intensity count (not enum), consistent with prior roadmap finding.
+
+**Trailing byte structure (b[1..13]):**
+- 2 packets (0x3D, 0x35 from gen3_pull_20260704_091402) contain many high-value bytes (0xAA, 0xFE, 0xFF) — consistent with 0xAA fill in unused slots
+- 2 packets (0x39, 0x3E) contain many zero bytes — sparse/mostly-empty payload
+- 1 packet (0x35 from gen3_pull_20260704_233702) has mixed non-zero values — most information-dense packet in corpus
+
+All payloads are 14 bytes. No 8-byte variants observed (prior roadmap noted "variable payload length 8 or 14" — 8-byte form remains unconfirmed from current corpus).
+
+**Ceiling unchanged:** Cannot map b[0] range (53–62) to motion intensity without ground truth step count or simultaneous activity pull with known motion level. Walk experiment is next attempt.
+
+*Logged 2026-07-06.*
+
+---
+
+## 2026-07-06 — 0x61/0x09 sleep-statistics pfsm_state cross-reference
+
+Date: 2026-07-06
+Status: NEW FINDING — pfsm_state values segregate by sleep vs activity context.
+
+**Corpus summary:** 68 total 0x61/0x09 packets across 12 files.
+pfsm_state values observed: {3, 4, 5, 6, 128}
+
+Note: pfsm_state=0 and pfsm_state=1 cited in prior roadmap entry come from 0x6A's
+`sleep_state` field — a DIFFERENT decoder. 0x61/0x09 pfsm_state is from a separate
+firmware finite state machine.
+
+**Structural pattern (confirmed):**
+Every non-128 pfsm packet is immediately followed (within 4–12 ticks) by a pfsm=128
+companion packet with nearly identical o3 (seconds_in_pfsm_state ±2s). This confirms
+the orig/echo pair structure from prior analysis.
+
+**NEW FINDING — pfsm context segregation:**
+
+| pfsm | Appears in sleep context (0x6A present)? | Appears in activity context (no 0x6A)? | n |
+|---|---|---|---|
+| 6 | YES (all sleep-context files) | NO | 5 |
+| 5 | YES | YES | 14 |
+| 3 | NO | YES | 13 |
+| 4 | NO | YES (MIXED only) | 2 |
+| 128 | always companion | always companion | 34 |
+
+Hypothesis (corpus-derived, NOT firmware-confirmed):
+- pfsm=6 → sleep-specific state (only fires when ring is in confirmed sleep mode)
+- pfsm=3 → activity/waking state (never fires in sleep context)
+- pfsm=4 → activity state (only 2 packets, insufficient to characterize)
+- pfsm=5 → shared/transitional state (fires in both contexts)
+- pfsm=128 → companion/echo record for all states
+
+**f2 retention ratio (pfsm→128 pairs):**
+The f2 field in pfsm=128 companion records decays from the primary record's f2 value.
+The decay rate differs dramatically by state:
+- pfsm=3→128: ~4.5% retention (very aggressive decay, mean ratio 0.044)
+- pfsm=5→128: ~10-12% retention (moderate decay, mean ratio 0.108 excluding outlier)
+- pfsm=6→128: ~55% retention (slow decay, mean ratio 0.545)
+
+This suggests f2 tracks a biosignal with a time constant that is state-dependent.
+Faster decay (pfsm=3) = rapidly-evolving signal (active motion context).
+Slower decay (pfsm=6) = slowly-evolving signal (sleep context).
+
+**open_ring pfsm documentation:** None. The field is emitted as a raw u8 with no
+enum defined anywhere in the open_ring codebase. The field name "pfsm_state" and its
+4-field-pair structure are from the prior known_issues analysis (2026-06-26/27).
+
+**Remaining unknowns (ceiling):**
+- Exact state machine enum for pfsm values 3, 4, 5, 6 — needs firmware disassembly
+- Physical meaning of f0, f2, f4 beyond "decays on state transition"
+- Whether pfsm=5 is truly transitional (fires at sleep→wake boundary) or a parallel state
+- No pfsm=0, 1, or 2 observed in 0x61/0x09 corpus — may fire in contexts not yet captured
+
+*Logged 2026-07-06.*
