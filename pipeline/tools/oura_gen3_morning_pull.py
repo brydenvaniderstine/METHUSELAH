@@ -284,10 +284,11 @@ async def main():
                           f"ibi_ms={d['ibi_ms']}  hr=[{hr_str}]bpm")
                 except ValueError as e:
                     print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
+        ibi6e_hr_mean = None
         if ibi6e_all:
             import statistics as _stats
-            hr_mean = 60000 / _stats.mean(ibi6e_all)
-            print(f"  → {len(ibi6e_all)} valid IBI samples  HR mean={hr_mean:.1f}bpm")
+            ibi6e_hr_mean = round(60000 / _stats.mean(ibi6e_all), 1)
+            print(f"  → {len(ibi6e_all)} valid IBI samples  HR mean={ibi6e_hr_mean:.1f}bpm")
         if not ibi6e_found:
             print("  No 0x6E SPO2 IBI+amplitude events found in this pull.")
 
@@ -314,6 +315,15 @@ async def main():
         else:
             print("  No 0x77 SPO2 DC events found in this pull.")
 
+        # pfsm_state labels derived from corpus context segregation analysis (2026-07-06)
+        # pfsm=6 → sleep-only; pfsm=3/4 → activity-only; pfsm=5 → both; pfsm=128 → echo
+        # NOT firmware-confirmed — behaviorally derived.
+        PFSM_LABELS = {
+            0: "AWAKE", 1: "ASLEEP",
+            3: "ACTIVE_REGIME", 4: "ACTIVE_REGIME",
+            5: "TRANSITIONAL", 6: "SLEEP_REGIME", 128: "ECHO_RECORD",
+        }
+
         print(f"\n=== DEBUG DATA DECODE (0x61) - sleep stats / battery ===")
         debug_found = False
         fuel_gauge_pct = None  # bridge accumulator
@@ -325,8 +335,10 @@ async def main():
                     try:
                         d = decode_debug_data_sleep_statistics(p["payload"])
                         secs = d["seconds_in_pfsm_state"]
+                        pfsm = d["pfsm_state"]
+                        pfsm_label = PFSM_LABELS.get(pfsm, "UNKNOWN")
                         print(f"  boot_ts={p['boot_ts']:>10}  [SLEEP STATS] "
-                              f"pfsm_state={d['pfsm_state']}  "
+                              f"pfsm_state={pfsm} [{pfsm_label}]  "
                               f"seconds_in_pfsm_state={secs}  ({secs/60:.2f}min)")
                     except ValueError as e:
                         print(f"  boot_ts={p['boot_ts']:>10}  SLEEP STATS DECODE FAIL: {e}")
@@ -394,6 +406,7 @@ async def main():
             "vectors": {
                 "hrv_ms": None,
                 "rhr_bpm": round(sum(hr_avgs) / len(hr_avgs), 1) if hr_avgs else None,
+                "ibi_hr_bpm": ibi6e_hr_mean,
                 "deep_sleep_pct": None,
                 "sleep_temp_c": round(sum(temps) / len(temps), 2) if temps else None,
                 "spo2_avg_pct": round(sum(spo2_avgs) / len(spo2_avgs), 1) if spo2_avgs else None,

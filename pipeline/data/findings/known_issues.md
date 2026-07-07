@@ -2768,3 +2768,66 @@ after seven consecutive nights below baseline. Possible reversal
 of declining trend.
 
 Status: condition #3 at 2/3 — one more passing night required.
+
+---
+
+## 2026-07-07 — 0x6F SpO2 diagnostic: bias source and calibration offset — INSUFFICIENT DATA
+
+Date: 2026-07-07
+
+**Diagnostic findings (Task 1):**
+
+Decoder transformation chain (pipeline/decoders/0x6f.py):
+- b[0]: header byte (high nibble = window index, low nibble = sequence)
+- b[1..n-1]: raw SpO2 bytes (one per 10-second measurement window)
+- b[-1]: 0xFF sentinel if present (excluded from samples)
+- Final value: raw_byte − SPO2_OFFSET (6) → SpO2 percentage
+
+The SPO2_OFFSET=6 subtraction was confirmed correct in 2026-06-24. No additional
+arithmetic (no scaling, no multiplication). Bias is NOT introduced by the arithmetic
+— it exists in the raw bytes themselves. Corpus mean Gen3 SpO2: 93.04% (N=1945 samples,
+stdev=2.87%). Bias is a sensor/firmware characteristic, not a decoder error.
+
+**Calibration analysis (Task 2):**
+
+Paired cross-validation data (nights with both Gen3 and Gen4 SpO2):
+- 2026-07-01/02: Gen3=91.5%  Gen4=97%  gap=+5.5%
+- 2026-07-04/05: Gen3=95.1%  Gen4=97%  gap=+1.9%
+- 2026-07-06/07: Gen3=93.5%  Gen4=98%  gap=+4.5%
+
+Mean gap (Gen4−Gen3): +3.97%  |  Stdev: 1.86%
+
+Proposed fixed offset (+4.0%) tested against ±2% gate:
+- 2026-07-01/02: 91.5+4.0=95.5% vs 97.0% → residual +1.5% ✓
+- 2026-07-04/05: 95.1+4.0=99.1% vs 97.0% → residual −2.1% ✗ FAIL
+- 2026-07-06/07: 93.5+4.0=97.5% vs 98.0% → residual +0.5% ✓
+
+DECISION: Fixed offset NOT applied. The gap varies too widely (1.9%→5.5%, stdev 1.86%)
+for a single fixed offset to bring all nights within ±2% of Gen4. Applying +4.0 would
+overcorrect night 2 (2026-07-04/05 → 99.1%, above physiological ceiling for resting
+sleep). N=3 nights is also insufficient to establish a reliable calibration.
+
+Status: open — need ≥5 paired overnight data points with stdev <1.0% to justify a
+fixed offset. Walk experiment may provide additional variance context (activity SpO2).
+Decoder unchanged. SPO2_OFFSET=6 remains correct.
+
+*Logged 2026-07-07.*
+
+---
+
+## 2026-07-07 — 0x61/0x09 pfsm_state labels wired into pull script output
+
+Date: 2026-07-07
+
+Behaviorally-derived labels added to pull script (oura_gen3_morning_pull.py):
+- pfsm=3, 4 → ACTIVE_REGIME (never seen in sleep context)
+- pfsm=5    → TRANSITIONAL (appears in both sleep and activity context)
+- pfsm=6    → SLEEP_REGIME (only seen when 0x6A sleep periods present)
+- pfsm=128  → ECHO_RECORD (companion record, always follows primary within 12 ticks)
+- pfsm=0    → AWAKE (not yet observed in 0x61/0x09; from 0x6A cross-reference)
+- pfsm=1    → ASLEEP (not yet observed in 0x61/0x09; from 0x6A cross-reference)
+
+Labels are corpus-derived only — NOT firmware-confirmed. Output now reads:
+  [SLEEP STATS] pfsm_state=6 [SLEEP_REGIME]  seconds_in_pfsm_state=134  (2.23min)
+
+*Logged 2026-07-07.*

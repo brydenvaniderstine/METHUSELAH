@@ -28,7 +28,11 @@ sub-types. This supersedes the earlier partial roadmap.
 - [x] 0x75 sleep_temp_event (skin temp, degC)
 - [x] 0x47 motion_event (3-axis accelerometer)
 - [x] 0x6F spo2_event (SpO2, fixed with offset=+6, internal consistency
-      confirmed; Gen4 cross-validation still open)
+      confirmed; Gen4 cross-validation: systematic low bias confirmed.
+      Mean gap Gen4−Gen3: +3.97% across 3 paired nights (stdev 1.86%).
+      Bias is in raw sensor bytes, not arithmetic. Fixed calibration offset
+      NOT applied — gap varies too widely (1.9%→5.5%) for ±2% gate.
+      Need ≥5 paired nights with stdev <1.0%. Decoder unchanged 2026-07-07.)
 - [x] 0x53 wear_event — format: state:u8 + text:ascii (duration of prior
       state in seconds, as numeric string). STATE_CHANGE enum confirmed
       (states 1 and 3 validated against 2 real packets 2026-06-27).
@@ -57,7 +61,7 @@ sub-types. This supersedes the earlier partial roadmap.
       and active windows wherever the GREEN_IBI session is running.
 
 ## IN PROGRESS — real RE work started, not yet solved (4)
-- [ ] 0x61/0x09 _dd_sleep_statistics — 68 packets across corpus (updated 2026-07-06).
+- [ ] 0x61/0x09 _dd_sleep_statistics — 68 packets across corpus (updated 2026-07-07).
       Layout confirmed: b1-b2=f0, b3-b4=o3(secs_in_pfsm), b5-b6=f2(decaying),
       b7-b8=pad(0), b9-b10=f4(dynamic), b11-b12=f5(flag), b13=pfsm_state.
       pfsm_state values in corpus: {3, 4, 5, 6, 128}.
@@ -71,6 +75,9 @@ sub-types. This supersedes the earlier partial roadmap.
       CEILING: exact state machine enum needs firmware. Physical meaning of f0/f2/f4
       unconfirmed. Whether pfsm=5 is boundary state or parallel state unknown.
       STATUS: structure confirmed / pfsm context hypothesis new / meaning open.
+      Behaviorally-derived labels wired into pull script output (2026-07-07):
+      pfsm=6→SLEEP_REGIME, pfsm=3/4→ACTIVE_REGIME, pfsm=5→TRANSITIONAL,
+      pfsm=128→ECHO_RECORD. NOT firmware-confirmed.
 - [ ] 0x7E/0x7F real_steps_features — 64 pairs across 3 activity pulls.
       CONFIRMED (2026-06-27): invalid pairs (7F[3]=7F[4]=7F[7]=0) caused
       by Feature session restart (payloads 02010400 / 02030400), recovery
