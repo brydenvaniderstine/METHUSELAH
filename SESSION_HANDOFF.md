@@ -37,6 +37,7 @@ conflict, this file takes precedence — it is version-controlled.
 - **0x6E IBI decoder WRITTEN AND VALIDATED** — 549/549 corpus packets decode without error. Layout confirmed: b0=channel byte (bit7=A/B), b1-5=5× IBI high, b6-10=5× IBI low+amp, b11=mid bits, b12=shift nibble. Cross-validated vs 0x6A avg_hr: −1.1 to +1.3 bpm across 5 sleep files. Wired into pull script. Promoted to DONE.
 - **0x77 spo2_dc_event decoder WRITTEN AND VALIDATED** — 384/384 corpus packets decode without error. 357 real (13 i8 samples dominant), 27 sentinel (aaaab2). DC range −128 to +127, mean −3.70, stdev 43.84. Cross-channel A/B correlation r=+0.80 to +0.93 confirms real PPG signal. Wired into pull script. Stays IN PROGRESS (ceiling: b1..b3 header vs all-samples indistinguishable, band identity unknown).
 - **0x6E and 0x77 both LIVE-CONFIRMED in evening pull (2026-07-06)** — first live fire for both decoders. 0x6E: channels A/B alternating, IBI 857–909ms, mean HR 67.8 bpm (ACTIVE WINDOW, motion artifact expected). 0x77: DC samples and sentinel separation both correct. Auto-file → gen3_evening/, bridge updated, battery 82.4%.
+- **Gen4 CSV export merged into comparison dataset** — `pipeline/tools/merge_oura_csv.py` ran; 6 overnight rows updated, 28 fields filled. `gen4_hrv_avg` added as new column (HRV trend: 31→31→26→18→22ms across comparison period). Source: `/Desktop/oura_2026-05-29_2026-07-10_trends.csv`. Note: `2026-07-03 evening` row left n/a — no unambiguous Gen4 counterpart. `gen4_respiratory_rate` now populated for all rows via CSV (previously n/a on several rows).
 - **Walk experiment still required for 0x7E/0x7F** — zero packets in corpus. Protocol documented in `pipeline/tools/WALK_EXPERIMENT.md`.
 - **⚠️ Oura token valid until 2026-07-13 — seven days remaining.**
 
@@ -46,7 +47,9 @@ conflict, this file takes precedence — it is version-controlled.
 
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
 
-1. **Execute timed walk experiment** — 500 steps, phone Bluetooth OFF before starting, pull immediately on return. Protocol: `pipeline/tools/WALK_EXPERIMENT.md`. Primary target: 0x7E/0x7F (zero packets — confirmed still needed). Secondary: 0x6E amplitude units, 0x77 band identity, 0x6B motion context.
+1. **0x6B and 0x61/0x09 corpus analysis** — next decoder targets from existing corpus, no walk required.
+
+2. **Execute timed walk experiment** — 500 steps, phone Bluetooth OFF before starting, pull immediately on return. Protocol: `pipeline/tools/WALK_EXPERIMENT.md`. Primary target: 0x7E/0x7F (zero packets — confirmed still needed). Secondary: 0x6E amplitude units, 0x77 band identity, 0x6B motion context.
 
 2. **Morning pull in BLE range** — ring must be near Mac before shortcut fires. Buffer rolls in ~2 min of walking.
 

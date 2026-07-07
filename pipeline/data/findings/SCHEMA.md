@@ -28,6 +28,7 @@ Read this before adding a column or interpreting a value.
 | `gen4_light_pct` | float | Gen4 Oura app screenshot — manual transcription | % | Light sleep as % of total sleep. |
 | `gen4_deep_pct` | float | Gen4 Oura app screenshot — manual transcription | % | Deep sleep as % of total sleep. |
 | `gen4_awake_min` | integer | Gen4 Oura app screenshot — manual transcription | minutes | Total awake time during sleep window as reported by Gen4. |
+| `gen4_hrv_avg` | float | Gen4 Oura CSV export — `Average HRV` field | ms | Average HRV for the night from Oura Gen4 export CSV. Added 2026-07-06. |
 | `gen4_respiratory_rate` | float | Gen4 Oura app Readiness card — manual transcription | breaths/min | From Readiness card, not Sleep card. Personal baseline: 13.09 ± 0.43 br/min (359 nights). |
 | `gen4_activity_balance` | string | Gen4 Oura app Readiness card — manual transcription | Optimal / Good / Fair / Poor | Qualitative contributor rating from Gen4 Readiness card. |
 | `gen4_readiness_contributors_summary` | string | Gen4 Oura app Readiness card — manual transcription | Free text | Full qualitative summary of all Readiness card contributors for the night. Long field — may contain commas; handle CSV quoting carefully. |
@@ -40,6 +41,7 @@ Read this before adding a column or interpreting a value.
 | Date | Change |
 |---|---|
 | 2026-06-30 | Initial schema documented. Columns `gen4_respiratory_rate`, `gen4_activity_balance`, `gen4_readiness_contributors_summary` added mid-stream on first day of logging — not present in the original header. |
+| 2026-07-06 | `gen4_hrv_avg` column added. Source: Oura Gen4 CSV export (`Average HRV` field). Backfilled via `pipeline/tools/merge_oura_csv.py` for all overnight rows with confirmed Oura wake-date. Captures HRV trend across Track B comparison period: 31→31→26→18→22ms (declining six-night run bottoming at 18ms on 2026-07-05, partial recovery to 22ms on 2026-07-06). Note: `2026-07-03 evening` row left `n/a` — no unambiguous Gen4 wake-date counterpart (July 4 already claimed by `2026-07-04/05`). |
 
 ---
 
