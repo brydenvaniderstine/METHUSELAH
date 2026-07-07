@@ -2861,3 +2861,25 @@ terminal output. Decoded file: `pipeline/data/raw_pulls/gen3_evening/walk_experi
 - Interleaved with 7E packets at ~300-tick cadence — 0x6B fires between each 7E pair
 
 *Logged 2026-07-07.*
+
+---
+
+## 0x6B motion_period promoted to DONE — decoder wired 2026-07-07
+
+`pipeline/decoders/0x6b.py` created and wired into pull script (section after 0x47 motion decode).
+Prints per-packet `steps` + `cadence_spm` + running `TOTAL STEPS THIS WINDOW`.
+
+Confirmed fields:
+- b[0] = per-window step count. Validated: sum 497 across 5 walk-experiment windows (0.6% from 500).
+- open_ring MOTION_STATE enum {0:NO_MOTION, 1:RESTLESS, 2:TOSSING_AND_TURNING, 3:ACTIVE} is WRONG
+  for b[0]. All observed values (53-101) are far outside the enum's documented range.
+
+Candidate fields (not yet confirmed against second ground truth):
+- b[1] = cadence in steps/min (116-120 observed at brisk walk pace). Plausible — typical brisk
+  walking cadence is 100-130 spm. Needs a second controlled experiment (sit → slow walk → run)
+  to confirm the field responds to pace changes.
+- b[3] = approaching uint8 ceiling during activity (240-254). Likely wrapping cumulative counter.
+- b[4] = overflow flag — fires 1 when b[3]≥246 (5-byte form vs 4-byte form).
+- b[2] = unknown. Range 204-211 during walk — consistent but uninterpretable without more context.
+
+*Logged 2026-07-07.*

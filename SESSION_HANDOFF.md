@@ -48,8 +48,10 @@ conflict, this file takes precedence — it is version-controlled.
 - **0x6B motion_period corpus re-analysis** — 5 packets confirmed (was 4). All b[0] values (53-62) outside the MOTION_STATE enum (0-3). Hypothesis: motion-intensity count not enum. 8-byte payload form still unobserved. Walk experiment is next attempt.
 - **0x61/0x09 pfsm_state cross-reference — NEW FINDING** — 68 packets across corpus. pfsm_state values segregate by sleep vs activity: pfsm=6 fires ONLY in sleep context (co-present with 0x6A); pfsm=3/4 fire ONLY in activity context; pfsm=5 fires in both. f2 retention ratio differs by state: pfsm=3→128 ~4.5%, pfsm=5→128 ~10-12%, pfsm=6→128 ~55%. open_ring has no pfsm enum — raw u8 only. Ceiling: firmware needed to confirm state machine definitions.
 - **Gen4 CSV export merged into comparison dataset** — `pipeline/tools/merge_oura_csv.py` ran; 6 overnight rows updated, 28 fields filled. `gen4_hrv_avg` added as new column (HRV trend: 31→31→26→18→22ms across comparison period). Source: `/Desktop/oura_2026-05-29_2026-07-10_trends.csv`. Note: `2026-07-03 evening` row left n/a — no unambiguous Gen4 counterpart. `gen4_respiratory_rate` now populated for all rows via CSV (previously n/a on several rows).
-- **Walk experiment still required for 0x7E/0x7F** — zero packets in corpus. Protocol documented in `pipeline/tools/WALK_EXPERIMENT.md`.
-- **⚠️ Oura token valid until 2026-07-13 — seven days remaining.**
+- **Timed walk experiment completed (2026-07-07)** — ~500 steps, phone BT OFF. Raw pull lost to buffer roll; 7 pairs of 0x7E/0x7F + 5 0x6B payloads recovered from terminal output and preserved in `walk_experiment_20260707_decoded.txt`.
+- **0x6B step count CONFIRMED — promoted to DONE** — b[0] sum = 497 across 5 walk windows (0.6% from 500 ground truth). open_ring MOTION_STATE enum is WRONG for this field. `pipeline/decoders/0x6b.py` created, wired into pull script. b[1] cadence (116-120 spm) is a candidate pending second experiment.
+- **0x7E/0x7F identified as FFT spectral features, NOT step counters** — boot_ts spacing 296-326 ticks (mean 307.8, timer-driven). No single byte column sums to ~500. b[9] of 7E consistently dominant (151-235). Status: IN PROGRESS — byte field names need firmware RE for FFTset sub-message schema.
+- **⚠️ Oura token valid until 2026-07-13 — 6 days remaining.**
 
 ---
 
@@ -57,11 +59,11 @@ conflict, this file takes precedence — it is version-controlled.
 
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
 
-1. **Execute timed walk experiment** — 500 steps, phone Bluetooth OFF before starting, pull immediately on return. Protocol: `pipeline/tools/WALK_EXPERIMENT.md`. Primary target: 0x7E/0x7F (zero packets). Secondary: 0x6E amplitude units, 0x77 band identity, 0x6B motion context.
+1. **Morning pull tomorrow — Track B condition #3 night 3** — one more Gen3 SpO2 within ±5% of Gen4 closes condition #3 permanently. ⚠️ Oura API token expires 2026-07-13 — 6 days remaining. Gap widening (1.9%→4.5%) — watch trend but don't fail yet.
 
-2. **Evening pull tonight** — ring must be near Mac.
+2. **Evening pull tonight** — ring must be near Mac. 0x6B decoder now active — will see step counts in print output.
 
-3. **Morning pull tomorrow — Track B condition #3 night 3** — one more Gen3 SpO2 within ±5% of Gen4 closes condition #3 permanently. ⚠️ Oura API token expires 2026-07-13 — 6 days remaining.
+3. **0x5D HRV investigation** — explore sleep-context firing of HRV events. Current decoder is DONE but firing conditions and field semantics may have unexplored depth. Secondary target after condition #3 closes.
 
 ---
 

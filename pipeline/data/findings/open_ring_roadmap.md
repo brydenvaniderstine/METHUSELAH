@@ -3,7 +3,7 @@
 # that produces a new finding, confirmed pattern, or resolved/
 # unresolved decoder question. Do not wait to be asked explicitly.
 # If a session ends without touching this file and a finding occurred,
-# that is an error. Last updated: 2026-07-07 (walk experiment — 0x7E/0x7F decoded, 0x6B confirmed)
+# that is an error. Last updated: 2026-07-07 (0x6B promoted to DONE, decoder wired into pull script)
 # ─────────────────────────────────────────────────────────────
 
 # METHUSELAH // open_ring Decoder Roadmap (COMPLETE — all 38 decoders tracked)
@@ -21,7 +21,7 @@ sub-types. This supersedes the earlier partial roadmap.
 3. Negative results (killed hypotheses) get logged, not discarded.
 4. One decoder at a time.
 
-## DONE — working, validated against real data (9)
+## DONE — working, validated against real data (10)
 - [x] 0x6A sleep_period_info_2 (sleep_state)
 - [x] 0x5D hrv_event (HRV/RMSSD)
 - [x] 0x61/0x14 fuel_gauge_statistics (battery %, voltage, capacity)
@@ -48,6 +48,13 @@ sub-types. This supersedes the earlier partial roadmap.
       Activity context divergence (+7-8 bpm) is expected and physiologically correct.
       Amplitude physical units and IBI[4] mid bits still unresolved (open).
       Decoder: `pipeline/decoders/0x6e.py`. Wired into pull script.
+- [x] 0x6B motion_period — DONE 2026-07-07. b[0] = per-window step count confirmed via
+      timed walk experiment (~500 steps ground truth; decoded sum 497, 0.6% error).
+      b[1] = cadence candidate (steps/min; 116-120 observed at brisk walk pace).
+      open_ring MOTION_STATE enum is WRONG for b[0] — values 98-101 are far outside {0-3}.
+      Remaining fields: b[2] unknown, b[3] approaching uint8 ceiling during activity,
+      b[4]=overflow flag (fires 1 when b[3]≥246). Decoder: `pipeline/decoders/0x6b.py`.
+      Wired into pull script — prints per-packet steps + cadence + running total.
 - [x] 0x80 green_ibi_quality_event — VALIDATED 2026-06-30. Format:
       N×(b_low,b_high) pairs (payload always even; 345/361 pkts are 14 bytes = 7
       samples). 11-bit IBI: (b_low<<3)|(b_high&0x07). quality_a: (b_high>>3)&0x03.
@@ -60,7 +67,7 @@ sub-types. This supersedes the earlier partial roadmap.
       semantics unresolved. NOT activity-only — fires in sleep, transitional,
       and active windows wherever the GREEN_IBI session is running.
 
-## IN PROGRESS — real RE work started, not yet solved (4)
+## IN PROGRESS — real RE work started, not yet solved (3)
 - [ ] 0x61/0x09 _dd_sleep_statistics — 68 packets across corpus (updated 2026-07-07).
       Layout confirmed: b1-b2=f0, b3-b4=o3(secs_in_pfsm), b5-b6=f2(decaying),
       b7-b8=pad(0), b9-b10=f4(dynamic), b11-b12=f5(flag), b13=pfsm_state.
@@ -100,18 +107,6 @@ sub-types. This supersedes the earlier partial roadmap.
       CEILING: byte-level field names need firmware RE or proto source (FFTset message schema).
       b[9] dominance and b[2]/b[4] near-500 clusters are hypotheses only — not confirmed.
 (0x6E promoted to DONE — see above. 0x80 moved to DONE — see above.)
-- [✓] 0x6B motion_period — b[0] CONFIRMED as per-window step count (2026-07-07).
-      open_ring MOTION_STATE enum {0:NO_MOTION,1:RESTLESS,2:TOSSING_AND_TURNING,3:ACTIVE}
-      — ALL prior corpus b[0] values (53,53,57,61,62) outside this enum.
-      WALK EXPERIMENT RESULT: b[0] values [100,101,98,98,100] sum = 497 ≈ 500 steps (0.6% error).
-      Motion-intensity count hypothesis CONFIRMED as per-window step count.
-      Rest context b[0] mean = 56.6; walk context b[0] mean = 99.4 → 1.76x ratio.
-      b[1] values (116-120): candidate step cadence in steps/min (brisk walk pace consistent).
-      b[3] values (240-254): approaching uint8 ceiling; b[4]=1 fires when b[3]≥246 (overflow flag?).
-      0x6B firing cadence: ~300 ticks (interleaved between 0x7E pairs at same cadence).
-      Duplicate at boot_ts=57812910: identical to prior packet — buffer artifact.
-      REMAINING UNKNOWNS: physical units of b[1] (steps/min?), b[2] (cumulative?), b[3] overflow.
-      Status: PARTIAL — b[0] confirmed, remaining fields are hypotheses.
 - [ ] 0x77 spo2_dc_event — PARTIAL DECODE, decoder written and validated 2026-07-06.
       384/384 corpus packets decode without error. 357 real, 27 sentinel (aaaab2 tail).
       b[0] = channel byte (bit7=A/B, bit6..0=beat_counter). Channel balance A=178/B=179.

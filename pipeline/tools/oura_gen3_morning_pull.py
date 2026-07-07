@@ -19,6 +19,7 @@ from decoders import (
     decode_bedtime_period,
     decode_spo2_ibi_amplitude,
     decode_spo2_dc_event,
+    decode_motion_period,
 )
 
 ADDR        = "71E77907-1EE9-4949-801C-02979071309C"
@@ -256,6 +257,25 @@ async def main():
                     print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
         if not motion_found:
             print("  No 0x47 motion events found in this pull.")
+
+        print(f"\n=== MOTION PERIOD DECODE (0x6B) — per-window step count ===")
+        motion_period_found = False
+        total_steps = 0
+        for p in parsed:
+            if p["tag"] == 0x6B:
+                motion_period_found = True
+                try:
+                    d = decode_motion_period(p["payload"])
+                    total_steps += d["step_count"]
+                    overflow = f"  OVERFLOW b4={d['b4_overflow_flag']}" if d.get("b4_overflow_flag") else ""
+                    print(f"  boot_ts={p['boot_ts']:>10}  steps={d['step_count']}  cadence={d['cadence_spm']} spm"
+                          f"  b2={d['b2_unknown']}  b3={d['b3_unknown']}{overflow}")
+                except ValueError as e:
+                    print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
+        if motion_period_found:
+            print(f"  TOTAL STEPS THIS WINDOW: {total_steps}")
+        else:
+            print("  No 0x6B motion period events found in this pull.")
 
         print(f"\n=== BEDTIME PERIOD DECODE (0x76) ===")
         bedtime_found = False
