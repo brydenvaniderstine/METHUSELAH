@@ -2628,3 +2628,23 @@ Auto-file fired correctly (ACTIVE WINDOW → gen3_evening/). Bridge JSON updated
 Both decoders producing real output in a live pull for the first time. No errors reported.
 
 *Logged 2026-07-06.*
+
+## 2026-07-06 — 0x6E and 0x77 decoders fired live in pull for first time
+
+Date: 2026-07-06
+Pull file: pipeline/data/raw_pulls/gen3_evening/gen3_pull_20260706_[timestamp].txt
+
+Finding: First live pull output showing both new decoders active:
+
+0x6E spo2_ibi_amplitude — channel A/B alternating correctly,
+IBI 857–909ms → HR ~66–70 bpm, mean 67.8 bpm. Consistent with
+ACTIVE WINDOW evening activity. Motion artifact divergence from
+0x6A HR expected and observed — physiologically correct.
+
+0x77 spo2_dc_event — DC samples captured, sentinel packets
+(aaaab2) correctly separated from real data.
+
+Both decoders confirmed working in live pull output after corpus
+validation (0x6E: 549/549, 0x77: 384/384).
+
+Status: confirmed live — both decoders promoted to production.
