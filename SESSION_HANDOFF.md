@@ -37,6 +37,10 @@ conflict, this file takes precedence — it is version-controlled.
 - **0x6E IBI decoder WRITTEN AND VALIDATED** — 549/549 corpus packets decode without error. Layout confirmed: b0=channel byte (bit7=A/B), b1-5=5× IBI high, b6-10=5× IBI low+amp, b11=mid bits, b12=shift nibble. Cross-validated vs 0x6A avg_hr: −1.1 to +1.3 bpm across 5 sleep files. Wired into pull script. Promoted to DONE.
 - **0x77 spo2_dc_event decoder WRITTEN AND VALIDATED** — 384/384 corpus packets decode without error. 357 real (13 i8 samples dominant), 27 sentinel (aaaab2). DC range −128 to +127, mean −3.70, stdev 43.84. Cross-channel A/B correlation r=+0.80 to +0.93 confirms real PPG signal. Wired into pull script. Stays IN PROGRESS (ceiling: b1..b3 header vs all-samples indistinguishable, band identity unknown).
 - **0x6E and 0x77 both LIVE-CONFIRMED in evening pull (2026-07-06)** — first live fire for both decoders. 0x6E: channels A/B alternating, IBI 857–909ms, mean HR 67.8 bpm (ACTIVE WINDOW, motion artifact expected). 0x77: DC samples and sentinel separation both correct. Auto-file → gen3_evening/, bridge updated, battery 82.4%.
+- **Track B condition #3 at 2/3** — Night 2 (2026-07-06/07): Gen3 SpO2 93.5% vs Gen4 98% — gap 4.5%, within ±5% gate. Gap widening (1.9%→4.5%) — worth watching but not failing yet. One more passing night closes condition #3 permanently.
+- **Option A morning pull confirmed working** — Mac on nightstand, lock screen widget fired cleanly. First successful SLEEP WINDOW pull via this method.
+- **0x6E fired in sleep context for the first time** — mean HR 64.8 bpm, within 1.1 bpm of 0x6A avg_hr. Sleep-context cross-validation confirmed working.
+- **HRV 30ms — first above 25ms threshold in 7 nights** — trend was 36→32→31→26→18→22→30ms. Possible reversal beginning.
 - **0x6B motion_period corpus re-analysis** — 5 packets confirmed (was 4). All b[0] values (53-62) outside the MOTION_STATE enum (0-3). Hypothesis: motion-intensity count not enum. 8-byte payload form still unobserved. Walk experiment is next attempt.
 - **0x61/0x09 pfsm_state cross-reference — NEW FINDING** — 68 packets across corpus. pfsm_state values segregate by sleep vs activity: pfsm=6 fires ONLY in sleep context (co-present with 0x6A); pfsm=3/4 fire ONLY in activity context; pfsm=5 fires in both. f2 retention ratio differs by state: pfsm=3→128 ~4.5%, pfsm=5→128 ~10-12%, pfsm=6→128 ~55%. open_ring has no pfsm enum — raw u8 only. Ceiling: firmware needed to confirm state machine definitions.
 - **Gen4 CSV export merged into comparison dataset** — `pipeline/tools/merge_oura_csv.py` ran; 6 overnight rows updated, 28 fields filled. `gen4_hrv_avg` added as new column (HRV trend: 31→31→26→18→22ms across comparison period). Source: `/Desktop/oura_2026-05-29_2026-07-10_trends.csv`. Note: `2026-07-03 evening` row left n/a — no unambiguous Gen4 counterpart. `gen4_respiratory_rate` now populated for all rows via CSV (previously n/a on several rows).
@@ -50,6 +54,10 @@ conflict, this file takes precedence — it is version-controlled.
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
 
 1. **Execute timed walk experiment** — 500 steps, phone Bluetooth OFF before starting, pull immediately on return. Protocol: `pipeline/tools/WALK_EXPERIMENT.md`. Primary target: 0x7E/0x7F (zero packets — confirmed still needed). Secondary: 0x6E amplitude units, 0x77 band identity, 0x6B motion context.
+
+2. **Evening pull tonight** — ring must be near Mac.
+
+3. **Morning pull tomorrow — Track B condition #3 night 3** — one more Gen3 SpO2 within ±5% of Gen4 closes condition #3 permanently. Ring must be in BLE range at shortcut fire time. ⚠️ Oura API token expires 2026-07-13 — 6 days remaining.
 
 2. **Morning pull in BLE range** — ring must be near Mac before shortcut fires. Buffer rolls in ~2 min of walking.
 

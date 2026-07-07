@@ -2736,3 +2736,35 @@ enum defined anywhere in the open_ring codebase. The field name "pfsm_state" and
 - No pfsm=0, 1, or 2 observed in 0x61/0x09 corpus — may fire in contexts not yet captured
 
 *Logged 2026-07-06.*
+
+---
+
+## 2026-07-07 — Track B condition #3 night 2 of 3 passed — SpO2 cross-validation
+
+Date: 2026-07-07
+Pull file: pipeline/data/raw_pulls/gen3_morning/[timestamp].txt
+
+Finding: Second consecutive night where Gen3 SpO2 avg is within
+±5% of Gen4 official reading.
+
+Night 1 (2026-07-04/05): Gen3 95.1% vs Gen4 97% — gap 1.9% ✓
+Night 2 (2026-07-06/07): Gen3 93.5% vs Gen4 98% — gap 4.5% ✓
+
+One more passing night closes Track B condition #3 permanently.
+
+Note: the gap is widening slightly (1.9% → 4.5%). The Gen3
+systematic low bias is still present but within the ±5% gate.
+If the gap continues to widen, condition #3 may need revisiting
+before it can be fully closed.
+
+Also confirmed this pull: Option A morning pull method working —
+Mac on nightstand, lock screen widget fired cleanly from bedside.
+0x6E decoder fired in sleep context for first time — mean HR
+64.8 bpm, within 1.1 bpm of 0x6A avg_hr. Cross-validation
+confirmed working in real sleep pull.
+
+HRV trend: 30ms tonight — first reading above 25ms threshold
+after seven consecutive nights below baseline. Possible reversal
+of declining trend.
+
+Status: condition #3 at 2/3 — one more passing night required.
