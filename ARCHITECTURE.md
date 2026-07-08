@@ -98,10 +98,10 @@ Current source readiness:
 | Vector | Gen4 API | Gen3 BLE | Status |
 |--------|----------|----------|--------|
 | RHR | Yes | Ready (0x6A, cross-validated ±1.1 bpm) | Auto-switches to Gen3 when Gen4 drops |
+| SpO2 | No (not plumbed) | Ready (0x6F) — **Track B condition #3 CLOSED 2026-07-08**, three consecutive nights within ±5% (1.9%, 4.5%, 3.2%) | Resolved in `sources.js` as telemetry only — no `THRESHOLDS`/`COMMANDS` entry exists for it, so it doesn't participate in `evaluate()`'s priority cascade. Adding it as a fifth command vector is still a v3 discussion per the priority-order comment in `engine/index.js`. |
 | HRV | Yes | Not ready (0x5D doesn't fire reliably overnight) | Gen4-only; shows last known value or AWAITING DATA when Gen4 lapses |
 | Deep sleep | Yes | Not ready (0x6A has no sleep-stage breakdown) | Gen4-only; same fallback behavior as HRV |
 | Glucose | No | No | Manual entry only — no wearable source on either generation |
-| SpO2 | No (not plumbed) | Decoder validated (0x6F), cross-device gate not yet closed (Track B condition #3) | Bridge-only telemetry; not a `THRESHOLDS`/`COMMANDS` vector — adding it is a v3 discussion per the priority-order comment in `engine/index.js` |
 
 When the Oura API token lapses (2026-07-13): RHR switches to Gen3 automatically.
 HRV and deep sleep have no Gen3 fallback yet and will show `AWAITING DATA` once
@@ -188,7 +188,9 @@ Track B is considered complete when all of the following are true:
 
 3. **SpO2 (0x6F)** cross-validation passes -- Gen3 decoded SpO2 avg within
    +-5% of Gen4 official app reading for three consecutive nights.
-   Currently showing one confirmed inconsistency (88% vs 97%).
+   **CLOSED 2026-07-08** — three consecutive nights within gate: 2026-07-04/05
+   (1.9%), 2026-07-06/07 (4.5%), 2026-07-07/08 (3.2%). See
+   `pipeline/data/findings/gen3_vs_gen4_comparison.csv`.
 
 4. **Five blocked decoders** (0x6E, 0x77, 0x7E/0x7F, 0x6B) either:
    (a) decoded to a confirmed working state, or
@@ -201,10 +203,10 @@ When all five conditions are met, Track B is closed and v2 parser work
 begins. This definition can be revised -- but only in a dedicated session
 with an explicit reason for changing the bar.
 
-**Current status (2026-07-07):**
+**Current status (2026-07-08):**
 1. sleep_state (0x6A) — not yet confirmed across full night
 2. HRV (0x5D) fires in 3 evening activity pulls — 1/3 confirmed (redefined 2026-07-07)
-3. SpO2 (0x6F) cross-validation — 2/3 nights passed
+3. SpO2 (0x6F) cross-validation — **CLOSED** (3/3 nights passed 2026-07-08)
 4. Five blocked decoders — 0x6B DONE, 0x6E DONE; 0x77/0x7E/0x7F IN PROGRESS
 5. Comparison CSV 14 rows — in progress
 

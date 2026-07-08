@@ -12,12 +12,15 @@
 //
 // Decoder readiness (see SESSION_HANDOFF.md for the latest status):
 // - RHR: Gen3 READY (0x6A confirmed, cross-validated +/-1.1 bpm vs Gen4)
+// - SpO2: Gen3 READY (0x6F confirmed — Track B condition #3 CLOSED 2026-07-08,
+//   three consecutive nights within +/-5% gate: 1.9%, 4.5%, 3.2%). Resolved
+//   below as telemetry only — there is no THRESHOLDS/COMMANDS entry for it,
+//   so it does not participate in evaluate()'s priority cascade. Adding a
+//   fifth command vector is a v3 discussion per the priority-order comment
+//   in engine/index.js; this just makes the value/source interchangeable.
 // - HRV: Gen3 NOT READY (0x5D does not fire reliably overnight)
 // - Deep sleep: Gen3 NOT READY (0x6A has no sleep-stage breakdown yet)
 // - Glucose: no wearable source on either generation — manual entry only
-// - SpO2 decoder (0x6F) is validated but not yet wired into the engine's
-//   four command vectors (no THRESHOLDS/COMMANDS entry exists for it);
-//   it stays bridge-only telemetry until that's added deliberately.
 
 const FRESHNESS_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -44,7 +47,7 @@ function resolveVector(gen4Value, gen3Value, manualValue) {
  * @param {Object|null} gen4 - Oura API state, shape { hrv, rhr, deepSleepPct, isLive, timestamp }
  * @param {Object|null} gen3 - Gen3 bridge JSON, shape { timestamp, vectors: { rhr_bpm, hrv_ms, deep_sleep_pct, ... } }
  * @param {Object} manual - manually entered values, shape { glucose }
- * @returns {{ glucose: Vector, hrv: Vector, rhr: Vector, deepSleepPct: Vector }}
+ * @returns {{ glucose: Vector, hrv: Vector, rhr: Vector, deepSleepPct: Vector, spo2: Vector }}
  */
 export function resolveVectors(gen4, gen3, manual = {}) {
   const gen4Fresh = gen4 && gen4.isLive && isFresh(gen4.timestamp) ? gen4 : null;
@@ -54,6 +57,13 @@ export function resolveVectors(gen4, gen3, manual = {}) {
     rhr: resolveVector(
       gen4Fresh?.rhr ?? null,
       gen3Fresh?.vectors?.rhr_bpm ?? null,
+      null
+    ),
+
+    // Telemetry only — not a THRESHOLDS/COMMANDS vector, doesn't drive evaluate()
+    spo2: resolveVector(
+      gen4Fresh?.spo2 ?? null,
+      gen3Fresh?.vectors?.spo2_avg_pct ?? null,
       null
     ),
 
