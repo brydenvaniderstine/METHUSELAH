@@ -2976,3 +2976,50 @@ In sleep window pulls (no 0x6B), shows: `STEPS N/A`.
 In activity pulls with 0x6B packets, shows confirmed step count.
 
 *Logged 2026-07-07.*
+
+---
+
+## 2026-07-07 — 0x5D HRV absent from sleep pulls — root cause identified
+
+Date: 2026-07-07
+
+Finding: 0x5D HRV packets are absent from all morning sleep pulls due to
+buffer displacement by high-frequency Debug events (0x61), not because
+the ring doesn't generate HRV data during sleep.
+
+Key measurements across sleep pulls:
+- Buffer: 256 packets total
+- Debug events (0x61): 180-200 slots consumed per pull (~75% of buffer)
+- Remaining slots: 50-70 for all other event types
+- HRV fire rate: approximately every 5 minutes
+- Sleep pull window: 3-4 hours of real time
+- Expected HRV packets in window: ~36-48
+- Available buffer slots for HRV: 50-70 (theoretically sufficient)
+
+The contradiction: if 36-48 HRV packets should fit in 50-70 available
+slots, why are none present?
+
+Two hypotheses:
+1. Debug events fire at variable rate — during active sleep phases they
+   may flood the buffer faster than the 3-4 hour average suggests,
+   displacing HRV packets before the morning pull.
+2. HRV packets may not fire during the specific sleep phases captured
+   by the morning pull window (tail end of sleep, near-waking state).
+   HRV may fire primarily during deep sleep which occurs earlier in
+   the night — outside the morning pull's buffer window.
+
+The one confirmed 0x5D firing (2026-07-02 evening MIXED pull) occurred
+during ACTIVE context — not sleep. This supports hypothesis 2: HRV
+fires in specific physiological states that may not be present in the
+buffer window captured by morning pulls.
+
+Implication for Track B condition #2: three consecutive morning pulls
+with 0x5D events may require either:
+(a) A pull earlier in the sleep window (middle-of-night pull), or
+(b) Redefining condition #2 to include evening activity pulls, or
+(c) Accepting that 0x5D HRV is an activity-context decoder only
+
+Status: open — condition #2 definition needs owner decision before
+further investigation.
+
+*Logged 2026-07-07.*

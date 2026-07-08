@@ -140,8 +140,25 @@ Track B is considered complete when all of the following are true:
    must appear in a single night's pull with timestamps that roughly align
    with Gen4 official app output.
 
-2. **HRV (0x5D)** fires consistently -- at least one 0x5D event present in
-   three consecutive morning pulls. Currently returning zero events.
+2. **HRV (0x5D)** — REVISED DEFINITION NEEDED (investigation 2026-07-07)
+
+   Original: "at least one 0x5D event present in three consecutive morning pulls"
+
+   Investigation finding: 0x5D is absent from all morning sleep pulls due to buffer
+   displacement and/or physiological state mismatch. The one confirmed 0x5D firing
+   was in an evening ACTIVE context pull (HR 70-72 bpm, co-occurs with step features).
+
+   Three options for revised definition — owner decision required:
+
+   Option A: Redefine as "three consecutive evening activity pulls with 0x5D events"
+             — achievable with current pull rhythm
+   Option B: Add a middle-of-night pull to capture HRV during deep sleep phase
+             — requires new pull infrastructure
+   Option C: Accept 0x5D as activity-only decoder, remove from condition #2,
+             substitute a different sleep-context condition
+
+   Current status: 0/3 morning pulls. 1 evening activity pull confirmed.
+   Decision needed before this condition can be closed.
 
 3. **SpO2 (0x6F)** cross-validation passes -- Gen3 decoded SpO2 avg within
    +-5% of Gen4 official app reading for three consecutive nights.
