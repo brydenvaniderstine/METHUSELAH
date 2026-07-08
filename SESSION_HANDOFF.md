@@ -55,6 +55,7 @@ conflict, this file takes precedence — it is version-controlled.
 - **FFT walk analysis tool built (2026-07-07)** — `pipeline/tools/analyze_fft_walk.py` analyzes 0x7E/0x7F byte statistics across pull files. Cross-file finding: 7E b[9] is 1.5-3x higher in controlled walk (mean 193.3) vs other activity (mean 60-125). 7F b[10] drops from 188-206 (activity) to 128 (walk). 7E b[0]↔b[8] track within <10 units in ALL files. Second walk at slow pace needed to separate pace-sensitivity from activity-type effect.
 - **0x6B step count and cadence wired into bridge JSON** — `step_count` and `cadence_spm` added to vectors dict. Web app sys-log now shows STEPS field. Null in sleep window; populated in activity pulls with 0x6B packets.
 - **0x5D HRV root cause logged and condition #2 formally revised** — Root cause: buffer displacement by Debug events + physiological state mismatch (HRV may not fire in morning pull window). Two hypotheses documented in `known_issues.md`. ARCHITECTURE.md condition #2 updated with three revision options (A/B/C) — owner decision required before condition can be closed.
+- **Track B condition #2 REDEFINED — owner decision 2026-07-07** — Option A selected. Condition #2 is now "0x5D fires in three evening activity pulls within the Track B validation period." Status: 1/3 confirmed (2026-07-02 evening MIXED pull, 4 windows, 22–30ms RMSSD). Two more evening pulls with 0x5D events required.
 - **⚠️ Oura token valid until 2026-07-13 — 6 days remaining.**
 
 ---
@@ -63,9 +64,9 @@ conflict, this file takes precedence — it is version-controlled.
 
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
 
-1. **Owner decision on Track B condition #2** — pick Option A (redefine as evening activity pulls with 0x5D), Option B (middle-of-night pull infrastructure), or Option C (remove gate, substitute different condition). See ARCHITECTURE.md for full options. Blocking all Track B completion accounting until resolved.
+1. **Morning pull — Track B condition #3 night 3** — one more Gen3 SpO2 within ±5% of Gen4 closes condition #3 permanently. ⚠️ Oura API token expires 2026-07-13 — 6 days remaining. Gap widening (1.9%→4.5%) — watch but not failing yet.
 
-2. **Morning pull — Track B condition #3 night 3** — one more Gen3 SpO2 within ±5% of Gen4 closes condition #3 permanently. ⚠️ Oura API token expires 2026-07-13 — 6 days remaining. Gap widening (1.9%→4.5%) — watch but not failing yet.
+2. **Evening pull — advance condition #2 to 2/3** — ring must be near Mac. Any evening activity pull that captures 0x5D events counts. Current: 1/3.
 
 3. **Second FFT walk at slow shuffle pace** (~60-70 spm) — run `python3 pipeline/tools/analyze_fft_walk.py <new_file> <walk_exp_file>` to compare 7E b[9] between fast and slow. Tests cadence-sensitivity of the dominant frequency bin.
 

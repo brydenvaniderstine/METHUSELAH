@@ -140,25 +140,23 @@ Track B is considered complete when all of the following are true:
    must appear in a single night's pull with timestamps that roughly align
    with Gen4 official app output.
 
-2. **HRV (0x5D)** — REVISED DEFINITION NEEDED (investigation 2026-07-07)
+2. **HRV (0x5D)** — REDEFINED (owner decision 2026-07-07)
 
-   Original: "at least one 0x5D event present in three consecutive morning pulls"
+   Original definition: "at least one 0x5D event present in three consecutive morning pulls"
 
-   Investigation finding: 0x5D is absent from all morning sleep pulls due to buffer
-   displacement and/or physiological state mismatch. The one confirmed 0x5D firing
-   was in an evening ACTIVE context pull (HR 70-72 bpm, co-occurs with step features).
+   Investigation finding: 0x5D is absent from morning sleep pulls due to buffer
+   displacement and physiological state mismatch. The decoder is confirmed working
+   in evening activity context.
 
-   Three options for revised definition — owner decision required:
+   Redefined: "0x5D fires in three evening activity pulls — not necessarily
+   consecutive, but all within the Track B validation period."
 
-   Option A: Redefine as "three consecutive evening activity pulls with 0x5D events"
-             — achievable with current pull rhythm
-   Option B: Add a middle-of-night pull to capture HRV during deep sleep phase
-             — requires new pull infrastructure
-   Option C: Accept 0x5D as activity-only decoder, remove from condition #2,
-             substitute a different sleep-context condition
+   Rationale: 0x5D HRV in activity context is a real, validated signal. Evening
+   pulls capture end-of-day autonomic state. This is a meaningful health vector
+   even if it differs from overnight sleep HRV.
 
-   Current status: 0/3 morning pulls. 1 evening activity pull confirmed.
-   Decision needed before this condition can be closed.
+   Current status: 1 of 3 confirmed (2026-07-02 evening MIXED pull, 4 windows,
+   22–30ms RMSSD). Remaining: 2 more evening pulls with 0x5D events required.
 
 3. **SpO2 (0x6F)** cross-validation passes -- Gen3 decoded SpO2 avg within
    +-5% of Gen4 official app reading for three consecutive nights.
@@ -175,7 +173,12 @@ When all five conditions are met, Track B is closed and v2 parser work
 begins. This definition can be revised -- but only in a dedicated session
 with an explicit reason for changing the bar.
 
-**Current status: 0 of 5 conditions met.**
+**Current status (2026-07-07):**
+1. sleep_state (0x6A) — not yet confirmed across full night
+2. HRV (0x5D) fires in 3 evening activity pulls — 1/3 confirmed (redefined 2026-07-07)
+3. SpO2 (0x6F) cross-validation — 2/3 nights passed
+4. Five blocked decoders — 0x6B DONE, 0x6E DONE; 0x77/0x7E/0x7F IN PROGRESS
+5. Comparison CSV 14 rows — in progress
 
 ---
 

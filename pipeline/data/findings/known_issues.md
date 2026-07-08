@@ -3023,3 +3023,17 @@ Status: open — condition #2 definition needs owner decision before
 further investigation.
 
 *Logged 2026-07-07.*
+
+---
+
+## 2026-07-07 — Track B condition #2 redefined — owner decision
+
+Date: 2026-07-07
+Decision: Option A selected.
+Condition #2 redefined from "three consecutive morning pulls with
+0x5D events" to "0x5D fires in three evening activity pulls within
+the Track B validation period."
+Current status: 1/3 confirmed.
+Remaining: 2 more evening pulls with 0x5D events.
+
+*Logged 2026-07-07.*
