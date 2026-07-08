@@ -18,8 +18,8 @@
     "typescript": "5.7.2"
   },
   "scripts": {
-    "prebuild": "cp ../engine/*.js src/engine/",
-    "prestart": "cp ../engine/*.js src/engine/",
+    "prebuild": "cp ../engine/*.js src/engine/ && cp ../pipeline/data/bridge/gen3_latest.json public/gen3_latest.json 2>/dev/null || true",
+    "prestart": "cp ../engine/*.js src/engine/ && cp ../pipeline/data/bridge/gen3_latest.json public/gen3_latest.json 2>/dev/null || true",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test --env=jsdom",

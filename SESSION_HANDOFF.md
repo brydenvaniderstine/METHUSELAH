@@ -30,8 +30,16 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
-**Date:** 2026-07-07
+**Date:** 2026-07-08
 
+- **Source selector built — `engine/sources.js`** — implements the Gen3/Gen4 interchangeable-input architecture. `resolveVectors(gen4, gen3, manual)` resolves RHR, HRV, deep sleep, and glucose independently: Gen4 wins when fresh (< 24h), Gen3 fills in only where a decoder is validated (RHR only, via 0x6A), manual covers glucose, and a vector is `null` only when nothing has data. HRV and deep sleep stay Gen4-only pending the 0x5D and 0x6A sleep-stage decoders — no silent fallback to invalid data.
+- **`engine/index.js` extended, not rewritten** — added `evaluateSources(gen4, gen3, manual)` which wraps the existing `evaluate()`/`calculateBRI()` contracts (kept unchanged, since App.js's render depends on their exact shape — `cmd`/`color`/`level`/`rat`/`briefing`). `evaluateSources` returns the normal command result plus a `vectors` map of `{ value, source, ready }` per vector.
+- **`web/src/App.js` wired to the selector** — `evaluate()` call site replaced with `evaluateSources(ouraData, gen3Bridge, { glucose: glucoseReading })`; HRV/RHR/deep-sleep display values and the BRI score now come from resolved vectors, not raw `ouraData`, so the UI reflects Gen3 fallback automatically. Added a `timestamp` field to `ouraData` (was missing) so Gen4 freshness can actually be checked. Vector tiles now show "● GEN3 BLE" in cyan when a value is Gen3-sourced, "● OURA LIVE" for Gen4, nothing when neither has data.
+- **Verified against real data** — ran the selector directly (not via browser; see note below) against the actual `gen3_latest.json` fixture and three synthetic scenarios (Gen4 fresh, Gen4 stale >24h, both absent). Confirmed: RHR correctly falls back to Gen3 (65.1 bpm) when Gen4 is stale/absent and correctly prefers Gen4 when both are fresh; HRV/deep sleep correctly stay `null` with no Gen3 source until those decoders are validated; manual glucose entry unaffected.
+- **Production build verified clean** — `npm run build` compiles with no errors (+378 B gzip for the new module).
+- **Browser preview NOT verified** — the project's `.claude/launch.json` runs `npm start` from the repo root, but the CRA app lives in `web/`, so `preview_start` can't launch it in this environment (fails resolving `public/index.html`). Also found and killed a stale/broken `node` process wrongly bound to port 3000 from a prior session (was erroring on every request, not a working server). Live UI verification on methuselah.ca after deploy is still needed — see next session priority.
+- **Found: GitHub PAT embedded in plaintext in `git remote -v`** — the `origin` URL contains a live-looking token. Recommend rotating it and switching to SSH or a credential helper; flagged to owner, not fixed (out of scope for this session).
+- **⚠️ Oura token valid until 2026-07-13 — 5 days remaining.**
 - **Gen4-only comparison row logged for 2026-07-05/06** — deep sleep 20% best night in dataset, recovery bounce confirmed. HRV 22ms — sixth consecutive night below 25ms threshold. Zone 2 command firing correctly.
 - **Track B condition #3 still at 1/3** — no Gen3 sleep data from morning shortcut (ring out of BLE range).
 - **0x6E IBI decoder WRITTEN AND VALIDATED** — 549/549 corpus packets decode without error. Layout confirmed: b0=channel byte (bit7=A/B), b1-5=5× IBI high, b6-10=5× IBI low+amp, b11=mid bits, b12=shift nibble. Cross-validated vs 0x6A avg_hr: −1.1 to +1.3 bpm across 5 sleep files. Wired into pull script. Promoted to DONE.
@@ -64,13 +72,13 @@ conflict, this file takes precedence — it is version-controlled.
 
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
 
-1. **Morning pull — Track B condition #3 night 3** — one more Gen3 SpO2 within ±5% of Gen4 closes condition #3 permanently. ⚠️ Oura API token expires 2026-07-13 — 6 days remaining. Gap widening (1.9%→4.5%) — watch but not failing yet.
-
-2. **Evening pull — advance condition #2 to 2/3** — ring must be near Mac. Any evening activity pull that captures 0x5D events counts. Current: 1/3.
-
-3. **Second FFT walk at slow shuffle pace** (~60-70 spm) — run `python3 pipeline/tools/analyze_fft_walk.py <new_file> <walk_exp_file>` to compare 7E b[9] between fast and slow. Tests cadence-sensitivity of the dominant frequency bin.
-
-4. **July 13th subscription decision** — Oura API token expires. Decide whether to renew or accept Gen4 data freeze at that date.
+1. **Verify source switching live on methuselah.ca** — after this session's deploy, confirm RHR tile shows "● OURA LIVE" while the Oura token is valid, and manually confirm (e.g. by temporarily clearing `oura_token` from localStorage, or after the token expires 2026-07-13) that it switches to "● GEN3 BLE" automatically. Logic was verified directly against `engine/` (not through a browser — the dev server couldn't be started in this environment, see last session summary) so a real browser check is still owed.
+2. **Wire SpO2 into the source selector once a v3 discussion happens** — `engine/index.js`'s priority-order comment explicitly gates adding a new command vector; SpO2 is decoder-validated (0x6F) but intentionally left out of `engine/sources.js` this session. Revisit once Track B condition #3 closes.
+3. **Morning pull — Track B condition #3 night 3** — one more Gen3 SpO2 within ±5% of Gen4 closes condition #3 permanently. ⚠️ Oura API token expires 2026-07-13 — 5 days remaining. Gap widening (1.9%→4.5%) — watch but not failing yet.
+4. **Evening pull — advance condition #2 to 2/3** — ring must be near Mac. Any evening activity pull that captures 0x5D events counts. Current: 1/3.
+5. **Second FFT walk at slow shuffle pace** (~60-70 spm) — run `python3 pipeline/tools/analyze_fft_walk.py <new_file> <walk_exp_file>` to compare 7E b[9] between fast and slow. Tests cadence-sensitivity of the dominant frequency bin.
+6. **July 13th subscription decision** — Oura API token expires. Decide whether to renew or accept Gen4 data freeze at that date.
+7. **Rotate the GitHub PAT embedded in `origin` remote URL** — found in plaintext via `git remote -v` this session. Recommend switching to SSH or a credential helper.
 
 ---
 

@@ -9,8 +9,9 @@
 
 import { THRESHOLDS, BRI_BRACKETS, BRI_LEVELS } from "./thresholds.js";
 import { COMMANDS } from "./commands.js";
+import { resolveVectors, SOURCE_GEN4, SOURCE_GEN3, SOURCE_MANUAL } from "./sources.js";
 
-export { THRESHOLDS, BRI_BRACKETS, BRI_LEVELS, COMMANDS };
+export { THRESHOLDS, BRI_BRACKETS, BRI_LEVELS, COMMANDS, resolveVectors, SOURCE_GEN4, SOURCE_GEN3, SOURCE_MANUAL };
 
 // evaluate(vectors) — main entry point for web/src/App.js
 // vectors: { glucose, hrv, rhr, deepSleepPct }
@@ -55,6 +56,22 @@ export function evaluate(vectors) {
     rat: COMMANDS.nominal.rat,
     briefing: COMMANDS.nominal.briefing(),
   };
+}
+
+// evaluateSources(gen4, gen3, manual) — Gen3/Gen4 interchangeable-input entry point.
+// Resolves each vector to its best available source via resolveVectors(), then
+// runs the same evaluate() used everywhere else. Adds `vectors` to the result —
+// the resolved { value, source, ready } per vector — so callers (e.g. the UI)
+// can show which ring backed each value without duplicating resolution logic.
+export function evaluateSources(gen4, gen3, manual = {}) {
+  const vectors = resolveVectors(gen4, gen3, manual);
+  const logic = evaluate({
+    glucose: vectors.glucose.value,
+    hrv: vectors.hrv.value,
+    rhr: vectors.rhr.value,
+    deepSleepPct: vectors.deepSleepPct.value,
+  });
+  return { ...logic, vectors };
 }
 
 // calculateBRI(vectors) — Biological Readiness Index

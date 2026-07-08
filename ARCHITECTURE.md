@@ -78,6 +78,34 @@ component — only on the *interface* that component exposes.
 | File | Purpose |
 |---|---|
 | `pipeline/data/findings/open_ring_roadmap.md` | Decoder status tracker — check before starting any pipeline work |
+
+---
+
+## Source selector — engine/sources.js
+
+Implements the interchangeable hardware input architecture: Gen4 (Oura API) and
+Gen3 (BLE bridge) are the same underlying sensors, so `web/` and the rest of
+`engine/` never need to know which one produced a value. Each of the four
+engine vectors is resolved independently — Gen4 wins when fresh (< 24h old),
+Gen3 fills in when Gen4 is stale or absent, and a vector is `null` only when
+neither source has data. `evaluateSources(gen4, gen3, manual)` wraps this
+resolution around the existing `evaluate()` command logic and returns the
+resolved `{ value, source, ready }` per vector alongside the command result,
+so the UI can label which ring is powering each tile.
+
+Current source readiness:
+
+| Vector | Gen4 API | Gen3 BLE | Status |
+|--------|----------|----------|--------|
+| RHR | Yes | Ready (0x6A, cross-validated ±1.1 bpm) | Auto-switches to Gen3 when Gen4 drops |
+| HRV | Yes | Not ready (0x5D doesn't fire reliably overnight) | Gen4-only; shows last known value or AWAITING DATA when Gen4 lapses |
+| Deep sleep | Yes | Not ready (0x6A has no sleep-stage breakdown) | Gen4-only; same fallback behavior as HRV |
+| Glucose | No | No | Manual entry only — no wearable source on either generation |
+| SpO2 | No (not plumbed) | Decoder validated (0x6F), cross-device gate not yet closed (Track B condition #3) | Bridge-only telemetry; not a `THRESHOLDS`/`COMMANDS` vector — adding it is a v3 discussion per the priority-order comment in `engine/index.js` |
+
+When the Oura API token lapses (2026-07-13): RHR switches to Gen3 automatically.
+HRV and deep sleep have no Gen3 fallback yet and will show `AWAITING DATA` once
+the last Gen4 fetch ages past 24 hours, until their decoders are validated.
 | `pipeline/data/findings/known_issues.md` | Per-decoder findings, falsified hypotheses, pull logs |
 | `pipeline/data/findings/gen4_baselines.md` | Personal percentile reference bands for cross-validation |
 | `pipeline/data/findings/gen3_vs_gen4_comparison.csv` | Night-by-night Gen3/Gen4 cross-validation |

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { evaluate, calculateBRI, THRESHOLDS } from "./engine/index.js";
+import { evaluateSources, calculateBRI, THRESHOLDS, SOURCE_GEN4, SOURCE_GEN3 } from "./engine/index.js";
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
@@ -194,7 +194,7 @@ body::before {
 
 const MASTER_KEY = "v1";
 
-function Metric({ label, val, unit, pct, color, status, isReal }) {
+function Metric({ label, val, unit, pct, color, status, source }) {
   return (
     <div className="tel-block">
       <div className="tel-label">{label}</div>
@@ -205,7 +205,8 @@ function Metric({ label, val, unit, pct, color, status, isReal }) {
         <div className="tel-bar" style={{ width: `${Math.max(val === '--' ? 0 : 5, Math.min(100, pct))}%`, background: color }} />
       </div>
       <div className="tel-status" style={{ color }}>{status}</div>
-      {isReal && <div className="tel-source">● OURA LIVE</div>}
+      {source === SOURCE_GEN4 && <div className="tel-source">● OURA LIVE</div>}
+      {source === SOURCE_GEN3 && <div className="tel-source" style={{ color: "cyan" }}>● GEN3 BLE</div>}
     </div>
   );
 }
@@ -276,7 +277,7 @@ export default function MethuselahFinal() {
   const [input,           setInput]           = useState("");
   const [authError,       setAuthError]       = useState(false);
   const [clock,           setClock]           = useState(ts());
-  const [ouraData,        setOuraData]        = useState({ hrv: null, rhr: null, deepSleepPct: null, isLive: false });
+  const [ouraData,        setOuraData]        = useState({ hrv: null, rhr: null, deepSleepPct: null, isLive: false, timestamp: null });
   const [glucoseReading,  setGlucoseReading]  = useState(null);
   const [glucoseEntryOpen, setGlucoseEntryOpen] = useState(false);
   const [glucoseInput,    setGlucoseInput]    = useState("");
@@ -308,7 +309,7 @@ export default function MethuselahFinal() {
             mainSleep.total_sleep_duration > 0
               ? (mainSleep.deep_sleep_duration / mainSleep.total_sleep_duration) * 100
               : null;
-          setOuraData({ hrv, rhr, deepSleepPct, isLive: true });
+          setOuraData({ hrv, rhr, deepSleepPct, isLive: true, timestamp: new Date().toISOString() });
           setOuraStatus("OURA_LIVE");
           addLog(`OURA INTERCEPT: ${hrv} MS HRV // LAST NIGHT`, "roche");
           if (rhr !== null) addLog(`CARDIAC INTERCEPT: ${rhr} BPM // LAST NIGHT`, "roche");
@@ -459,9 +460,12 @@ export default function MethuselahFinal() {
     }
   }, [locked]);
 
-  const { hrv, rhr, deepSleepPct } = ouraData;
-
-  const logic = evaluate({ glucose: glucoseReading, hrv, rhr, deepSleepPct });
+  const logic = evaluateSources(ouraData, gen3Bridge, { glucose: glucoseReading });
+  const { hrv, rhr, deepSleepPct } = {
+    hrv: logic.vectors.hrv.value,
+    rhr: logic.vectors.rhr.value,
+    deepSleepPct: logic.vectors.deepSleepPct.value,
+  };
 
   useEffect(() => { setBriefingOpen(false); }, [logic.level]);
 
@@ -577,7 +581,7 @@ onBLERead={readBLEGlucose}
               pct={hrvPct}
               color={hrv === null ? "var(--text-dim)" : hrv < THRESHOLDS.hrv ? "var(--accent-amber)" : "var(--accent-green)"}
               status={hrv === null ? "AWAITING DATA" : hrv < THRESHOLDS.hrv ? "SUPPRESSED" : "OPTIMAL"}
-              isReal={ouraData.isLive}
+              source={logic.vectors.hrv.source}
             />
             <Metric
               label="CARDIAC LOAD"
@@ -586,7 +590,7 @@ onBLERead={readBLEGlucose}
               pct={rhrPct}
               color={rhr === null ? "var(--text-dim)" : rhr > THRESHOLDS.rhr ? "var(--accent-amber)" : "var(--accent-green)"}
               status={rhr === null ? "AWAITING DATA" : rhr > THRESHOLDS.rhr ? "ELEVATED" : "OPTIMAL"}
-              isReal={ouraData.isLive}
+              source={logic.vectors.rhr.source}
             />
             <Metric
               label="REPAIR DEPTH"
@@ -595,7 +599,7 @@ onBLERead={readBLEGlucose}
               pct={deepPct}
               color={deepSleepPct === null ? "var(--text-dim)" : deepSleepPct < THRESHOLDS.deepSleep ? "var(--accent-amber)" : "var(--accent-green)"}
               status={deepSleepPct === null ? "AWAITING DATA" : deepSleepPct < THRESHOLDS.deepSleep ? "DEFICIENT" : "OPTIMAL"}
-              isReal={ouraData.isLive}
+              source={logic.vectors.deepSleepPct.source}
             />
           </div>
 
