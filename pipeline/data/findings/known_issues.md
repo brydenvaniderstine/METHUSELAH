@@ -2883,3 +2883,96 @@ Candidate fields (not yet confirmed against second ground truth):
 - b[2] = unknown. Range 204-211 during walk — consistent but uninterpretable without more context.
 
 *Logged 2026-07-07.*
+
+---
+
+## 2026-07-07 — 0x5D HRV sleep investigation: firing context confirmed ACTIVITY-only
+
+**Question:** Why does 0x5D HRV event appear in zero sleep (morning) pulls across entire corpus?
+
+**Method:** Audited all pull files, computed effective buffer windows, calibrated tick rate, analyzed firing context.
+
+**Tick rate calibration:** 3.70 ticks/sec (from two July-7 morning pulls: 23,112 ticks / 6,251 sec).
+
+**Buffer window during sleep:** 255 sleep packets span 1,577-2,757 ticks = 7-12 minutes at 3.70 ticks/sec.
+If 0x5D fired during sleep (every 5 min), 1-2 packets WOULD appear in a 7-12 minute window.
+Zero 0x5D events in ANY of 10 sleep pulls → confirmed: 0x5D does NOT fire during sleep.
+
+**Firing context of the single observed 0x5D packet** (boot_ts=55393468, gen3_pull_20260702_222915_MIXED.txt):
+- HR values: 72, 71, 70, 72 bpm — ACTIVITY heart rate (sleep HR is 52-65 bpm)
+- Co-occurs with: step features, motion events, EHR boundary session (payload=0b0100)
+- Pull composition: 76 Debug data, 36 Debug event, 21 step features, 19 motion events
+- This is ACTIVITY HRV (exercise/stress RMSSD), not sleep HRV
+
+**Finding: 0x5D measures activity-context HRV only.** It is the DHR (Dynamic Heart Rate)
+session's RMSSD output — NOT the sleep readiness HRV shown in the Gen4 morning score.
+Gen4 sleep HRV is either computed server-side from IBI streams or transmitted in sleep summary
+packets (0x49/0x4C/0x4F) which Gen3 does NOT emit.
+
+**Alternative paths for sleep HRV:**
+1. Compute RMSSD from 0x6E / 0x80 IBI data already captured in sleep pulls (viable — IBI confirmed working).
+2. Capture 0x5D in activity context by triggering pull after post-wake movement.
+
+**Track B condition #2 implication:**
+Condition #2 = "at least one 0x5D event in three consecutive morning pulls."
+As currently defined, this condition **cannot be met** — 0x5D does not fire during sleep and
+morning pulls capture the tail of sleep context.
+Resolution options:
+  A) Redefine condition #2: use RMSSD derived from 0x6E IBI data during sleep (already captured).
+  B) Change pull timing: trigger pull after light morning activity to capture activity HRV.
+  C) Accept condition #2 as unresolvable from Gen3 BLE and remove from Track B gate.
+Owner decision required. Blocking Track B condition #2 permanently unless redefined.
+
+*Logged 2026-07-07.*
+
+---
+
+## 2026-07-07 — 0x7E/0x7F FFT walk analysis: cross-file byte patterns
+
+Analysis script: `pipeline/tools/analyze_fft_walk.py` — runs against all corpus pull files
+with step features, prints per-byte stats (min/max/mean/stdev/sum), optionally compares two files.
+
+**Corpus pull files with step features:** gen3_pull_20260702_222915_MIXED.txt (21 packets),
+20260703_091611 (17), 20260703_091701 (32), 20260703_100910 (21), 20260704_091402 (12),
+20260705_095211 (9), 20260705_213406 (5), 20260705_221126/walk-experiment (7).
+
+**Key patterns across all 8 files:**
+
+7E b[9] — WALK-EXPERIMENT RESPONSIVE:
+  Walk experiment (gen3_pull_20260705_221126): mean=193.3, stdev=31.36, range 151-235
+  All other activity pulls: mean=60-125, stdev=36-77, range 0-244
+  b[9] is 1.5-3x higher in the controlled walk than in any other activity context.
+  Leading hypothesis: b[9] encodes dominant FFT frequency bin — walk has a distinct,
+  steady cadence that concentrates spectral power at one frequency.
+
+7F b[10] — HIGH and TIGHT in general activity, LOWER in walk:
+  General activity: mean 188-206, stdev 3-15 (tight across all non-walk files)
+  Walk experiment: mean=128, stdev=5 (lower and still tight)
+  7F b[10] may be a low-frequency or gravity-band energy estimate — walk produces
+  more rhythmic oscillation at cadence frequency vs broadband activity noise.
+
+7E b[0] ↔ b[8] TRACKING: delta <10 units across ALL 8 files (both walk and non-walk).
+  Likely same signal via two channels or a redundant encoding. No activity-type sensitivity.
+
+**Second walk experiment (slow pace) — PENDING:**
+  Protocol: same as WALK_EXPERIMENT.md, ~500 steps at ~60-70 spm (vs 116-120 spm brisk).
+  Target: does 7E b[9] change between fast and slow walk?
+  If b[9] drops significantly at slow pace → cadence/frequency hypothesis confirmed.
+  If b[9] stays high → activity-type detector (walk vs non-walk) not pace-sensitive.
+  Script ready: `python3 pipeline/tools/analyze_fft_walk.py <new_pull_file> <walk_exp_file>`
+
+*Logged 2026-07-07.*
+
+---
+
+## 2026-07-07 — 0x6B step count + cadence wired into bridge JSON and web app
+
+Bridge vectors now include:
+  "step_count": total 0x6B b[0] sum across all packets in pull window (null if no 0x6B)
+  "cadence_spm": mean 0x6B b[1] across packets with b[1]>0 (null if no 0x6B)
+
+Web app sys-log now shows: `STEPS N // TEMP X°C // BATTERY Y%`
+In sleep window pulls (no 0x6B), shows: `STEPS N/A`.
+In activity pulls with 0x6B packets, shows confirmed step count.
+
+*Logged 2026-07-07.*

@@ -260,13 +260,16 @@ async def main():
 
         print(f"\n=== MOTION PERIOD DECODE (0x6B) — per-window step count ===")
         motion_period_found = False
-        total_steps = 0
+        total_steps = 0           # bridge accumulator
+        cadence_samples = []      # bridge accumulator
         for p in parsed:
             if p["tag"] == 0x6B:
                 motion_period_found = True
                 try:
                     d = decode_motion_period(p["payload"])
                     total_steps += d["step_count"]
+                    if d["cadence_spm"] and d["cadence_spm"] > 0:
+                        cadence_samples.append(d["cadence_spm"])
                     overflow = f"  OVERFLOW b4={d['b4_overflow_flag']}" if d.get("b4_overflow_flag") else ""
                     print(f"  boot_ts={p['boot_ts']:>10}  steps={d['step_count']}  cadence={d['cadence_spm']} spm"
                           f"  b2={d['b2_unknown']}  b3={d['b3_unknown']}{overflow}")
@@ -276,6 +279,8 @@ async def main():
             print(f"  TOTAL STEPS THIS WINDOW: {total_steps}")
         else:
             print("  No 0x6B motion period events found in this pull.")
+        step_count_bridge = total_steps if motion_period_found else None
+        cadence_spm_bridge = round(sum(cadence_samples) / len(cadence_samples), 1) if cadence_samples else None
 
         print(f"\n=== BEDTIME PERIOD DECODE (0x76) ===")
         bedtime_found = False
@@ -431,6 +436,8 @@ async def main():
                 "sleep_temp_c": round(sum(temps) / len(temps), 2) if temps else None,
                 "spo2_avg_pct": round(sum(spo2_avgs) / len(spo2_avgs), 1) if spo2_avgs else None,
                 "battery_pct": fuel_gauge_pct,
+                "step_count": step_count_bridge,
+                "cadence_spm": cadence_spm_bridge,
             },
             "raw_sample_count": len(priority_events),
         }

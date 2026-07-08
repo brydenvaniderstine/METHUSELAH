@@ -650,6 +650,7 @@ onBLERead={readBLEGlucose}
                    `RHR ${gen3Bridge.vectors.rhr_bpm != null ? gen3Bridge.vectors.rhr_bpm.toFixed(1) + ' BPM' : 'N/A'} // ` +
                    `IBI_HR ${gen3Bridge.vectors.ibi_hr_bpm != null ? gen3Bridge.vectors.ibi_hr_bpm.toFixed(1) + ' BPM' : 'N/A'} // ` +
                    `SPO2 ${gen3Bridge.vectors.spo2_avg_pct != null ? gen3Bridge.vectors.spo2_avg_pct + '%' : 'N/A'} // ` +
+                   `STEPS ${gen3Bridge.vectors.step_count != null ? gen3Bridge.vectors.step_count : 'N/A'} // ` +
                    `TEMP ${gen3Bridge.vectors.sleep_temp_c != null ? gen3Bridge.vectors.sleep_temp_c + '°C' : 'N/A'} // ` +
                    `BATTERY ${gen3Bridge.vectors.battery_pct != null ? gen3Bridge.vectors.battery_pct + '%' : 'N/A'}`}
                 </span>

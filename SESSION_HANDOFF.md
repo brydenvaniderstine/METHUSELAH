@@ -51,6 +51,9 @@ conflict, this file takes precedence — it is version-controlled.
 - **Timed walk experiment completed (2026-07-07)** — ~500 steps, phone BT OFF. Raw pull lost to buffer roll; 7 pairs of 0x7E/0x7F + 5 0x6B payloads recovered from terminal output and preserved in `walk_experiment_20260707_decoded.txt`.
 - **0x6B step count CONFIRMED — promoted to DONE** — b[0] sum = 497 across 5 walk windows (0.6% from 500 ground truth). open_ring MOTION_STATE enum is WRONG for this field. `pipeline/decoders/0x6b.py` created, wired into pull script. b[1] cadence (116-120 spm) is a candidate pending second experiment.
 - **0x7E/0x7F identified as FFT spectral features, NOT step counters** — boot_ts spacing 296-326 ticks (mean 307.8, timer-driven). No single byte column sums to ~500. b[9] of 7E consistently dominant (151-235). Status: IN PROGRESS — byte field names need firmware RE for FFTset sub-message schema.
+- **0x5D HRV firing context CONFIRMED ACTIVITY-ONLY (2026-07-07)** — Audited all 10 sleep (morning) pulls and 9 evening pulls. 0x5D appears in exactly ONE file (MIXED activity pull). Sleep buffer window = 7-12 min at 3.70 ticks/sec — if 0x5D fired during sleep, it WOULD appear; it does not. Single corpus packet shows HR 70-72 bpm (activity HR), co-occurs with step features and EHR session boundary. Track B condition #2 (0x5D in 3 consecutive morning pulls) CANNOT be met as currently defined. Owner decision required: redefine using IBI-RMSSD, change pull timing, or remove gate.
+- **FFT walk analysis tool built (2026-07-07)** — `pipeline/tools/analyze_fft_walk.py` analyzes 0x7E/0x7F byte statistics across pull files. Cross-file finding: 7E b[9] is 1.5-3x higher in controlled walk (mean 193.3) vs other activity (mean 60-125). 7F b[10] drops from 188-206 (activity) to 128 (walk). 7E b[0]↔b[8] track within <10 units in ALL files. Second walk at slow pace needed to separate pace-sensitivity from activity-type effect.
+- **0x6B step count and cadence wired into bridge JSON** — `step_count` and `cadence_spm` added to vectors dict. Web app sys-log now shows STEPS field. Null in sleep window; populated in activity pulls with 0x6B packets.
 - **⚠️ Oura token valid until 2026-07-13 — 6 days remaining.**
 
 ---
@@ -59,11 +62,13 @@ conflict, this file takes precedence — it is version-controlled.
 
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
 
-1. **Morning pull tomorrow — Track B condition #3 night 3** — one more Gen3 SpO2 within ±5% of Gen4 closes condition #3 permanently. ⚠️ Oura API token expires 2026-07-13 — 6 days remaining. Gap widening (1.9%→4.5%) — watch trend but don't fail yet.
+1. **Morning pull tomorrow — Track B condition #3 night 3** — one more Gen3 SpO2 within ±5% of Gen4 closes condition #3 permanently. ⚠️ Oura API token expires 2026-07-13 — 6 days remaining. Gap widening (1.9%→4.5%) — watch but not failing yet.
 
-2. **Evening pull tonight** — ring must be near Mac. 0x6B decoder now active — will see step counts in print output.
+2. **Track B condition #2 OWNER DECISION REQUIRED** — 0x5D does not fire during sleep. Three options: (A) redefine condition #2 using IBI-RMSSD derived from 0x6E sleep data (computable today), (B) change pull timing to post-wake activity, (C) remove gate. Blocking. Must decide before declaring Track B in progress.
 
-3. **0x5D HRV investigation** — explore sleep-context firing of HRV events. Current decoder is DONE but firing conditions and field semantics may have unexplored depth. Secondary target after condition #3 closes.
+3. **Second walk at slow pace** — run `python3 pipeline/tools/analyze_fft_walk.py <new_file> <walk_exp_file>` to compare 7E b[9] and 7F b[10] between fast and slow walk. Tests whether b[9] is cadence-sensitive (pace hypothesis) or just activity-type-sensitive (walk vs non-walk).
+
+4. **Evening pull tonight** — ring must be near Mac. Step count will appear in output for any activity pull.
 
 ---
 

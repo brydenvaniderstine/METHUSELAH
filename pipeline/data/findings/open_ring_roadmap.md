@@ -3,7 +3,7 @@
 # that produces a new finding, confirmed pattern, or resolved/
 # unresolved decoder question. Do not wait to be asked explicitly.
 # If a session ends without touching this file and a finding occurred,
-# that is an error. Last updated: 2026-07-07 (0x6B promoted to DONE, decoder wired into pull script)
+# that is an error. Last updated: 2026-07-07 (0x5D firing context confirmed ACTIVITY-only; 0x6B DONE; step count in bridge)
 # ─────────────────────────────────────────────────────────────
 
 # METHUSELAH // open_ring Decoder Roadmap (COMPLETE — all 38 decoders tracked)
@@ -23,7 +23,13 @@ sub-types. This supersedes the earlier partial roadmap.
 
 ## DONE — working, validated against real data (10)
 - [x] 0x6A sleep_period_info_2 (sleep_state)
-- [x] 0x5D hrv_event (HRV/RMSSD)
+- [x] 0x5D hrv_event (HRV/RMSSD) — ACTIVITY-ONLY. Fires during DHR session only (2026-07-07).
+      Single corpus packet: HR 70-72 bpm (activity HR), co-occurs with step features and EHR boundary.
+      Zero packets in any of 10 sleep pulls. Buffer window during sleep = 7-12 min (255 packets ÷ 3.70
+      ticks/sec); if 0x5D fired during sleep, 1-2 events WOULD appear. Definitive: does not fire in sleep.
+      Sleep HRV NOT accessible via 0x5D — must be derived from 0x6E/0x80 IBI streams or is server-computed.
+      Track B condition #2 (0x5D in 3 consecutive morning pulls) cannot be met as defined. Owner decision
+      required: redefine using IBI-RMSSD, change pull timing, or remove gate.
 - [x] 0x61/0x14 fuel_gauge_statistics (battery %, voltage, capacity)
 - [x] 0x75 sleep_temp_event (skin temp, degC)
 - [x] 0x47 motion_event (3-axis accelerometer)
@@ -106,6 +112,15 @@ sub-types. This supersedes the earlier partial roadmap.
       direct step counters. open_ring confirms: "FFTset sub-messages, meaning not documented."
       CEILING: byte-level field names need firmware RE or proto source (FFTset message schema).
       b[9] dominance and b[2]/b[4] near-500 clusters are hypotheses only — not confirmed.
+
+      CROSS-FILE ANALYSIS (2026-07-07, 8 pull files, 92 total 7E packets):
+      7E b[9] WALK-RESPONSIVE: mean=193.3 (walk, stdev=31) vs mean=60-125 (other activity).
+      Walk is 1.5-3x higher, suggesting b[9] encodes cadence-band spectral peak.
+      7F b[10] HIGH in general activity (mean 188-206, stdev 3-15) and LOWER in walk (128, stdev 5).
+      7E b[0] ↔ 7E b[8] track within <10 units across ALL files — likely same signal or redundant.
+      Analysis tool: `pipeline/tools/analyze_fft_walk.py` — compare files byte-by-byte.
+      NEXT: second walk at slow pace (~60-70 spm) to test if b[9] is pace-sensitive or
+      activity-type-sensitive. Run: `python3 pipeline/tools/analyze_fft_walk.py <new> <walk-exp>`
 (0x6E promoted to DONE — see above. 0x80 moved to DONE — see above.)
 - [ ] 0x77 spo2_dc_event — PARTIAL DECODE, decoder written and validated 2026-07-06.
       384/384 corpus packets decode without error. 357 real, 27 sentinel (aaaab2 tail).
