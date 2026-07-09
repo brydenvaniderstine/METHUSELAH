@@ -3101,3 +3101,31 @@ Status: negative result, unchanged from prior. Decoder stub, wiring, and
 roadmap status all confirmed accurate and up to date as of this session.
 
 *Logged 2026-07-08.*
+
+**Addendum, same day:** a follow-up message referenced "3 decoded 0x76
+packets" as a promotion gate for cross-validating against Oura CSV bedtime
+data, sourced from a claude.ai session output that "may not have been
+saved to a file." Checked exhaustively before treating this as a finding:
+
+- Re-searched all 23 raw pull files for the literal tag, a strict
+  `[Bedtime period]` bracketed-label match, and case-insensitive "bedtime"
+  — zero matches on all three, same as the original investigation above.
+- Checked `pipeline/data/logs/morning_pull.log` and `morning_pull_error.log`
+  (not checked in the original investigation) — log shows
+  `No 0x76 bedtime period events found in this pull.`, no decoded output.
+- Checked `pipeline/data/findings/ring_decoder_inventory.md` — only a
+  description of what the decoder *would* provide, not actual values.
+- Re-confirmed `0x76` is in `PRIORITY_TAGS` and the pull script's dedicated
+  decode section is intact (`oura_gen3_morning_pull.py:285-296`).
+
+Unlike the 0x7E/0x7F walk experiment (`walk_experiment_20260707_decoded.txt`)
+— where the raw pull file was lost to buffer roll but the actual hex
+payloads were recovered from terminal output and preserved — no hex
+payloads, decoded values, or file reference were provided for these 3
+packets, and none could be located anywhere in the repo. Per real-data-only
+discipline: if it's not in a file, it didn't happen. **0x76 remains
+confirmed absent from all pulls — tag requested (in `PRIORITY_TAGS`) but
+never observed in the buffer.** No cross-validation was performed since
+there is nothing to validate. 0x76 is NOT promoted to DONE.
+
+*Logged 2026-07-08 (addendum).*

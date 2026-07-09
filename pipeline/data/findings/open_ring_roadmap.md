@@ -327,6 +327,12 @@ Protocol: `pipeline/tools/WALK_EXPERIMENT.md` — 500 steps, phone BT OFF, pull 
    any capture" in their own reference data, so genuinely rare/conditional emission
    is an established pattern in this tag space, not unique to our setup. Not
    actionable without catching it in a future pull — no known trigger to force it.
+   Re-confirmed again same day: a claimed "3 decoded packets" (cross-validation
+   promotion gate) traced to unsaved claude.ai session output with no hex payloads
+   or file reference — could not be located anywhere in the repo after an
+   exhaustive re-check (strict `[Bedtime period]` label match, pull/error logs,
+   decoder inventory). Per real-data-only discipline, not counted as a finding.
+   0x76 stays NOT PROMOTED — see `known_issues.md` addendum, 2026-07-08.
 
 ## Gen4 Ground Truth Reference (added 2026-06-30)
 
