@@ -51,4 +51,13 @@ export const COMMANDS = {
     level:   "optimal",
     briefing: () => "All four vectors are within range. No action required today.",
   },
+  awaitingTelemetry: {
+    name:    "",
+    cmd:     "AWAITING TELEMETRY.",
+    rat:     "",
+    color:   "var(--text-dim)",
+    border:  "var(--text-dim)",
+    level:   "awaiting",
+    briefing: () => "No data from any source yet. Connect Oura or bring the Gen3 ring into Bluetooth range.",
+  },
 };

@@ -51,6 +51,17 @@ export function evaluate(vectors) {
     };
   }
 
+  // No vector triggered a command above. If that's because every vector is
+  // null (no source at all, not just in-range), say so instead of claiming
+  // biology is optimal on zero data.
+  if (glucose === null && hrv === null && rhr === null && deepSleepPct === null) {
+    return {
+      ...COMMANDS.awaitingTelemetry,
+      rat: COMMANDS.awaitingTelemetry.rat,
+      briefing: COMMANDS.awaitingTelemetry.briefing(),
+    };
+  }
+
   return {
     ...COMMANDS.nominal,
     rat: COMMANDS.nominal.rat,

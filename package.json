@@ -1,0 +1,8 @@
+{
+  "name": "methuselah-repo-root",
+  "private": true,
+  "scripts": {
+    "start": "npm --prefix web start",
+    "build": "npm --prefix web run build"
+  }
+}

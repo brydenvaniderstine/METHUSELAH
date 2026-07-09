@@ -620,7 +620,9 @@ onBLERead={readBLEGlucose}
                   <div className="cmd-briefing">{logic.briefing}</div>
                 )}
                 <div className="cmd-rationale">{logic.rat}</div>
-                {logic.level !== "optimal" ? (
+                {logic.level === "awaiting" ? (
+                  <div className="tel-tap-hint">NO SOURCES CONNECTED — CONNECT OURA OR BRING GEN3 RING IN RANGE</div>
+                ) : logic.level !== "optimal" ? (
                   <button className="btn-execute" onClick={handleExecute}>
                     EXECUTE PROTOCOL
                   </button>

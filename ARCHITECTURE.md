@@ -196,8 +196,28 @@ Track B is considered complete when all of the following are true:
    (a) decoded to a confirmed working state, or
    (b) formally documented as unresolvable with available data and closed.
 
-5. **Comparison CSV** contains a minimum of 14 consecutive nightly rows
-   with both Gen3 and Gen4 data present (not Gen4-only rows).
+5. **Comparison dataset** — REDEFINED (owner decision 2026-07-08)
+
+   Original definition: "14 consecutive nightly rows with both Gen3 AND Gen4
+   data present (not Gen4-only rows)."
+
+   Problem: the Oura API token expires 2026-07-13. After that date Gen4 data
+   becomes permanently unavailable, making the original definition
+   impossible to satisfy — it would freeze condition #5 forever.
+
+   Redefined: 14 consecutive nights with Gen3 morning sleep pull data
+   (SLEEP WINDOW classification). Gen4 cross-validation data preferred but
+   not required after the 2026-07-13 subscription lapse.
+
+   Rationale: after July 13th the Gen4 API is unavailable. Gen3 is the
+   sovereign pipeline. 14 consecutive Gen3 sleep pulls demonstrates the
+   morning pull discipline is established and the pipeline is reliable as
+   a standalone data source.
+
+   Current status: 2 of 14 — streak is 2026-07-06/07 → 2026-07-07/08.
+   Reset by the missed 2026-07-05/06 morning pull (buffer rolled, ring out
+   of BLE range). Reset counter on any ACTIVE WINDOW classification or
+   missed pull; only SLEEP WINDOW mornings with decoded Gen3 vectors count.
 
 When all five conditions are met, Track B is closed and v2 parser work
 begins. This definition can be revised -- but only in a dedicated session
@@ -208,7 +228,7 @@ with an explicit reason for changing the bar.
 2. HRV (0x5D) fires in 3 evening activity pulls — 1/3 confirmed (redefined 2026-07-07)
 3. SpO2 (0x6F) cross-validation — **CLOSED** (3/3 nights passed 2026-07-08)
 4. Five blocked decoders — 0x6B DONE, 0x6E DONE; 0x77/0x7E/0x7F IN PROGRESS
-5. Comparison CSV 14 rows — in progress
+5. Comparison dataset — **REDEFINED** (Gen3-only, 14 consecutive SLEEP WINDOW nights) — 2/14, streak reset 2026-07-05/06
 
 ---
 
