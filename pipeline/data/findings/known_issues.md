@@ -3,7 +3,7 @@
 # that produces a new finding, confirmed pattern, or resolved/
 # unresolved decoder question. Do not wait to be asked explicitly.
 # If a session ends without touching this file and a finding occurred,
-# that is an error. Last updated: 2026-07-06
+# that is an error. Last updated: 2026-07-08
 # ─────────────────────────────────────────────────────────────
 
 # METHUSELAH // Known Issues — Gen3 Decoders
@@ -3037,3 +3037,67 @@ Current status: 1/3 confirmed.
 Remaining: 2 more evening pulls with 0x5D events.
 
 *Logged 2026-07-07.*
+
+---
+
+## 2026-07-08 — 0x76 bedtime_period investigated — zero packets, negative result
+
+Date: 2026-07-08
+Investigation: full corpus search + open_ring layout confirmation, no new decoding.
+
+**open_ring reference** (`~/Desktop/open_ring/driver/decoders.py:303`,
+`PROTOCOL.md:271`, `enums.py:50`): tag `0x76` = `API_BEDTIME_PERIOD`.
+`decode_bedtime_period(p)` — payload must be >=8 bytes, 2x uint32 LE:
+- offset 0..3: `start_ring_time`
+- offset 4..7: `end_ring_time`
+Both are raw ring-time ticks; open_ring converts to UTC ms via a separate
+`TimeMapping` step we don't replicate. PROTOCOL.md gives no cadence/trigger
+notes for this tag specifically, but does note `0x68 API_RAW_PPG_DATA` as
+"declared but not observed in any capture" in open_ring's own reference data —
+confirming this tag space includes genuinely rare/conditional emitters, not
+just ones we've failed to capture.
+
+**Corpus search:** all 23 raw pull files currently on disk
+(`pipeline/data/raw_pulls/gen3_morning/*.txt` + `gen3_evening/*.txt`).
+Searched for the literal tag, the pull script's exact label ("Bedtime period"),
+and case-insensitive "bedtime" — zero matches on all three. Confirms the
+existing NEVER OBSERVED status in `open_ring_roadmap.md` (last checked
+2026-06-30 against 34 cumulative pulls; this session's 23-file re-check
+found the same zero result).
+
+**Pipeline readiness:** already fully wired, nothing to build.
+`0x76` is in `PRIORITY_TAGS` (`oura_gen3_morning_pull.py:55`), the pull
+script has a dedicated `=== BEDTIME PERIOD DECODE (0x76) ===` section that
+calls `decode_bedtime_period()` on any tag-0x76 packet found
+(`oura_gen3_morning_pull.py:285-296`), and `pipeline/decoders/0x76.py`
+already implements open_ring's exact layout (`_u32(p,0)`, `_u32(p,4)`) —
+untested against real data only because no real packet has ever arrived.
+This is a data-capture gap, not a tooling gap.
+
+**Cross-reference context (not a decode comparison — no packets to compare):**
+Gen4 official `Bedtime Start`/`Bedtime End` for recent nights, for whenever
+a real 0x76 packet does eventually appear and needs a sanity check:
+- 2026-07-01: 2026-06-30T23:46:31 → 2026-07-01T09:12:00
+- 2026-07-02: 2026-07-02T00:13:31 → 2026-07-02T09:10:57
+- 2026-07-03: 2026-07-02T23:39:58 → 2026-07-03T09:08:57
+- 2026-07-05: 2026-07-04T23:39:59 → 2026-07-05T09:49:52
+- 2026-07-06: 2026-07-06T00:48:04 → 2026-07-06T10:41:19
+(Source: `~/Desktop/oura_2026-05-29_2026-07-10_trends.csv`.)
+
+**Why it's absent:** unknown — no confirmed mechanism. Ruled out one
+hypothesis during this investigation: the `API_` prefix on `0x76` is not a
+meaningful signal (every tag in this range, including tags that fire
+reliably like `0x5D`/`0x6A`/`0x47`, shares the same `API_` prefix in
+open_ring's enum — it's a blanket namespace convention, not evidence of a
+request/response-gated tag). No alternative hypothesis is evidenced enough
+to state as fact.
+
+**What would unblock it:** catching it in a future pull — no known way to
+force emission. Possibly correlates with a ring-internal sleep-session
+finalization event that our short (~7-12 min) connection windows don't
+reliably span; this is speculation, not confirmed.
+
+Status: negative result, unchanged from prior. Decoder stub, wiring, and
+roadmap status all confirmed accurate and up to date as of this session.
+
+*Logged 2026-07-08.*

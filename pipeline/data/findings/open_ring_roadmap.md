@@ -145,7 +145,9 @@ Raw pull file lost (buffer roll before save). Payloads preserved in decoded file
 NEXT ACTION for 0x7E/0x7F: firmware RE or proto source to identify FFTset sub-message fields.
 
 ## NOT STARTED — Tier 1, high biometric value (3)
-- [ ] 0x76 bedtime_period — wired into script, never caught a real packet
+- [ ] 0x76 bedtime_period — wired into script, never caught a real packet. Re-verified
+      2026-07-08: zero matches across all 23 raw pull files on disk (literal "0x76",
+      "Bedtime period" label, case-insensitive "bedtime" all checked). See known_issues.md.
 - [ ] 0x7E/0x7F real_steps_features — IN PROGRESS (2026-06-26). See IN
       PROGRESS section below.
 
@@ -316,7 +318,15 @@ Protocol: `pipeline/tools/WALK_EXPERIMENT.md` — 500 steps, phone BT OFF, pull 
 3. **0x6B motion_period** — collect more packets by capturing pull during
    deliberate motion (sit→walk→sit transitions). Only 4 packets currently.
 
-4. **0x76 bedtime_period** — has never fired. Not actionable from existing data.
+4. **0x76 bedtime_period** — has never fired. Re-verified 2026-07-08 against all 23
+   raw pull files on disk — still zero packets. Decoder pipeline is fully wired
+   (PRIORITY_TAGS includes 0x76, pull script has a dedicated decode/print section,
+   `pipeline/decoders/0x76.py` already implements open_ring's exact layout) — this
+   is a data-capture gap, not a tooling gap. No confirmed mechanism for the absence;
+   open_ring itself notes 0x68 (`API_RAW_PPG_DATA`) as "declared but not observed in
+   any capture" in their own reference data, so genuinely rare/conditional emission
+   is an established pattern in this tag space, not unique to our setup. Not
+   actionable without catching it in a future pull — no known trigger to force it.
 
 ## Gen4 Ground Truth Reference (added 2026-06-30)
 
@@ -369,7 +379,7 @@ into individual files in `pipeline/decoders/`:
 | `pipeline/decoders/0x6f.py` | spo2_event | VALIDATED |
 | `pipeline/decoders/0x75.py` | sleep_temp_event | VALIDATED |
 | `pipeline/decoders/0x47.py` | motion_event | VALIDATED |
-| `pipeline/decoders/0x76.py` | bedtime_period | NEVER OBSERVED |
+| `pipeline/decoders/0x76.py` | bedtime_period | NEVER OBSERVED (re-verified 2026-07-08) |
 | `pipeline/decoders/0x6e.py` | spo2_ibi_and_amplitude | VALIDATED |
 | `pipeline/decoders/0x77.py` | spo2_dc_event | PARTIAL DECODE |
 

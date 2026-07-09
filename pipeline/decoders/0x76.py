@@ -1,4 +1,8 @@
-"""0x76 — bedtime_period (BedtimePeriod). Never observed in 34 pulls (as of 2026-06-30)."""
+"""0x76 — bedtime_period (BedtimePeriod). Never observed. Re-verified 2026-07-08
+against all 23 raw pull files on disk (literal tag, label text, and case-insensitive
+"bedtime" all checked) — zero matches. Layout below matches open_ring's
+decode_bedtime_period exactly (2x uint32 LE) but is unvalidated against a real
+packet — no packet has ever been captured to confirm it."""
 from .utils import _u32
 
 
