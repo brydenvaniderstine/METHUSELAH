@@ -3253,3 +3253,114 @@ activity, not a decoded physical quantity. Not promotable to DONE without
 either a working third walk experiment or firmware/proto schema access.
 
 *Logged 2026-07-09.*
+
+---
+
+## 2026-07-10 — 0x61/0x09 offset-3 (seconds_in_pfsm_state) cross-referenced against 0x6A
+
+Priority: this decoder feeds `deep_sleep` (13% clinical floor), the only one of the
+three IN PROGRESS decoders that reaches a live engine threshold. Testing the
+existing offset-3 hypothesis ("seconds in current pfsm state," CONFIRMED
+2026-06-27 via n=47 echo-pair analysis) from an independent angle: cross-
+referencing against 0x6A's own sleep_state timeline, per the working
+hypothesis that pfsm=6 (SLEEP_REGIME) and 0x6A co-occur.
+
+**Method:** scanned all 23 raw pull files. For every 0x09 record with
+`pfsm_state==6`, computed a claimed sleep-onset boot_ts
+(`boot_ts - seconds_in_pfsm_state * 3.70 ticks/sec`) and found the closest
+0x6A record in the same file.
+
+**Finding 1 (new, positive) — tight temporal co-occurrence confirmed at
+higher precision than before.** All 16 pfsm=6 records across the corpus have
+a 0x6A record within ~45 seconds (range: -43.2s to +37.0s). 0x6A itself
+fires roughly every ~80s (300 ticks / 3.70), so every pfsm=6 event has a
+0x6A sample within less than one full 0x6A period. This sharpens the
+existing 2026-07-06 finding ("pfsm=6 fires ONLY in sleep context, co-present
+with 0x6A packets") from a same-pull binary co-occurrence to an actual
+distance measurement.
+
+**Finding 2 (inconclusive) — "onset consistency" sub-test does not add
+strong independent confirmation of offset-3's exact interpretation.** Tested
+whether the closest 0x6A record's boot_ts falls after the claimed sleep-onset
+boot_ts (i.e., consistent with the ring having been in pfsm=6 continuously
+since that computed onset). 12/16 pass, 4/16 do not
+(`gen3_pull_20260702_000517_MIXED.txt`, `gen3_pull_20260708_103706_MIXED.txt`,
+`gen3_pull_20260708_220910.txt`, `gen3_pull_20260709_124308.txt` — one each).
+This is NOT treated as a falsification: the 4 "failures" are all within
+tens of seconds of the boundary, well inside the noise budget introduced by
+(a) the 3.70 ticks/sec constant being an empirical approximation, not an
+exact firmware-confirmed rate, and (b) pfsm_state (the debug state machine)
+and sleep_state (0x6A's own field) being two different state machines that
+need not transition at the exact same instant even when correlated. A
+tighter test would need firmware-confirmed tick rate or a much larger
+same-session sample; neither is available.
+
+**What this does NOT test:** within-pull growth of offset-3 over time. Every
+pull's buffer window only ever contains a single pfsm=6 record (never a
+consecutive sequence) — the ~7-12 min buffer captures one snapshot, not a
+time series. This is itself worth noting as a data-density limitation: the
+strongest existing validation of offset-3 (n=47 echo pairs, 2026-06-27)
+relies on original/echo record PAIRS within a pull, not sequences of
+pfsm=6-to-pfsm=6 records, because the latter essentially never occurs in
+this corpus.
+
+**Conclusion:** offset-3's "seconds in current pfsm state" interpretation is
+NOT falsified by this test, and is further supported by finding 1. It is not
+newly *confirmed* by this test either — finding 2 is genuinely inconclusive,
+not a weak positive. The strongest evidence for offset-3 remains the
+pre-existing echo-pair analysis. f2/f4 remain completely unresolved and are
+the actual ceiling on this decoder reaching DONE — this session did not
+attempt them (out of scope for this test, and previously noted as needing
+firmware access).
+
+**Status: 0x61/0x09 stays PARTIAL / IN PROGRESS.** Not promoted. deep_sleep%
+extraction from this tag is still blocked on f2/f4, which this test did not
+address.
+
+*Logged 2026-07-10.*
+
+---
+
+## 2026-07-10 — 0x5D overnight sanity check: data availability, not decoding, confirmed again with 2x the sample
+
+Before spending more time trying to decode 0x5D, checked whether it's a data
+availability problem: does the ring's buffer contain 0x5D packets during
+sleep at all? This exact question was already answered 2026-07-07
+("CONFIRMED ACTIVITY-ONLY," audited ~10 sleep + 9 evening pulls). Re-ran
+against the current full corpus, which has grown since — worth re-verifying
+rather than trusting the old count.
+
+**Method:** classified all 27 raw pull files by filename (`_MIXED` suffix =
+activity/mixed window, no suffix = SLEEP WINDOW — spot-checked against
+bridge JSON classifiers for two files this session, both matched exactly).
+Searched every file for the literal `[HRV event]` label (0x5D's exact
+pull-script label, confirmed in the 0x76 investigation methodology).
+
+**Result — complete, exception-free absence:**
+- **SLEEP WINDOW files: 0/21 contain any 0x5D packet.** Zero exceptions.
+- **MIXED/activity files: 1/5** contain a 0x5D packet
+  (`gen3_pull_20260702_222915_MIXED.txt`) — this is the same single
+  confirmed instance already tracked as Track B condition #2's 1/3.
+- Walk experiment file: 0/1.
+
+This roughly doubles the previous sample (21 sleep-window files vs. ~10) and
+the pattern holds with zero exceptions in either direction: 0x5D has never
+once appeared in a SLEEP WINDOW pull across the entire pull history, and
+only ever appears in activity/mixed context.
+
+**Interpretation:** a clean, total, repeated absence across 21 independent
+captures — rather than garbled or malformed 0x5D-tagged bytes appearing
+sometimes — is much more consistent with "the ring's firmware does not
+compute or transmit HRV-event records during sleep-context operation" than
+with a decoding bug. If this were a decode/parsing problem, some fraction of
+sleep pulls would be expected to show corrupted or partial 0x5D packets, not
+uniform, complete absence of the tag itself.
+
+**Conclusion: this is a hardware/protocol limitation, not fixable by better
+decoding.** Recommend not spending further time this week trying to decode
+0x5D output for overnight use. This does not affect Track B condition #2
+(3 confirmed 0x5D *evening activity* events) — that's explicitly a separate,
+already-redefined track (Option A, 2026-07-07 owner decision) and is
+unaffected by this finding.
+
+*Logged 2026-07-10.*

@@ -30,6 +30,11 @@ sub-types. This supersedes the earlier partial roadmap.
       Sleep HRV NOT accessible via 0x5D — must be derived from 0x6E/0x80 IBI streams or is server-computed.
       Track B condition #2 (0x5D in 3 consecutive morning pulls) cannot be met as defined. Owner decision
       required: redefine using IBI-RMSSD, change pull timing, or remove gate.
+      RE-VERIFIED 2026-07-10 against the current full corpus (roughly 2x the original sample): 0/21
+      SLEEP WINDOW files contain any 0x5D packet, zero exceptions. 1/5 MIXED files do (same single
+      instance already tracked). Confirms hardware/protocol limitation, not a decoding gap — see
+      known_issues.md. Condition #2 was already redefined to evening-activity-only (2026-07-07,
+      Option A); this finding does not affect that track.
 - [x] 0x61/0x14 fuel_gauge_statistics (battery %, voltage, capacity)
 - [x] 0x75 sleep_temp_event (skin temp, degC)
 - [x] 0x47 motion_event (3-axis accelerometer)
@@ -91,6 +96,13 @@ sub-types. This supersedes the earlier partial roadmap.
       Behaviorally-derived labels wired into pull script output (2026-07-07):
       pfsm=6→SLEEP_REGIME, pfsm=3/4→ACTIVE_REGIME, pfsm=5→TRANSITIONAL,
       pfsm=128→ECHO_RECORD. NOT firmware-confirmed.
+      OFFSET-3 CROSS-REFERENCE (2026-07-10): tested against 0x6A sleep_state
+      timeline (independent of the existing echo-pair validation). All 16
+      pfsm=6 records corpus-wide have a 0x6A record within ~45s — sharpens
+      the co-occurrence finding to an actual distance measurement. Onset-
+      consistency sub-test inconclusive (12/16), not a falsification — see
+      known_issues.md for why. f2/f4 remain the real ceiling; not attempted
+      this session. deep_sleep% extraction still blocked.
 - [~] 0x7E/0x7F real_steps_features — PARTIAL (promoted 2026-07-09 from IN PROGRESS).
       Decoders written: `pipeline/decoders/0x7e.py`, `pipeline/decoders/0x7f.py`
       (one file per tag per the decoders/ naming convention). Both return all 14 raw
