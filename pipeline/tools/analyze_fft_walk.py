@@ -15,12 +15,18 @@ def analyze_fft_packets(pull_file):
     packets_7f = []
     with open(pull_file) as f:
         for line in f:
-            if 'Real step feature (1)' in line and 'payload=' in line:
+            # Standard pull-script label ("Real step feature (1)/(2)") and the
+            # bracket shorthand used in manually-transcribed files like
+            # walk_experiment_20260707_decoded.txt ("[0x7E]"/"[0x7F]") both occur
+            # in the corpus — match either.
+            is_7e = ('Real step feature (1)' in line or '[0x7E]' in line) and 'payload=' in line
+            is_7f = ('Real step feature (2)' in line or '[0x7F]' in line) and 'payload=' in line
+            if is_7e:
                 payload = line.split('payload=')[1].strip()
                 b = bytes.fromhex(payload)
                 if len(b) == 14:
                     packets_7e.append(list(b))
-            elif 'Real step feature (2)' in line and 'payload=' in line:
+            elif is_7f:
                 payload = line.split('payload=')[1].strip()
                 b = bytes.fromhex(payload)
                 if len(b) == 14:
@@ -90,7 +96,7 @@ if __name__ == '__main__':
             try:
                 with open(f) as fh:
                     content = fh.read()
-                if 'Real step feature' in content:
+                if 'Real step feature' in content or '[0x7E]' in content or '[0x7F]' in content:
                     analyze_fft_packets(f)
                     found = True
             except Exception:

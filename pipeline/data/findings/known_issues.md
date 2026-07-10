@@ -3129,3 +3129,76 @@ never observed in the buffer.** No cross-validation was performed since
 there is nothing to validate. 0x76 is NOT promoted to DONE.
 
 *Logged 2026-07-08 (addendum).*
+
+---
+
+## 2026-07-09 — Second FFT walk experiment (slow pace) — capture failure, no comparison possible
+
+Date: 2026-07-09, executed 12:43pm, phone Bluetooth OFF, 500 steps at slow
+shuffle pace (~60-70 spm), light movement 5-10 min after, returned to Mac
+within 60s, pulled immediately.
+
+**Result: the pull captured zero 0x7E/0x7F and zero 0x6B packets.** No
+fast-vs-slow comparison is possible — not because of a tool problem, but
+because Walk 2 has no step-feature data at all to compare against Walk 1.
+
+**Verification:** confirmed directly against the saved pull file
+(`pipeline/data/raw_pulls/gen3_morning/gen3_pull_20260709_124308.txt`, 17163
+bytes, matches the terminal output pasted at pull time). Listed every unique
+bracketed event label in the file — 13 types, none step/motion-period
+related: `Debug data`, `IBI and amplitude event`, `Motion event`, `PPG
+amplitude`, `SPO2 DC event`, `SPO2 IBI+amplitude`, `SPO2 event`, `Sleep ACM
+period`, `Sleep period info (2)`, `Sleep temp event`, `State change`, `Temp
+event`, `UNKNOWN (0x11)`. The pull's own console output confirms this too:
+`MOTION PERIOD DECODE (0x6B)` section printed "No 0x6B motion period events
+found in this pull," and there is no 0x7E/0x7F decode section output at all
+(the pull script has no dedicated print section for these tags — they only
+ever surface in the raw `PRIORITY EVENTS` dump, and none appear there
+either).
+
+**Likely cause (not confirmed):** the auto-classifier tagged this pull
+`SLEEP WINDOW` — a plainly wrong label for a deliberate midday walk test,
+but revealing: the buffer window the pull actually read (boot_ts
+60851402-60853399, ~2000 ticks / ~9 minutes at the ring's ~3.7 ticks/sec)
+is dominated by sleep-context signal (0x6A `sleep_period_info_2`, stable
+low HR 58.5-70.5 bpm, SpO2, sleep temp) — not the walk that had just
+happened. This matches the project's previously-documented buffer/timing
+constraint (sleep buffer window ~7-12 min, noted during the 0x5D HRV
+investigation): the ring's addressable debug-event buffer appears to have
+rolled past the walk's activity window by the time the connection was
+established, surfacing older buffered content instead. This is consistent
+with, not a new instance confirming, that pattern — no firmware-level
+mechanism is confirmed.
+
+**Walk 1 reference data (unchanged, for the record):**
+- 0x7E `b[9]`: mean 193.3, range 151-235, across 7 packets (re-verified this
+  session via the tool fix below — matches prior session notes exactly).
+- 0x6B `b[1]`: values `[116, 117, 120, 120, 116]`, range 116-120, across 5
+  packets (`walk_experiment_20260707_decoded.txt`).
+- Walk 2 has no equivalent values for either — both are simply absent.
+
+**Tool bug found and fixed:** `pipeline/tools/analyze_fft_walk.py` only
+matched the live pull script's exact label strings (`Real step feature
+(1)`/`(2)`). Walk 1's data survives only in a manually-transcribed file
+(`walk_experiment_20260707_decoded.txt`, written after the raw pull was lost
+to buffer roll) that uses a different shorthand (`[0x7E]`/`[0x7F]`) — so the
+tool silently reported "No 0x7E/0x7F packets found" for Walk 1's own
+preserved data too, before this fix. Updated the tool to match either label
+format; re-ran and confirmed it now reproduces Walk 1's stats correctly
+(`b[9]` mean 193.3, 7 packets each for 0x7E/0x7F) while correctly reporting
+zero for Walk 2. This was a real bug (the tool was unusable for one of its
+two only existing inputs), not something invented to explain a negative
+result — Walk 2 genuinely has no data either way.
+
+**What would unblock a real comparison:** repeat the slow-pace walk
+experiment, but the constraint is the buffer/timing issue above, not pace —
+a future attempt should probably start the pull connection *before* the
+walk activity ages out of the buffer, e.g. by shortening time between last
+motion and connecting, though this is untested.
+
+Status: negative result — no fast-vs-slow byte comparison possible this
+session. Tool bug fixed (verified against Walk 1's known-good data).
+0x6B/0x7E/0x7F byte-role hypotheses from Walk 1 remain unconfirmed by a
+second data point.
+
+*Logged 2026-07-09.*

@@ -119,8 +119,20 @@ sub-types. This supersedes the earlier partial roadmap.
       7F b[10] HIGH in general activity (mean 188-206, stdev 3-15) and LOWER in walk (128, stdev 5).
       7E b[0] ↔ 7E b[8] track within <10 units across ALL files — likely same signal or redundant.
       Analysis tool: `pipeline/tools/analyze_fft_walk.py` — compare files byte-by-byte.
-      NEXT: second walk at slow pace (~60-70 spm) to test if b[9] is pace-sensitive or
-      activity-type-sensitive. Run: `python3 pipeline/tools/analyze_fft_walk.py <new> <walk-exp>`
+      Fixed 2026-07-09: only matched the live pull script's exact label ("Real step
+      feature (1)/(2)"), silently failing on `walk_experiment_20260707_decoded.txt`'s
+      `[0x7E]`/`[0x7F]` shorthand too — now matches both formats.
+
+      SECOND WALK ATTEMPT (2026-07-09, slow pace ~60-70 spm) — CAPTURE FAILURE, no
+      comparison possible. Pull captured zero 0x7E/0x7F and zero 0x6B packets — not a
+      tool issue, the pull itself has none (verified: 13 unique event labels in the
+      file, none step/motion-period related; auto-classifier tagged it SLEEP WINDOW,
+      the ~9-min buffer window read was sleep-context signal, not the walk that had
+      just happened). Same buffer/timing constraint documented during the 0x5D HRV
+      investigation (sleep buffer window ~7-12 min) — the walk's activity window
+      appears to have aged out of the ring's buffer before the pull connected.
+      Pace-sensitivity of b[9] remains UNTESTED — need a walk attempt that actually
+      captures step features to compare against. See known_issues.md 2026-07-09.
 (0x6E promoted to DONE — see above. 0x80 moved to DONE — see above.)
 - [ ] 0x77 spo2_dc_event — PARTIAL DECODE, decoder written and validated 2026-07-06.
       384/384 corpus packets decode without error. 357 real, 27 sentinel (aaaab2 tail).
