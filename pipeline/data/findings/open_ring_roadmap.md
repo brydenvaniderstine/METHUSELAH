@@ -91,7 +91,14 @@ sub-types. This supersedes the earlier partial roadmap.
       Behaviorally-derived labels wired into pull script output (2026-07-07):
       pfsm=6→SLEEP_REGIME, pfsm=3/4→ACTIVE_REGIME, pfsm=5→TRANSITIONAL,
       pfsm=128→ECHO_RECORD. NOT firmware-confirmed.
-- [~] 0x7E/0x7F real_steps_features — IN PROGRESS. First ground-truth decode 2026-07-07.
+- [~] 0x7E/0x7F real_steps_features — PARTIAL (promoted 2026-07-09 from IN PROGRESS).
+      Decoders written: `pipeline/decoders/0x7e.py`, `pipeline/decoders/0x7f.py`
+      (one file per tag per the decoders/ naming convention). Both return all 14 raw
+      bytes; only 7E b[9] and 7F b[10] have any confirmed interpretation (walk vs.
+      other-activity, NOT pace-sensitive — see NOT CONFIRMED note in each docstring).
+      Wired into the pull script with a new decode/print section. Structure confirmed
+      (14-byte payload, timer-driven pairing), most individual byte meanings still
+      UNRESOLVED — this is a PARTIAL decoder, not DONE. First ground-truth decode 2026-07-07.
       64 prior pairs from 3 activity pulls + 7 new pairs from controlled walk experiment.
       Raw pull lost to buffer roll — payloads recovered from terminal output and preserved in
       `pipeline/data/raw_pulls/gen3_evening/walk_experiment_20260707_decoded.txt`.
@@ -149,19 +156,22 @@ sub-types. This supersedes the earlier partial roadmap.
 
 **WALK EXPERIMENT COMPLETED 2026-07-07 (revised protocol — phone BT OFF).**
 Protocol: `pipeline/tools/WALK_EXPERIMENT.md`. Results logged above.
-- 0x7E/0x7F: 7 pairs decoded. IN PROGRESS — byte fields not named. FFT spectral features confirmed.
+- 0x7E/0x7F: 7 pairs decoded. PARTIAL (2026-07-09) — decoders written, byte fields mostly still not named. FFT spectral features confirmed.
 - 0x6B: b[0] step count CONFIRMED. Remaining fields (b[1]-b[3]) still hypotheses.
 - 0x6E IBI: DONE — promoted prior session.
 - 0x77: PARTIAL — unchanged.
 Raw pull file lost (buffer roll before save). Payloads preserved in decoded file.
 NEXT ACTION for 0x7E/0x7F: firmware RE or proto source to identify FFTset sub-message fields.
+A working third walk experiment (fixing the buffer/timing capture failure — see
+known_issues.md 2026-07-09) would also let pace-sensitivity of b[9]/b[10] finally be tested.
 
-## NOT STARTED — Tier 1, high biometric value (3)
+## NOT STARTED — Tier 1, high biometric value (1)
 - [ ] 0x76 bedtime_period — wired into script, never caught a real packet. Re-verified
       2026-07-08: zero matches across all 23 raw pull files on disk (literal "0x76",
       "Bedtime period" label, case-insensitive "bedtime" all checked). See known_issues.md.
-- [ ] 0x7E/0x7F real_steps_features — IN PROGRESS (2026-06-26). See IN
-      PROGRESS section below.
+
+(0x7E/0x7F moved to PARTIAL 2026-07-09 — see IN PROGRESS section. Count corrected;
+was previously listed here despite having active RE work, a pre-existing inconsistency.)
 
 ## NOT STARTED — Tier 2, weaker/auto-extracted confidence (12)
 - [ ] 0x49 sleep_summary_1 — Gen3 does NOT emit (0 packets across all 27 pulls)
@@ -400,6 +410,8 @@ into individual files in `pipeline/decoders/`:
 | `pipeline/decoders/0x76.py` | bedtime_period | NEVER OBSERVED (re-verified 2026-07-08) |
 | `pipeline/decoders/0x6e.py` | spo2_ibi_and_amplitude | VALIDATED |
 | `pipeline/decoders/0x77.py` | spo2_dc_event | PARTIAL DECODE |
+| `pipeline/decoders/0x7e.py` | real_step_feature_1 | PARTIAL (2026-07-09) — only b[9] confirmed |
+| `pipeline/decoders/0x7f.py` | real_step_feature_2 | PARTIAL (2026-07-09) — only b[10] confirmed |
 
 Shared helpers (`_i8`, `_u32`) moved to `pipeline/decoders/utils.py`. Pull script now
 imports from `pipeline.decoders`. Output verified byte-for-byte identical against known

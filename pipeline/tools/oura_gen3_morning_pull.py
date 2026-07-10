@@ -20,6 +20,8 @@ from decoders import (
     decode_spo2_ibi_amplitude,
     decode_spo2_dc_event,
     decode_motion_period,
+    decode_real_step_feature_1,
+    decode_real_step_feature_2,
 )
 
 ADDR        = "71E77907-1EE9-4949-801C-02979071309C"
@@ -294,6 +296,31 @@ async def main():
                     print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
         if not bedtime_found:
             print("  No 0x76 bedtime period events found in this pull.")
+
+        print(f"\n=== REAL STEP FEATURE DECODE (0x7E/0x7F) — FFT spectral features, NOT step counters ===")
+        print("  Only b[9] (0x7E) / b[10] (0x7F) have a confirmed interpretation (walk vs. other-")
+        print("  activity, not pace-sensitive — see pipeline/decoders/0x7e.py, 0x7f.py). Step count")
+        print("  is 0x6B b[0], printed above.")
+        step_feature_found = False
+        for p in parsed:
+            if p["tag"] == 0x7E:
+                step_feature_found = True
+                try:
+                    d = decode_real_step_feature_1(p["payload"])
+                    print(f"  boot_ts={p['boot_ts']:>10}  [0x7E] b9(walk-responsive)={d['b9']:>3}  "
+                          f"all_bytes={[d[f'b{i}'] for i in range(14)]}")
+                except ValueError as e:
+                    print(f"  boot_ts={p['boot_ts']:>10}  [0x7E]  DECODE FAIL: {e}")
+            elif p["tag"] == 0x7F:
+                step_feature_found = True
+                try:
+                    d = decode_real_step_feature_2(p["payload"])
+                    print(f"  boot_ts={p['boot_ts']:>10}  [0x7F] b10(walk-responsive)={d['b10']:>3}  "
+                          f"all_bytes={[d[f'b{i}'] for i in range(14)]}")
+                except ValueError as e:
+                    print(f"  boot_ts={p['boot_ts']:>10}  [0x7F]  DECODE FAIL: {e}")
+        if not step_feature_found:
+            print("  No 0x7E/0x7F real step feature events found in this pull.")
 
         print(f"\n=== SPO2 IBI+AMPLITUDE DECODE (0x6E) ===")
         ibi6e_found = False

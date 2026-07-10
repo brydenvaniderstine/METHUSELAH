@@ -3202,3 +3202,54 @@ session. Tool bug fixed (verified against Walk 1's known-good data).
 second data point.
 
 *Logged 2026-07-09.*
+
+---
+
+## 2026-07-09 — 0x7E/0x7F partial decoders written — Walk 1 data only
+
+A request to write a decoder based on a "two-walk comparison" was checked
+against the corpus first: the claimed second-walk numbers (slow-walk `b[9]`
+mean 156.9, specific per-byte deltas) don't correspond to any file — Walk 2
+captured zero 0x7E/0x7F packets (see the entry above). Confirmed with the
+user this doesn't exist yet; proceeded with a decoder based on Walk 1's real
+data only, with pace-sensitivity explicitly documented as untested rather
+than inferred from nonexistent data.
+
+**Decoders written:** `pipeline/decoders/0x7e.py` and `pipeline/decoders/0x7f.py`
+(one file per tag, per the decoders/ README convention — not a combined
+`0x7e_0x7f.py` file as originally suggested, since the codebase's own rule
+is "one file per BLE event tag"). Both implement `decode(payload: bytes) ->
+dict`, returning all 14 raw bytes (`b0`..`b13`). Registered in
+`pipeline/decoders/__init__.py` as `decode_real_step_feature_1`/`_2`. Wired
+into `oura_gen3_morning_pull.py` with a new `REAL STEP FEATURE DECODE
+(0x7E/0x7F)` print section (there was no dedicated section before — 0x7E/0x7F
+previously only appeared in the raw `PRIORITY EVENTS` dump). Verified against
+Walk 1's real hex payloads (Pair 1: 7E → b9=233, 7F → b10=123) — matches the
+source data exactly.
+
+**What is actually confirmed (from Walk 1 alone, n=7 packets, plus the
+pre-existing cross-file analysis against 8 other pull files):**
+- 14-byte payload, fires as 0x7E/0x7F pairs on a ~308-tick hardware timer
+  (296-326 tick spacing, mean 307.8) — NOT step-triggered. Step count is
+  0x6B b[0] (already DONE).
+- 7E `b[9]`: WALK-RESPONSIVE — mean 193.3 during the walk vs. 60-125 in
+  other (non-walk) activity pulls. This is walk-vs-other-activity, not
+  fast-vs-slow pace.
+- 7F `b[10]`: also walk-responsive, opposite direction — mean 128 during
+  the walk vs. 188-206 in other activity.
+- 7E `b[0]` and `b[8]` track within <10 units across all files — likely
+  correlated/redundant, not independently meaningful.
+
+**What is explicitly NOT confirmed, to avoid the mistake in the original
+request:** pace-sensitivity of any byte. The distinction between
+"walk-responsive" (confirmed, tested against non-walk activity) and
+"pace-sensitive" (untested — no second walk data exists) is stated
+explicitly in both decoder docstrings so it doesn't get conflated again.
+
+**Status:** 0x7E/0x7F promoted from IN PROGRESS to PARTIAL in
+`open_ring_roadmap.md` — decoders exist and are wired in, but only 2 of 14
+bytes per tag have any confirmed meaning, and even those are walk-vs-other-
+activity, not a decoded physical quantity. Not promotable to DONE without
+either a working third walk experiment or firmware/proto schema access.
+
+*Logged 2026-07-09.*
