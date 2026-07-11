@@ -3558,3 +3558,58 @@ Gen3+Gen4 paired samples to test candidate interpretations against ground
 truth.
 
 *Logged 2026-07-10.*
+
+---
+
+## 2026-07-11 — Morning pull (gen3_pull_20260711_102734.txt) — verified, one claim corrected and strengthened
+
+Verified against the raw pull before logging. Every specific numeric claim
+checked out, including precise ones: 0x6A (9 samples, 100% state=1, HR
+63.5-67.0) exact match; 0x6F "20 readings, 93.2-96.0%" exact match once
+confirmed the report meant **per-packet averages** (20 packets, 13 samples
+each, per-packet mean range 93.2-96.0% — raw individual samples range
+92-96); 0x6E "466 valid samples, HR mean=64.5" exact match once recomputed
+with the pull script's actual method (`60000/mean(ibi_ms)`, not mean of
+per-sample HR values — these differ, my first pass used the wrong one and
+got 66.5 before catching it); 0x5D zero events confirmed; the single fuel
+gauge event (84.1%, 4027mV) confirmed exactly, zero 0x61/0x09 records
+confirmed.
+
+**One claim corrected: this is not the first sleep-window pull where
+0x61/0x09 missed entirely.** Checked all 14 clean (non-`_MIXED`)
+sleep-window pulls in the corpus for 0x6A-present-but-0x61/0x09-absent:
+
+| Pull | 0x6A present | 0x61/0x09 present |
+|---|---|---|
+| gen3_pull_20260702_091253.txt | yes | yes |
+| gen3_pull_20260702_093539.txt | yes | yes |
+| gen3_pull_20260703_225853.txt | yes | yes |
+| **gen3_pull_20260704_233702.txt** | yes | **no** |
+| gen3_pull_20260706_105459.txt | yes | yes |
+| **gen3_pull_20260706_221742.txt** | yes | **no** |
+| gen3_pull_20260707_102642.txt | yes | yes |
+| gen3_pull_20260707_121053.txt | yes | yes |
+| gen3_pull_20260707_122211.txt | yes | yes |
+| **gen3_pull_20260707_221238.txt** | yes | **no** |
+| gen3_pull_20260708_220910.txt | yes | yes |
+| **gen3_pull_20260709_100940.txt** | yes | **no** |
+| gen3_pull_20260709_124308.txt | yes | yes |
+| **gen3_pull_20260711_102734.txt** (today) | yes | **no** |
+
+**5 of 14 (36%) clean sleep-window pulls have zero 0x61/0x09 records
+despite confirmed 0x6A sleep data — this is a frequent, recurring gap, not
+a first-time anomaly.** This is a stronger and more concrete version of the
+report's own "open question" — it directly answers it: pfsm_state
+emission (or capture, within the short buffer window) is genuinely
+sparse/intermittent during confirmed sleep, roughly 1-in-3 pulls, not just
+occasionally unlucky. This is a real, now-quantified structural risk to the
+2026-07-10 f2/f4 Gen4-correlation effort (n=5 nights) — the corpus can't
+grow that sample quickly even with regular nightly pulls, since a third of
+sleep-window captures will contribute nothing to it regardless of pull
+timing or quality.
+
+**Net effect on July 13th readiness: none**, as reported — RHR (0x6A) and
+SpO2 (0x6F) both produced clean data this pull; HRV/deep-sleep remain
+AWAITING DATA either way, unaffected by this finding.
+
+*Logged 2026-07-11.*

@@ -110,6 +110,12 @@ sub-types. This supersedes the earlier partial roadmap.
       need far more same-night samples to test properly. See known_issues.md
       2026-07-10 for full writeup. deep_sleep% extraction remains blocked, but by
       data scarcity, not a decode bug.
+      CAPTURE SPARSITY QUANTIFIED (2026-07-11): 5 of 14 clean sleep-window pulls
+      (36%) have zero 0x61/0x09 records despite confirmed 0x6A sleep data present —
+      not occasional bad luck, a frequent recurring gap. Directly explains why the
+      Gen4 correlation sample (n=5 nights) grows slowly: roughly a third of
+      sleep-window pulls contribute nothing to it regardless of pull timing/quality.
+      See known_issues.md 2026-07-11.
       Behaviorally-derived labels wired into pull script output (2026-07-07):
       pfsm=6→SLEEP_REGIME, pfsm=3/4→ACTIVE_REGIME, pfsm=5→TRANSITIONAL,
       pfsm=128→ECHO_RECORD. NOT firmware-confirmed.
