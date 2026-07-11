@@ -3,7 +3,17 @@
 # that produces a new finding, confirmed pattern, or resolved/
 # unresolved decoder question. Do not wait to be asked explicitly.
 # If a session ends without touching this file and a finding occurred,
-# that is an error. Last updated: 2026-07-08
+# that is an error. Last updated: 2026-07-10
+# ─────────────────────────────────────────────────────────────
+#
+# ── CREDENTIAL HANDLING ─────────────────────────────────────
+# Do not paste live tokens/credentials into this file. If a session
+# involves a credential (API token, key, secret), reference that it
+# exists and where it's stored (e.g. "Oura token, stored in
+# localStorage/browser session") — never the literal value. This rule
+# exists because the 2026-07-05 entry below did exactly this; it is
+# left as-is (not worth a history rewrite for a token expiring
+# 2026-07-13) but must not be repeated going forward.
 # ─────────────────────────────────────────────────────────────
 
 # METHUSELAH // Known Issues — Gen3 Decoders

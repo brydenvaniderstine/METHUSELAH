@@ -5,6 +5,11 @@
 # If a session ends without touching this file and a finding occurred,
 # that is an error. Last updated: 2026-07-07 (0x5D firing context confirmed ACTIVITY-only; 0x6B DONE; step count in bridge)
 # ─────────────────────────────────────────────────────────────
+#
+# ── CREDENTIAL HANDLING ─────────────────────────────────────
+# Do not paste live tokens/credentials into this file. Reference that a
+# credential exists and where it's stored — never the literal value.
+# ─────────────────────────────────────────────────────────────
 
 # METHUSELAH // open_ring Decoder Roadmap (COMPLETE — all 38 decoders tracked)
 

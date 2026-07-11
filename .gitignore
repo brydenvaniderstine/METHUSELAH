@@ -1,6 +1,11 @@
 node_modules
 build/
 
+# Secrets - never commit live credentials
+.env
+.env.local
+.env.*.local
+
 # Raw BLE pull outputs - bulky, kept locally only
 data/raw_pulls/
 !data/raw_pulls/**/README.md
