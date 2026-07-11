@@ -3425,3 +3425,136 @@ opportunity, distinct from and not a substitute for the still-needed third
 classification (0x6A/0x6F/0x6E all correctly absent).
 
 *Logged 2026-07-10.*
+
+---
+
+## 2026-07-10 — 0x61/0x09 f2/f4 systematic hypothesis test — structural bugs ruled out, meaning still open
+
+Goal: determine what f2/f4 represent, or rule out that they carry
+deep-sleep-relevant data. Tested one hypothesis at a time against real
+captured payloads (n=114 real 0x61/0x09 records across the full corpus,
+dumped fresh — not reusing the 2026-06-27 session's 48-record extract).
+`pipeline/decoders/0x61_09.py` currently only exposes `pfsm_state` and
+`seconds_in_pfsm_state` (both CONFIRMED); f0/f2/f4/f5 are analyzed here via
+a standalone script reading the confirmed u16 LE layout directly, same as
+the 2026-06-27 methodology.
+
+### First: the historical "impossible values" bug is fully explained, and it is not live in the current decoder
+
+The 2026-06-24 finding (`deep=111924.3min`, ~77.7 days) used open_ring's
+u32-field layout (`~/Desktop/open_ring/driver/decoders.py:825`,
+`_dd_sleep_statistics`: `ticks_in_deep_sleep`/`ticks_in_sleep`/`ticks_awake`
+as three u32 LE fields at offsets 1/5/9). Checked this directly against the
+confirmed u16 layout (offsets: b1-2=f0, b3-4=o3, b5-6=f2, b7-8=pad(0),
+b9-10=f4, b11-12=f5, b13=pfsm_state):
+
+- `ticks_in_sleep` (u32 @ offset 5) **equals f2 (u16) exactly** in 113/114
+  records — because the "padding" bytes (b7,b8) are almost always zero, a
+  u32 read at that offset just picks up f2's value with zero high bits. The
+  one exception (`gen3_pull_20260702_222915_MIXED.txt`, boot_ts=55400709)
+  has a non-zero padding byte (f3=1), a rare deviation from the "b7=b8=0 in
+  all 48 records" claim in the 2026-06-27 session — worth noting, not
+  investigated further here.
+- `ticks_awake` (u32 @ offset 9) **equals f4 + f5×65536** in every sampled
+  record — explaining why the old decoder occasionally produced wild
+  spikes: whenever the rare f5 flag (originally found 4 times in the
+  48-record sample) is set, the u32 misread adds +65536 to an otherwise
+  normal-looking f4 value.
+- `ticks_in_deep_sleep` (u32 @ offset 1) = f0 (a field with "zero
+  meaningful correlation with any other field" per the 2026-06-27 finding)
+  combined with o3 (seconds_in_pfsm_state, confirmed range 0-429) shifted
+  into the high 16 bits — a semantically meaningless combination by
+  construction, which is exactly why it produced multi-day durations.
+
+**Conclusion: the 2026-06-24 "impossible values" symptom was open_ring's
+wrong field width (u32 instead of u16), already fixed by the 2026-06-27
+layout correction. It is not evidence of a remaining offset/endianness bug
+in the current decoder.** Hypotheses 1 (offset) and much of 4 (scaling) are
+answered by this alone.
+
+### Hypotheses tested directly against real f2/f4 bytes (one at a time)
+
+**2. Endianness (big-endian re-read):** tested on real payloads — BE
+values show no apparent structure or smooth trend (e.g. LE f2=58421 →
+BE=13796 for one record, LE f2=7915 → BE=60190 for the next, no
+consistent relationship). The existing LE interpretation has extensive
+validated structure (decay curves, pfsm-dependent dynamics, n=47
+echo-pair consistency) that BE would have to coincidentally reproduce to
+be preferred — it doesn't. **Not supported.**
+
+**3. Signed vs. unsigned (i16 vs u16):** 7/114 records would flip negative
+for f2, 33/114 for f4, under signed interpretation — no coherent boundary
+or pattern (not "always positive," not a clean physiological threshold).
+**Not supported**, unsigned remains the working interpretation.
+
+**5. Bitfield (nibble/byte-level flags):** checked per-nibble means and
+high-byte unique-value sets by pfsm_state. High bytes (b6 for f2, b10 for
+f4) show wide, near-continuous coverage within each pfsm state (e.g. pfsm=5
+f2 high byte spans 50-118+) rather than a small set of discrete repeated
+values. This is the signature of a plain magnitude value, not a packed
+flag/enum byte. **Not supported.**
+
+**4. Scaling factor:** only partially tested. Ruled out the specific u32-
+width misread (above). Did not exhaustively test candidate divisors (e.g.
+open_ring's own `/10.0` convention seen on a different tag, 0x61/0x0c) —
+this remains a real, untested gap, not a ruled-out hypothesis.
+
+**6. Not sleep-stage data at all:** existing evidence argues against this
+in general — f2/f4 show pfsm-state-dependent decay/growth dynamics
+(collapsing during pfsm=3/4, stable/growing during pfsm=6) that a
+checksum, session ID, or unrelated counter would not be expected to
+reproduce. But this does not confirm the *specific* deep-sleep-percent
+interpretation — see below.
+
+### Step 4 — Gen4 ground-truth cross-reference: inconclusive, not negative
+
+Matched pfsm=6 f2/f4 values against `gen3_vs_gen4_comparison.csv` rows with
+real (non-n/a) `gen4_deep_pct`, using pull-file dates as the night mapping:
+
+| Night | gen4_deep_pct | f2 (mean, range) | f4 (mean, range) |
+|---|---|---|---|
+| 2026-07-01/02 | 14% | 8514 (3680–13374) | 16107 (2099–29886) |
+| 2026-07-05/06 | 20% | 19180 (single sample) | 62864 (single sample) |
+| 2026-07-06/07 | 15% | 15113 (12293–19971) | 25097 (279–38307) |
+| 2026-07-07/08 | 17% | 8228 (3654–12687) | 19801 (2021–36924) |
+| 2026-07-09/10 | 19% | 4314 (single sample) | 4356 (single sample) |
+
+r(gen4_deep_pct, f2_mean) = 0.171, r(gen4_deep_pct, f4_mean) = 0.437, n=5.
+Neither is statistically meaningful at this sample size (n=5 needs
+|r|>~0.88 for p<0.05) — **this is a "corpus too small to see it" result,
+not a negative one.** 2026-06-28 and 2026-07-04/05 had no matching pull
+file with pfsm=6 data to test against.
+
+**Separately, a real structural finding regardless of the correlation
+test:** within-night variance in f2/f4 is huge — e.g. 2026-07-06/07's f4
+ranges 279 to 38307 (137×) within a single night. This is inconsistent
+with f2/f4 being a stable per-night summary statistic (like a fixed "total
+deep sleep minutes"); it's much more consistent with the existing
+2026-06-27 hypothesis that they're fast-changing instantaneous/momentary
+values (EWMA-like accumulators), which would need many within-night
+samples properly aggregated to relate to a night-level percentage — the
+current corpus doesn't have that density.
+
+### Conclusion
+
+**Structural byte-level hypotheses (offset, endianness, signed/unsigned,
+bitfield) are all ruled out by direct testing against real data — the
+confirmed u16 LE unsigned layout remains the best-supported reading.** The
+historical "impossible values" symptom is now fully explained as a
+different, already-fixed bug (open_ring's wrong field width), not an open
+problem. What f2/f4 physically represent, and specifically whether they
+encode anything usable for `deep_sleep%`, remains **unresolved — not a
+dead end, but genuinely data-starved**: the Gen4 cross-reference is
+underpowered (n=5) and the within-night variance suggests any real signal
+would require many more same-night samples than the corpus currently has
+to average out noise. Scaling-factor hypotheses beyond the width-misread
+explanation were not exhaustively tested. `pipeline/decoders/0x61_09.py`
+is not changed — it already correctly excludes f0/f2/f4/f5 pending
+resolution.
+
+**Status: 0x61/0x09 stays PARTIAL.** `deep_sleep%` extraction from this tag
+remains blocked — not by a decode bug, but by insufficient same-night
+Gen3+Gen4 paired samples to test candidate interpretations against ground
+truth.
+
+*Logged 2026-07-10.*

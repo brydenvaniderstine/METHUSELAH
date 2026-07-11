@@ -98,6 +98,18 @@ sub-types. This supersedes the earlier partial roadmap.
       CEILING: exact state machine enum needs firmware. Physical meaning of f0/f2/f4
       unconfirmed. Whether pfsm=5 is boundary state or parallel state unknown.
       STATUS: structure confirmed / pfsm context hypothesis new / meaning open.
+      F2/F4 HYPOTHESIS TEST (2026-07-10): systematically tested offset/endianness/
+      signed/bitfield hypotheses against 114 real records — all ruled out, confirmed
+      u16 LE unsigned layout stands. Also fully explained the 2026-06-24 "impossible
+      values" bug: it was open_ring's u32-width misread (ticks_in_sleep==f2 exactly
+      in 113/114 records; ticks_awake==f4+f5*65536 always) — already fixed by the
+      u16 layout, not a live issue. Gen4 deep_pct cross-reference (n=5 nights):
+      r=0.17 (f2) / r=0.44 (f4), not significant at this sample size — inconclusive,
+      not negative. Huge within-night f2/f4 variance (up to 137x) argues these are
+      fast-changing instantaneous values, not stable per-night summaries — would
+      need far more same-night samples to test properly. See known_issues.md
+      2026-07-10 for full writeup. deep_sleep% extraction remains blocked, but by
+      data scarcity, not a decode bug.
       Behaviorally-derived labels wired into pull script output (2026-07-07):
       pfsm=6→SLEEP_REGIME, pfsm=3/4→ACTIVE_REGIME, pfsm=5→TRANSITIONAL,
       pfsm=128→ECHO_RECORD. NOT firmware-confirmed.
