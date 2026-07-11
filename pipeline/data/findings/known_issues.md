@@ -3793,3 +3793,29 @@ change (8 new print sections in a 480-line script) — flagged for a
 decision, not done silently in this pass.
 
 *Logged 2026-07-11.*
+
+---
+
+## 2026-07-11 — 8 newly-decoded Tier 3 tags wired into the live pull script
+
+Follow-up to the Tier 2/3 sweep above. All 8 new decoders
+(`0x61/0x04/0x0A/0x0C/0x0D/0x15/0x28/0x29/0x33`) added as `elif` branches
+in `oura_gen3_morning_pull.py`'s existing `0x61` dispatch loop (same
+pattern as the pre-existing `0x09`/`0x14`/`0x24` branches — no new
+structure, just extending what was already there).
+
+Verified by simulating the exact dispatch logic (same parse + same
+if/elif chain, not the real script directly since there is no BLE hardware
+in this environment) against `gen3_pull_20260702_222915_MIXED.txt` — the
+richest debug-data pull in the corpus (76 records). **All 76 decoded
+across 10 sub-types (the 8 new ones plus the pre-existing 0x09/0x14),
+zero failures.** `python3 -m py_compile` also confirms the actual script
+file compiles cleanly.
+
+A future live pull will now print sleep stats, battery (both sources),
+flash usage, BLE usage, period info, finger detection, AFE stats, ACM
+config, and PPG chip identification all in the same `=== DEBUG DATA
+DECODE (0x61) ===` section — not just tag-name-and-hex in the saved file,
+actual decoded values on every pull from here on.
+
+*Logged 2026-07-11.*

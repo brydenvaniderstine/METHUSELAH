@@ -22,6 +22,14 @@ from decoders import (
     decode_motion_period,
     decode_real_step_feature_1,
     decode_real_step_feature_2,
+    decode_debug_data_alt_text,
+    decode_debug_data_flash_usage,
+    decode_debug_data_period_info,
+    decode_debug_data_ble_usage,
+    decode_debug_data_finger_detection,
+    decode_debug_data_afe_statistics,
+    decode_debug_data_acm_configuration,
+    decode_debug_data_ppg_settings,
 )
 
 ADDR        = "71E77907-1EE9-4949-801C-02979071309C"
@@ -376,7 +384,7 @@ async def main():
             5: "TRANSITIONAL", 6: "SLEEP_REGIME", 128: "ECHO_RECORD",
         }
 
-        print(f"\n=== DEBUG DATA DECODE (0x61) - sleep stats / battery ===")
+        print(f"\n=== DEBUG DATA DECODE (0x61) - sleep stats / battery / flash / BLE / ACM / AFE / PPG chip / finger detect / debug text ===")
         debug_found = False
         fuel_gauge_pct = None  # bridge accumulator
         for p in parsed:
@@ -412,6 +420,77 @@ async def main():
                               f"remaining_capacity={d['remaining_capacity']}")
                     except ValueError as e:
                         print(f"  boot_ts={p['boot_ts']:>10}  FUEL GAUGE DECODE FAIL: {e}")
+                elif sub == 0x04:
+                    debug_found = True
+                    try:
+                        d = decode_debug_data_alt_text(p["payload"])
+                        print(f"  boot_ts={p['boot_ts']:>10}  [DEBUG TEXT] \"{d['text']}\"")
+                    except ValueError as e:
+                        print(f"  boot_ts={p['boot_ts']:>10}  DEBUG TEXT DECODE FAIL: {e}")
+                elif sub == 0x0A:
+                    debug_found = True
+                    try:
+                        d = decode_debug_data_flash_usage(p["payload"])
+                        print(f"  boot_ts={p['boot_ts']:>10}  [FLASH USAGE] "
+                              f"read={d['ticks_reading_flash']}  write={d['ticks_writing_flash']}  "
+                              f"erase={d['ticks_erasing_flash']}")
+                    except ValueError as e:
+                        print(f"  boot_ts={p['boot_ts']:>10}  FLASH USAGE DECODE FAIL: {e}")
+                elif sub == 0x0C:
+                    debug_found = True
+                    try:
+                        d = decode_debug_data_period_info(p["payload"])
+                        print(f"  boot_ts={p['boot_ts']:>10}  [PERIOD INFO] "
+                              f"ticks_measuring={d['ticks_measuring_last_period']}  "
+                              f"systime_s={d['systime_spent_in_last_state_s']:.1f}  "
+                              f"pfsm_state={d['pfsm_state']}")
+                    except ValueError as e:
+                        print(f"  boot_ts={p['boot_ts']:>10}  PERIOD INFO DECODE FAIL: {e}")
+                elif sub == 0x0D:
+                    debug_found = True
+                    try:
+                        d = decode_debug_data_ble_usage(p["payload"])
+                        print(f"  boot_ts={p['boot_ts']:>10}  [BLE USAGE] "
+                              f"fast={d['ticks_fast_mode']}  slow={d['ticks_slow_mode']}  "
+                              f"advertising={d['ticks_advertising_mode']}")
+                    except ValueError as e:
+                        print(f"  boot_ts={p['boot_ts']:>10}  BLE USAGE DECODE FAIL: {e}")
+                elif sub == 0x15:
+                    debug_found = True
+                    try:
+                        d = decode_debug_data_finger_detection(p["payload"])
+                        print(f"  boot_ts={p['boot_ts']:>10}  [FINGER DETECTION] "
+                              f"raw_u64={d['detection_u64']}  (semantics unresolved)")
+                    except ValueError as e:
+                        print(f"  boot_ts={p['boot_ts']:>10}  FINGER DETECTION DECODE FAIL: {e}")
+                elif sub == 0x28:
+                    debug_found = True
+                    try:
+                        d = decode_debug_data_afe_statistics(p["payload"])
+                        print(f"  boot_ts={p['boot_ts']:>10}  [AFE STATS] "
+                              f"kind={d['record_kind']}  all_zero={d['all_stats_zero']}  "
+                              f"stats_hex={d['stats_hex']}")
+                    except ValueError as e:
+                        print(f"  boot_ts={p['boot_ts']:>10}  AFE STATS DECODE FAIL: {e}")
+                elif sub == 0x29:
+                    debug_found = True
+                    try:
+                        d = decode_debug_data_acm_configuration(p["payload"])
+                        print(f"  boot_ts={p['boot_ts']:>10}  [ACM CONFIG] "
+                              f"mode={d['accelerometer_mode']}  acc_odr={d['accelerometer_odr']}  "
+                              f"acc_range={d['accelerometer_range']}  gyro_odr={d['gyroscope_odr']}  "
+                              f"gyro_range={d['gyroscope_range']}")
+                    except ValueError as e:
+                        print(f"  boot_ts={p['boot_ts']:>10}  ACM CONFIG DECODE FAIL: {e}")
+                elif sub == 0x33:
+                    debug_found = True
+                    try:
+                        d = decode_debug_data_ppg_settings(p["payload"])
+                        print(f"  boot_ts={p['boot_ts']:>10}  [PPG SETTINGS] "
+                              f"chip={d['chip_variant_name']}  truncated={d['truncated']}  "
+                              f"settings_hex={d['settings_hex']}")
+                    except ValueError as e:
+                        print(f"  boot_ts={p['boot_ts']:>10}  PPG SETTINGS DECODE FAIL: {e}")
         if not debug_found:
             print("  No sleep-stats/battery debug records found in this pull.")
 
