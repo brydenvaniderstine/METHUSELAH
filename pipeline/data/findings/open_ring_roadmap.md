@@ -26,7 +26,7 @@ sub-types. This supersedes the earlier partial roadmap.
 3. Negative results (killed hypotheses) get logged, not discarded.
 4. One decoder at a time.
 
-## DONE — working, validated against real data (10)
+## DONE — working, validated against real data (16)
 - [x] 0x6A sleep_period_info_2 (sleep_state)
 - [x] 0x5D hrv_event (HRV/RMSSD) — ACTIVITY-ONLY. Fires during DHR session only (2026-07-07).
       Single corpus packet: HR 70-72 bpm (activity HR), co-occurs with step features and EHR boundary.
@@ -82,6 +82,27 @@ sub-types. This supersedes the earlier partial roadmap.
       in others by design (not a gap). quality_a=1 dominant (65%); qa=0/2/3
       semantics unresolved. NOT activity-only — fires in sleep, transitional,
       and active windows wherever the GREEN_IBI session is running.
+- [x] 0x61/0x04 _dd_alt_text — DONE 2026-07-11. Literal ASCII debug text (n=2:
+      "EHRts;47", "EHRts;45"). Decoder: `pipeline/decoders/0x61_04.py`.
+- [x] 0x61/0x0a _dd_flash_usage_statistics — DONE 2026-07-11, n=57. u32 LE trio
+      matches open_ring exactly. Fires as a fixed bundle with 0x61/0x0c/0x0d
+      immediately after every 0x61/0x09 event. Decoder: `pipeline/decoders/0x61_0a.py`.
+- [x] 0x61/0x0c _dd_period_info_statistics — DONE 2026-07-11, n=57. Strong
+      cross-tag validation: ticks_measuring_last_period matches 0x61/0x0d's
+      ticks_advertising_mode within single digits across all 57 samples;
+      pfsm_state field matches the already-confirmed 0x61/0x09 field exactly.
+      Decoder: `pipeline/decoders/0x61_0c.py`.
+- [x] 0x61/0x0d _dd_ble_usage_statistics — DONE 2026-07-11, n=57. See 0x61/0x0c
+      cross-validation. fast/slow mode ticks always 0 (idle/monitoring pulls
+      only, no active phone connection observed). Decoder: `pipeline/decoders/0x61_0d.py`.
+- [x] 0x61/0x29 _dd_acm_configuration_changed — DONE 2026-07-11, n=37. Clean
+      discrete accelerometer config states (mode/odr/range move together:
+      2/5/2, 3/7/2, 4/10/3). Gyro fields always 0 — gyro appears disabled.
+      Decoder: `pipeline/decoders/0x61_29.py`.
+- [x] 0x61/0x24 _dd_battery_level_changed — DONE, decoder already existed
+      and was correct; was mislabeled "never caught a real packet yet" in
+      the old Tier 3 list. Re-verified 2026-07-11 against all 10 corpus
+      packets, all physically plausible. See known_issues.md 2026-07-10/11.
 
 ## IN PROGRESS — real RE work started, not yet solved (3)
 - [ ] 0x61/0x09 _dd_sleep_statistics — 68 packets across corpus (updated 2026-07-07).
@@ -312,50 +333,61 @@ was previously listed here despite having active RE work, a pre-existing inconsi
       trailer:u16 (502/504 alternating). Low-cadence or condition-specific; not
       actionable without catching it in a future pull.
 
-## NOT STARTED — Tier 3, debug/diagnostic sub-types under 0x61 (24)
+## NOT STARTED — Tier 3, debug/diagnostic sub-types under 0x61 (19 confirmed zero-data + 2 PARTIAL)
 All dispatched via sub-byte at payload offset 0, tag 0x61 itself.
-- [ ] 0x61/0x04 _dd_alt_text — ASCII debug strings
-- [ ] 0x61/0x0A _dd_flash_usage_statistics — flash read/write/erase ticks
-- [ ] 0x61/0x0C _dd_period_info_statistics — period measurement timing
-- [ ] 0x61/0x0D _dd_ble_usage_statistics — BLE connection mode ticks
-- [ ] 0x61/0x0F _dd_security_failure — auth/security failure events
-- [ ] 0x61/0x15 _dd_finger_detection — wear/contact detection (raw u64 bits)
-- [ ] 0x61/0x1A _dd_event_sync_statistics — sync performance stats
-- [ ] 0x61/0x1B _dd_bootloader_debug_log — bootloader logs
-- [ ] 0x61/0x1E _dd_fuel_gauge_register_dump — raw battery chip registers
-- [ ] 0x61/0x1F _dd_ring_hw_information — hardware info dump
-- [ ] 0x61/0x20 _dd_charging_ended_statistics — charging session stats
-- [ ] 0x61/0x21 _dd_fuel_gauge_logging_registers — more battery registers
-- [ ] 0x61/0x23 _dd_event_sync_cache_statistics — cache vs flash read counts
-- [ ] 0x61/0x24 _dd_battery_level_changed — battery % + voltage + reason
-      code at moment of change (wired into script already, never caught
-      a real packet yet)
-- [ ] 0x61/0x25 _dd_hardware_test_start_values — hw self-test, phase 1/3
-- [ ] 0x61/0x26 _dd_hardware_test_result_values — hw self-test, phases 2-3
-      (stateful, 3-record sequence)
-- [ ] 0x61/0x27 _dd_charging_ended_statistics_continued — more charging stats
-- [ ] 0x61/0x28 _dd_afe_statistics_values — PPG sensor chip stats (stateful)
-- [ ] 0x61/0x29 _dd_acm_configuration_changed — accelerometer/gyro config
-- [ ] 0x61/0x2A _dd_field_test_information — field test data
-- [ ] 0x61/0x2B _dd_stack_usage_statistics — firmware stack usage (debug-only,
-      genuinely zero biometric value, include only for completeness)
-- [ ] 0x61/0x30 _dd_alt_periodic_counter — periodic heartbeat counter
-- [ ] 0x61/0x33 _dd_open_afe_ppg_settings_data — PPG chip variant + settings
-- [ ] 0x61/0x35 _dd_ppg_signal_quality_stats — SNR/signal quality, tells us
-      how trustworthy other readings are (genuinely valuable, multi-field
-      bit-packed structure, real RE effort needed)
-- [ ] 0x61/0x36 _dd_charger_information — charger link params, firmware/serial
-      via dock (stateful, multi-record)
-- [ ] 0x61/0x3B _dd_alt_afe_period_tick — AFE sample rate (25/50Hz)
-- [ ] 0x61/0x3C _dd_alt_ppg_cont — PPG continuation records
-- [ ] 0x61/0x3D _dd_charger_debug_information — charger debug info (stateful)
-- [ ] 0x61/0x3F _dd_daily_drop_sample — daily diagnostic sample
+
+SWEPT 2026-07-11: surveyed all sub-bytes against the full 29-file corpus
+before attempting any decode. 0x04/0x0A/0x0C/0x0D/0x24/0x29 had real data,
+decoded, and moved to DONE above. 0x28/0x33 had real data and are PARTIAL
+(below). 0x15 had real but too-sparse data (n=4), decoded raw only, stays
+here. The remaining 19 are CONFIRMED zero packets across all 29 files, not
+just unattempted — see known_issues.md 2026-07-11 for the full survey.
+
+- [~] 0x61/0x28 _dd_afe_statistics_values — PARTIAL, n=114 (largest sample
+      in the sweep). 104/114 records have non-zero stats bytes — richer
+      than open_ring's own reference capture. Real data exists to push
+      further than open_ring did; not attempted this pass. Good next
+      candidate. Decoder: `pipeline/decoders/0x61_28.py`.
+- [~] 0x61/0x33 _dd_open_afe_ppg_settings_data — PARTIAL, n=68. **Confirms
+      the Gen3 ring's PPG sensor chip is a MAX86171** (chip_variant=1 in
+      all 68 samples) — real hardware ID, not inferred. Settings bytes
+      beyond that are vendor register dumps, needs the MAX86171 datasheet
+      to decode further. Decoder: `pipeline/decoders/0x61_33.py`.
+- [ ] 0x61/0x15 _dd_finger_detection — checked 2026-07-11, n=4 (confirmed
+      real, too few to hypothesis-test). Raw u64, no bitfield guess
+      attempted. Decoder: `pipeline/decoders/0x61_15.py`.
+- [ ] 0x61/0x0F _dd_security_failure — CONFIRMED zero packets (2026-07-11 sweep).
+- [ ] 0x61/0x1A _dd_event_sync_statistics — CONFIRMED zero packets.
+- [ ] 0x61/0x1B _dd_bootloader_debug_log — CONFIRMED zero packets.
+- [ ] 0x61/0x1E _dd_fuel_gauge_register_dump — CONFIRMED zero packets.
+- [ ] 0x61/0x1F _dd_ring_hw_information — CONFIRMED zero packets.
+- [ ] 0x61/0x20 _dd_charging_ended_statistics — CONFIRMED zero packets (would
+      need a real charging/dock session capture, none in current corpus).
+- [ ] 0x61/0x21 _dd_fuel_gauge_logging_registers — CONFIRMED zero packets.
+- [ ] 0x61/0x23 _dd_event_sync_cache_statistics — CONFIRMED zero packets.
+- [ ] 0x61/0x25 _dd_hardware_test_start_values — CONFIRMED zero packets.
+- [ ] 0x61/0x26 _dd_hardware_test_result_values — CONFIRMED zero packets.
+- [ ] 0x61/0x27 _dd_charging_ended_statistics_continued — CONFIRMED zero packets.
+- [ ] 0x61/0x2A _dd_field_test_information — CONFIRMED zero packets.
+- [ ] 0x61/0x2B _dd_stack_usage_statistics — CONFIRMED zero packets (debug-only,
+      genuinely zero biometric value regardless).
+- [ ] 0x61/0x30 _dd_alt_periodic_counter — CONFIRMED zero packets.
+- [ ] 0x61/0x35 _dd_ppg_signal_quality_stats — CONFIRMED zero packets. Would be
+      genuinely valuable (SNR/signal quality, tells us how trustworthy other
+      readings are) if it ever fires — worth re-checking as the corpus grows.
+- [ ] 0x61/0x36 _dd_charger_information — CONFIRMED zero packets (needs a dock session).
+- [ ] 0x61/0x3B _dd_alt_afe_period_tick — CONFIRMED zero packets.
+- [ ] 0x61/0x3C _dd_alt_ppg_cont — CONFIRMED zero packets.
+- [ ] 0x61/0x3D _dd_charger_debug_information — CONFIRMED zero packets (needs a dock session).
+- [ ] 0x61/0x3F _dd_daily_drop_sample — CONFIRMED zero packets.
 
 ## Count check
-8 done + 6 in progress + 1 not-started-T1 + ~12 + 2 + 24 = **~55 decoder entries tracked**
-(Updated 2026-06-28: 0x80 promoted from NOT STARTED to IN PROGRESS. 0x6D added as new
-Tier 2 entry not previously on roadmap. 0x49/4C/4F confirmed Gen3 does not emit —
-can be deprioritized. 0x82/0x83 same. Count is approximate due to bundles.)
+16 done + 3 in progress + 2 Tier-3 PARTIAL + 1 not-started-T1 + ~12 Tier-2 + 2 unidentified
++ 19 Tier-3 confirmed-zero + 1 Tier-3 checked-too-sparse = **~56 decoder entries tracked**
+(Updated 2026-07-11: Tier 3 backlog swept — 9 sub-types had real data (6 promoted to
+DONE: 0x61/0x04/0x0A/0x0C/0x0D/0x24/0x29; 2 PARTIAL: 0x61/0x28/0x33; 1 checked-too-sparse:
+0x61/0x15). 19 Tier-3 sub-types confirmed zero packets across the full corpus, not just
+unattempted. See known_issues.md 2026-07-11. Count is approximate due to bundles.)
 
 ## Suggested next-session order (updated 2026-07-06)
 

@@ -3693,3 +3693,103 @@ should stay the top priority until a working browser session can complete
 the remaining steps, ideally before 2026-07-13.
 
 *Logged 2026-07-11.*
+
+---
+
+## 2026-07-11 — Tier 2/3 backlog sweep: survey first, then decode what has real data
+
+Goal: sweep the ~36 "NOT STARTED" Tier 2/3 tags for easy wins. First
+finding, before touching any decoder: **the framing of this backlog as
+"untouched" only holds for Tier 3.** Most Tier 2 entries (0x4A, 0x50, 0x5B,
+0x6C, 0x6D, 0x72, 0x73) already have substantial PARTIAL DECODE writeups
+from 2026-06-29/30, each already sitting at a documented ceiling (needs
+firmware, more Gen4 cross-validation, etc.) — they are not fresh ground.
+Tier 3 (the 24-29 debug sub-types under tag 0x61) genuinely was untouched:
+brief one-line open_ring descriptions only, no packet-count checks, no
+decode attempts.
+
+**Also found and corrected a stale roadmap claim**: 0x61/0x24
+(`_dd_battery_level_changed`) was listed as "never caught a real packet
+yet" — false. It was already decoded twice this week (the 2026-07-10
+battery-attribution correction). The decoder file already existed and was
+already correct; only the roadmap/docstring were stale.
+
+### Method: corpus-wide sub-byte survey before any decode attempt
+
+Scanned all 29 raw pull files for every `[Debug data]` (tag 0x61) packet,
+tallied by sub-byte (`payload[0]`). Of the ~29 Tier-3 candidates: **9 have
+real packets in the corpus, 19 have zero** (rare/stateful things like
+charging-session stats, hardware self-test, bootloader logs, security
+failures — plausible they simply never fire during routine sleep/activity
+pulls). This immediately separated genuine dead ends from worth-decoding
+candidates, same discipline as the earlier 0x76/0x5D sweeps.
+
+### Decoded and validated (9 sub-types, 406 total packets, zero decode failures)
+
+All cross-checked against open_ring's reference layout first
+(`~/Desktop/open_ring/driver/decoders.py`), then validated against real
+corpus data — one tag at a time, per the established discipline.
+
+- **0x61/0x04 `alt_text`** — DONE. Literal ASCII debug text. n=2:
+  `"EHRts;47"`, `"EHRts;45"` — an EHR/DHR session timestamp breadcrumb (see
+  0x6C's already-documented DHR_state debug strings, same pattern). No
+  ambiguity; it's just text.
+- **0x61/0x0a `flash_usage_statistics`**, **0x61/0x0c `period_info_statistics`**,
+  **0x61/0x0d `ble_usage_statistics`** — DONE, n=57 each. These three
+  **always fire as a fixed trio** (consecutive boot_ts, order
+  0x0a→0x0d→0x0c), immediately after every 0x61/0x09 sleep-statistics
+  event — the same "diagnostic snapshot bundle" pattern already documented
+  for 0x5B's BLE-connection trio. Layout matches open_ring's u32-LE fields
+  exactly (unlike 0x61/0x09, where the analogous u32 read was proven
+  wrong). **Strong cross-tag validation**: 0x0c's `ticks_measuring_last_period`
+  and 0x0d's `ticks_advertising_mode` agree within single digits across
+  all 57 samples (e.g. 8405455 vs 8405447) — two independently-decoded
+  fields from different tags in the same bundle, matching almost exactly.
+  0x0c's `pfsm_state` also matches the already-confirmed 0x09 field
+  exactly. This is enough independent agreement to call the u32 offsets
+  correct, not just plausible.
+- **0x61/0x24 `battery_level_changed`** — already existed/correct;
+  docstring refreshed with the reason-code pattern (0=standalone,
+  2=charging-start, 3=charging-continue) found during the 2026-07-10
+  battery correction, now cross-checked against all 10 corpus packets.
+- **0x61/0x29 `acm_configuration_changed`** — DONE, n=37. Clean discrete
+  accelerometer config states (mode/odr/range move together consistently:
+  mode=2→odr=5/range=2, mode=3→odr=7/range=2, mode=4→odr=10/range=3).
+  Gyroscope fields are 0 in every sample — gyro appears disabled across
+  all observed configs.
+- **0x61/0x33 `open_afe_ppg_settings_data`** — PARTIAL, n=68. Two length
+  variants (8/14 bytes) exactly matching open_ring's documented
+  truncation behavior. **Real hardware identification**: `chip_variant=1`
+  (MAX86171) in all 68 samples — the Gen3 ring's PPG sensor chip is
+  confirmed as a MAX86171. Settings bytes beyond that are vendor-specific
+  register dumps, surfaced raw only (would need the MAX86171 datasheet to
+  go further, not a behavioral-correlation problem).
+- **0x61/0x28 `afe_statistics_values`** — PARTIAL, n=114 (largest sample
+  in this sweep). 104/114 (91%) have non-zero stats bytes — notably richer
+  than open_ring's own reference capture ("all 2,710 records carry
+  zero-stats" in their test data). Real data exists here to push further
+  than open_ring did; not attempted this pass given the volume of tags
+  covered. Good next candidate.
+- **0x61/0x15 `finger_detection`** — RAW ONLY, n=4. Too few samples to
+  hypothesis-test bit structure; values look high-entropy, not a small
+  clean flag set. Surfaced as a raw u64, not guessed at.
+
+### What's still genuinely zero-data (confirmed, not just unattempted)
+
+0x0F, 0x1A, 0x1B, 0x1E, 0x1F, 0x20, 0x21, 0x23, 0x25, 0x26, 0x27, 0x2A,
+0x2B, 0x30, 0x35, 0x36, 0x3B, 0x3C, 0x3D, 0x3F — 19 sub-types (mostly
+charging/self-test/bootloader/stateful-multi-record things), zero packets
+across all 29 files. Not actionable without a real capture during those
+specific conditions (e.g. an actual charging or dock session, which none
+of the current pulls happen to be).
+
+### Not wired into the live pull script yet
+
+All 9 decoders exist and are registered in `pipeline/decoders/__init__.py`,
+verified against saved pull files, but `oura_gen3_morning_pull.py` doesn't
+yet print them during a live pull the way 0x76/0x6B/etc. do. This is a
+natural next step for "log everything as readable" but is a distinct
+change (8 new print sections in a 480-line script) — flagged for a
+decision, not done silently in this pass.
+
+*Logged 2026-07-11.*
