@@ -3374,3 +3374,54 @@ already-redefined track (Option A, 2026-07-07 owner decision) and is
 unaffected by this finding.
 
 *Logged 2026-07-10.*
+
+---
+
+## 2026-07-10 23:36 — Evening pull (gen3_pull_20260710_233656.txt) — ACTIVE WINDOW
+
+Verified directly against the raw pull before logging (real-data-only
+discipline). Four of five reported findings check out exactly; one needed a
+decoder-attribution correction, one a small precision fix.
+
+**Classification:** ACTIVE WINDOW — confirmed (bridge JSON classifier
+matches; zero 0x6A, zero sleep-tag events in the file).
+
+**0x5D HRV:** zero events — confirmed. Consistent with, but not a new
+positive instance of, 0x5D firing in activity context (2026-07-07 finding).
+Not every active window is expected to trigger it; this one didn't. Track B
+condition #2 stays at 1/3, no change.
+
+**Battery — CORRECTED ATTRIBUTION.** The claimed 86.4% → 93% rise
+(boot_ts 61892597–61902374) is real, but comes from the **0x61/0x24
+`battery_level_changed`** decoder, not 0x61/0x14 `fuel_gauge` as reported.
+Fuel gauge in this same pull shows a flat/slightly declining trend instead
+(86.35% → 86.25% → 86.25%, boot_ts 61892597–61899252 — the cited start
+boot_ts is actually fuel gauge's first sample, not battery_level's).
+`decode_debug_data_battery_level` gives the real climb: 86%→87%→88%→90%→93%
+across boot_ts 61899249→61902374 (exact match to the claimed end), with
+voltage rising 4054→4191mV alongside it and an undocumented `reason` field
+changing from 2 to 3 partway through (no known enum for this field — not
+guessing at a meaning). **Conclusion unchanged and correctly supported**:
+ring is charging, the 2026-07-10 AM 58.5% reading is stale, no action
+needed — just sourced from the wrong of the two independent battery
+decoders this pull happens to have both fire.
+
+**0x61/0x09 pfsm_state negative control:** confirmed exactly. pfsm ∈ {3, 5,
+128} (128 = echo/companion, per the established pattern), zero pfsm=6, zero
+0x6A — correct behavior for an active window, no false SLEEP_REGIME reads.
+Corroborates pfsm_state reliability; does not touch the f2/f4 blocker.
+
+**0x7E/0x7F step features:** 23 paired records confirmed exactly. `b9`
+(0x7E) range 0–248 matches exactly. `b10` (0x7F) range: actual 135–208, not
+130–208 as reported — minor (5-unit) discrepancy on the low end, not
+treated as a real error. This is the **second independent activity dataset
+with 0x7E/0x7F data** in the corpus (after the single 2026-07-07 walk) —
+first real opportunity to cross-reference two sessions instead of relying
+on one. Not analyzed against pace-sensitivity here; flagged as a next-step
+opportunity, distinct from and not a substitute for the still-needed third
+*walk* experiment (this was general activity, not a controlled walk).
+
+**No RHR/SpO2/deep sleep** — confirmed, expected for an active-window
+classification (0x6A/0x6F/0x6E all correctly absent).
+
+*Logged 2026-07-10.*
