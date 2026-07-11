@@ -3819,3 +3819,85 @@ DECODE (0x61) ===` section — not just tag-name-and-hex in the saved file,
 actual decoded values on every pull from here on.
 
 *Logged 2026-07-11.*
+
+---
+
+## 2026-07-11 — CRITICAL: Gen3 fallback does NOT work on the live deployment — architectural conflict, needs a decision before 2026-07-13
+
+Ran the full `SOURCE_SELECTOR_TEST.md` procedure against the actual live
+site (Chrome extension finally connected — see also today's "Priority
+pivot" entry). Real, browser-rendered, end-to-end result, not a curl
+proxy:
+
+1. **Gen4 read: CONFIRMED working.** Site loaded with a real token already
+   in localStorage from prior real use; tiles correctly showed `● OURA
+   LIVE`, real matching data (HRV 28ms, RHR 54bpm — same values verified
+   via curl the day before against `gen3_vs_gen4_comparison.csv` ground
+   truth).
+2. **`localStorage.removeItem("oura_token"); location.reload()`: Gen3
+   fallback FAILS.** CARDIAC LOAD showed `AWAITING DATA`, not `● GEN3
+   BLE`. This is the opposite of the expected/previously-verified-locally
+   behavior.
+3. **Root cause confirmed**: `curl https://www.methuselah.ca/gen3_latest.json`
+   returns `content-disposition: inline; filename="index.html"` — the
+   Vercel SPA fallback, not real JSON. **`web/public/gen3_latest.json`
+   has never actually been deployed to production.** `App.js`'s fetch
+   (`web/src/App.js:445-454`, unconditional on page mount, previously
+   flagged in this same investigation thread as bypassing the lock
+   screen) correctly tries, gets HTML back, `res.json()` fails, the
+   `.catch(() => null)` swallows it, `gen3Bridge` stays `null` — the code
+   is behaving exactly as written, there's just nothing there.
+4. **Restored the token, reloaded: Gen4 reconnection CONFIRMED working**
+   — tiles correctly returned to `● OURA LIVE` with the same real values.
+
+### Why the file was never deployed — a real architectural conflict, not an oversight
+
+`pipeline/data/bridge/gen3_latest.json` (the source the local `prebuild`/
+`prestart` scripts copy from) is deliberately `.gitignore`d — raw
+biometric data, kept off git for the "data sovereignty... raw data never
+leaves the device" principle stated in `ARCHITECTURE.md`. Vercel only
+builds from what's in git, so on Vercel the copy step silently no-ops
+(`2>/dev/null || true`) and no file ever lands in the deployed
+`web/public/`. This was flagged as a latent risk during the 2026-07-11
+security-priority discussion (unconditional fetch bypassing the lock
+screen) — that discussion focused on the *exposure* angle; this test
+reveals the flip side: **the same gap that prevents exposure also
+prevents the fallback from ever having data to serve.**
+
+### This directly threatens the actual point of the whole source-selector project
+
+The entire purpose of `engine/sources.js` is Gen3 taking over when Gen4
+goes away on 2026-07-13. The selector logic itself is correct and fully
+verified (locally and now server-side on the live deployment). But
+without a real `gen3_latest.json` reaching production, **RHR and SpO2
+will go to `AWAITING DATA` after the 13th, not fall back to Gen3** — the
+graceful-degradation design works exactly as built, there is simply no
+data behind it in production.
+
+### Not fixed — this needs a decision, not a unilateral code change
+
+Real trade-off, not a bug with one obvious fix:
+
+- **Commit the live bridge snapshot to the public repo** — makes the
+  fallback work, but means real biometric data (RHR, SpO2, sleep temp,
+  battery %) starts landing in git/GitHub, which is exactly what was
+  deliberately avoided when this same file was kept out of the 2026-07-08
+  commit that built the source selector in the first place.
+- **Serve it from somewhere other than a committed static file** — e.g. a
+  small serverless endpoint backed by a private store (Vercel KV/Blob,
+  etc.), updated by the pull script instead of git. Preserves data
+  sovereignty (never in the public repo) while still being servable to
+  the live site. Real engineering work, not a quick fix, and not
+  something to start without sign-off given the time pressure.
+- **Accept the gap and rely on methuselah.ca showing `AWAITING DATA`
+  after the 13th** — the app would still function and give an honest
+  status (this is exactly the `AWAITING TELEMETRY` design behaving
+  correctly if it also loses HRV/deep sleep at the same time it loses
+  RHR/SpO2), just without the primary benefit the last several sessions
+  of work were building toward.
+
+Whichever path, this is more urgent than everything else on the
+next-session list given the 2-day window. Flagged, not decided or built
+by this session.
+
+*Logged 2026-07-11.*
