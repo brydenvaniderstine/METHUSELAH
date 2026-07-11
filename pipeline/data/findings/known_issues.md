@@ -3613,3 +3613,83 @@ SpO2 (0x6F) both produced clean data this pull; HRV/deep-sleep remain
 AWAITING DATA either way, unaffected by this finding.
 
 *Logged 2026-07-11.*
+
+---
+
+## 2026-07-11 — Live-site Gen4 verification — server-side CLOSED, client-side (browser) still BLOCKED
+
+**This gap is NOT fully closed.** Per the explicit instruction to only mark
+it closed if the live-site test passes end-to-end (Gen4 read → Gen3
+fallback → Gen4 restore, browser-rendered), it is not — the browser-level
+portion could not be tested. What follows is real progress on the half
+that could be tested without a browser, reported honestly as partial.
+
+**Browser testing blocked, not skipped:** Chrome extension unreachable —
+`tabs_context_mcp` failed and `list_connected_browsers` returned empty on
+4 separate attempts this session (8 total across 2026-07-10 and
+2026-07-11). This is no longer plausibly "transient"; something about the
+extension connection itself needs attention, separate from this task.
+
+**What was verified instead — direct HTTP testing of the live Vercel
+`/api/oura` function, no browser required:**
+
+1. `curl https://methuselah.ca/api/oura?token=<real token>&start_date=2026-07-10&end_date=2026-07-11`
+   → 308 redirect to `www.methuselah.ca` (standard domain canonicalization,
+   not an auth issue) → final response **HTTP 200**, `x-vercel-cache: MISS`
+   (confirms freshly computed, not cached/stale/mock). Real Oura sleep data
+   returned for the night of 2026-07-10: `lowest_heart_rate: 54`,
+   `average_heart_rate: 59.375`, `average_hrv: 28`, `efficiency: 85`,
+   `deep_sleep_duration: 5880`, full HR/HRV time series, readiness score 81.
+
+2. **Cross-checked against ground truth already on record**: this exact
+   night's row in `gen3_vs_gen4_comparison.csv` (logged 2026-07-10, before
+   this test, independently) has `gen4_hr_lowest: 54`, `gen4_hr_avg: 59`,
+   `gen4_hrv_avg: 28` — **exact match** on all three (59.375 rounds to the
+   59 already on record). This is strong evidence the live deployment is
+   genuinely round-tripping to Oura's real API with the current token, not
+   serving cached or mocked data.
+
+3. **Expired/invalid token simulated directly** (step 6): sent an
+   intentionally malformed token to the same live endpoint. Result: **HTTP
+   401**, body `{"error":"Oura API error: 401"}` — `api/oura.js` correctly
+   propagates Oura's own auth rejection (`if (!response.ok) return
+   res.status(response.status).json({...})`, confirmed by re-reading the
+   file directly). This is exactly the response the live token will start
+   producing after it expires 2026-07-13.
+
+4. **Re-verified `App.js`'s client-side handling of that 401** by reading
+   `fetchOuraData()` directly (not executed, since no browser): `if
+   (!res.ok) throw new Error(...)` is caught, logs "OURA BRIDGE FAILED //
+   CHECK TOKEN", and returns without calling `setOuraData()` — meaning
+   `ouraData.isLive`/`timestamp` are left exactly as they were before the
+   failed fetch. Combined with `engine/sources.js`'s 24-hour freshness
+   window, this means: once 24h pass since the last *successful* fetch
+   (which will happen naturally after the token expires and every
+   subsequent fetch 401s), `gen4Fresh` becomes null regardless of fetch
+   attempts, and the selector will correctly fall back to Gen3 for RHR —
+   this is the same mechanism already verified locally on 2026-07-08/2026-07-10,
+   now additionally confirmed to trigger correctly off a real 401, not just
+   an absent token.
+
+**What is still genuinely unverified and requires a browser:**
+- Whether the deployed React app's tiles actually render `● GEN3 BLE` /
+  `AWAITING DATA` correctly on methuselah.ca specifically (as opposed to
+  local dev, already confirmed).
+- The full token-removal → reload → GEN3 fallback → token-restore →
+  reload → OURA LIVE cycle, rendered in an actual browser against the live
+  site.
+- Whether `localStorage` behaves as expected on the real deployed origin
+  (cookies/storage partitioning, service workers, or CDN caching could
+  theoretically differ from local dev, though nothing in the codebase
+  suggests this).
+
+**Did not modify** `api/oura.js`, `engine/sources.js`, or `App.js` — no
+failure was found in the parts that could be tested; nothing to fix.
+
+**Status: server-side Gen4 path CONFIRMED working correctly on the live
+deployment, including the post-expiry 401 case. Client-side/browser
+verification remains BLOCKED by tooling, not by any test failure.** This
+should stay the top priority until a working browser session can complete
+the remaining steps, ideally before 2026-07-13.
+
+*Logged 2026-07-11.*
