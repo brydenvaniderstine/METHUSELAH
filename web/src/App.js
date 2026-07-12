@@ -443,7 +443,11 @@ export default function MethuselahFinal() {
   }, []);
 
   useEffect(() => {
-    fetch('/gen3_latest.json')
+    // Was a static /gen3_latest.json file — never actually reached production
+    // because its source is gitignored (data sovereignty) and the local
+    // prebuild copy step silently no-ops on Vercel. Now backed by a private
+    // KV store via api/gen3-bridge.js instead of a committed file.
+    fetch('/api/gen3-bridge')
       .then(res => res.ok ? res.json() : null)
       .catch(() => null)
       .then(data => {

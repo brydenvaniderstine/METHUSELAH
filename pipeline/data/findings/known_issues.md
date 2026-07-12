@@ -3901,3 +3901,70 @@ next-session list given the 2-day window. Flagged, not decided or built
 by this session.
 
 *Logged 2026-07-11.*
+
+---
+
+## 2026-07-11 — Option 2 implemented: Gen3 bridge now served via private KV, not a committed file
+
+Owner decision: Option 2 (private store), not Option 1 (committing real
+biometric data — RHR, SpO2, sleep temp, battery% — was ruled out harder
+than originally framed once the repo's visibility was checked: **the repo
+is public** (`private: false` via the GitHub API), so Option 1 would have
+meant permanently publishing real health data to the open internet, not
+just "against a stated principle").
+
+**Built, not yet live** — needs one manual step before it works:
+
+1. `api/gen3-bridge.js` (new) — GET/POST route, same zero-dependency
+   `fetch`-based style as the existing `api/oura.js`. Reads/writes a
+   Vercel KV store via its Upstash-compatible REST API rather than adding
+   an SDK dependency — sidesteps a real uncertainty found while checking
+   this: `vercel.json`'s `installCommand` only runs `npm install` inside
+   `web/`, not root, so a new root-level npm package might not even
+   install for an `/api/*.js` function on this project's build config.
+   GET is unauthenticated (matches the exposure level of the static file
+   it replaces — this was already flagged as bypassing the lock screen,
+   unchanged by this fix, a separate decision). POST requires a
+   `X-Write-Secret` header matching `GEN3_BRIDGE_WRITE_SECRET`, so only
+   the pull script can write.
+2. `pipeline/tools/oura_gen3_morning_pull.py` — after writing the local
+   `pipeline/data/bridge/gen3_latest.json` (still gitignored, unchanged,
+   still the local dev source), best-effort POSTs the same payload to
+   `https://www.methuselah.ca/api/gen3-bridge`. Never fails the pull over
+   a push error — skips cleanly with a clear message if
+   `GEN3_BRIDGE_WRITE_SECRET` isn't set in the environment.
+3. `web/src/App.js` — the bridge fetch now points at `/api/gen3-bridge`
+   instead of the static `/gen3_latest.json`.
+
+**Verified what could be verified without live infrastructure:**
+`python3 -m py_compile` and `node --check` both clean; `npm run build`
+compiles `App.js`'s change with no errors. Mocked `fetch` and `req`/`res`
+to exercise all 8 real code paths in `api/gen3-bridge.js` directly (no
+KV env vars / KV has data / KV empty / POST no secret / POST wrong secret
+/ POST bad payload shape / POST success / unsupported method) — all 8
+returned the correct status code and body.
+
+**NOT verified — cannot be, until the store exists**: the actual Upstash
+REST API wire format (`GET {url}/get/{key}` → `{result: <string>}`,
+`POST {url}/set/{key}` with the value as the raw body) is written from
+documented behavior, not confirmed against a live instance. Smoke-test
+both directions for real once provisioned.
+
+**Manual step still needed (Vercel dashboard, not doable from this
+session):**
+1. Create a KV store (or equivalent Vercel-Marketplace database with an
+   Upstash-compatible REST API) and link it to the `methuselah` project —
+   this auto-injects `KV_REST_API_URL`/`KV_REST_API_TOKEN`.
+2. Set a `GEN3_BRIDGE_WRITE_SECRET` value in the Vercel project's
+   environment variables (any random string).
+3. Set the same `GEN3_BRIDGE_WRITE_SECRET` value wherever
+   `oura_gen3_morning_pull.py` actually runs (shell env var or local
+   `.env`, now excluded from git per the 2026-07-10 `.gitignore` update —
+   never hardcode it into the script).
+
+**Safe to deploy before that manual step is done** — `App.js`'s fetch is
+already wrapped in `.catch(() => null)`, so a 500 from the unconfigured
+endpoint degrades to `gen3Bridge` staying `null`, identical to the
+current broken state. No regression risk from shipping this now.
+
+*Logged 2026-07-11.*

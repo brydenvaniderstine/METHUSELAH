@@ -557,4 +557,27 @@ async def main():
 
         print(f"[BRIDGE] Written → {bridge_path}")
 
+        # ── PUSH TO LIVE SITE — the local file above never reaches production ──
+        # (pipeline/data/bridge/ is gitignored for data sovereignty; Vercel only
+        # builds from git). This is what actually feeds methuselah.ca now — see
+        # api/gen3-bridge.js. Best-effort: never fail the pull over a push error.
+        write_secret = _os.environ.get("GEN3_BRIDGE_WRITE_SECRET")
+        if not write_secret:
+            print("[BRIDGE PUSH] Skipped — GEN3_BRIDGE_WRITE_SECRET not set in this environment.")
+        else:
+            try:
+                import urllib.request, urllib.error
+                req = urllib.request.Request(
+                    "https://www.methuselah.ca/api/gen3-bridge",
+                    data=json.dumps(bridge_data).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "X-Write-Secret": write_secret},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    print(f"[BRIDGE PUSH] {resp.status} → live site updated.")
+            except urllib.error.HTTPError as e:
+                print(f"[BRIDGE PUSH] FAILED — HTTP {e.code}: {e.read().decode(errors='replace')}")
+            except Exception as e:
+                print(f"[BRIDGE PUSH] FAILED — {e}")
+
 asyncio.run(main())
