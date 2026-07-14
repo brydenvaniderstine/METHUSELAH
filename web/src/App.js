@@ -313,7 +313,7 @@ export default function MethuselahFinal() {
           setOuraStatus("OURA_LIVE");
           addLog(`OURA INTERCEPT: ${hrv} MS HRV // LAST NIGHT`, "roche");
           if (rhr !== null) addLog(`CARDIAC INTERCEPT: ${rhr} BPM // LAST NIGHT`, "roche");
-          if (totalSleepHrs !== null) addLog(`SLEEP LOAD: ${totalSleepHrs.toFixed(1)}H // LAST NIGHT`, "roche");
+          if (totalSleepHrs !== null) addLog(`SLEEP DEBT: ${totalSleepHrs.toFixed(1)}H // LAST NIGHT`, "roche");
 
           // HRV 7-day rolling average
           const hrvHistory = JSON.parse(localStorage.getItem("hrvHistory") || "[]");
@@ -332,7 +332,7 @@ export default function MethuselahFinal() {
             localStorage.setItem("sleepDurationHistory", JSON.stringify(newSleepHistory));
             const avgSleep = newSleepHistory.reduce((a, b) => a + b, 0) / newSleepHistory.length;
             const trendSleep = prevSleep === null ? "STABLE" : totalSleepHrs > prevSleep ? "TRENDING UP" : totalSleepHrs < prevSleep ? "TRENDING DOWN" : "STABLE";
-            addLog(`SLEEP LOAD 7-DAY AVG: ${avgSleep.toFixed(1)}H // ${trendSleep}`, "roche");
+            addLog(`SLEEP DEBT 7-DAY AVG: ${avgSleep.toFixed(1)}H // ${trendSleep}`, "roche");
           }
 
           const briFetch = calculateBRI({ glucose: null, hrv, rhr, sleepDurationHrs: totalSleepHrs, glucosePending: true });
@@ -600,7 +600,7 @@ onBLERead={readBLEGlucose}
               source={logic.vectors.rhr.source}
             />
             <Metric
-              label="SLEEP LOAD"
+              label="SLEEP DEBT"
               val={sleepDurationHrs !== null ? sleepDurationHrs.toFixed(1) : "--"}
               unit="HRS"
               pct={sleepPct}

@@ -35,7 +35,7 @@ export const COMMANDS = {
   sleepDuration: {
     name:    "SLEEP PROTOCOL",
     cmd:     "INITIATE SLEEP PROTOCOL TONIGHT.",
-    rat:     (value) => `SLEEP LOAD DEFICIENT (${value.toFixed(1)}H LAST NIGHT).`,
+    rat:     (value) => `SLEEP DEBT DEFICIENT (${value.toFixed(1)}H LAST NIGHT).`,
     color:   "var(--text-main)",
     border:  "var(--accent-amber)",
     level:   "warn",
