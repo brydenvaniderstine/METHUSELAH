@@ -82,8 +82,9 @@ body::before {
 .tel-unit { font-size: 10px; color: var(--text-dim); }
 .tel-bar-wrap { height: 2px; background: var(--line); margin: 8px 0; }
 .tel-bar { height: 100%; transition: width 1s ease, background 0.5s; }
-.tel-status { font-size: 9px; font-weight: 700; letter-spacing: 1px; }
-.tel-source { font-size: 8px; color: var(--accent-blue); letter-spacing: 1px; margin-top: 4px; }
+.tel-meta { font-size: 8px; color: var(--text-dim); letter-spacing: 0.2px; margin: 3px 0 2px; line-height: 1.4; }
+.tel-source { font-size: 8px; color: var(--accent-blue); letter-spacing: 1px; margin-top: 2px; }
+.tel-stale { opacity: 0.65; }
 .tel-tap-hint { font-size: 8px; color: var(--text-dim); letter-spacing: 1px; margin-top: 4px; }
 
 @keyframes glucosePulse {
@@ -193,38 +194,68 @@ body::before {
 `;
 
 const MASTER_KEY = "v1";
+const STALE_HRS = 12;
 
-function Metric({ label, val, unit, pct, color, status, source }) {
+function formatAge(iso) {
+  if (!iso) return null;
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 60) return `${mins}min old`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h old`;
+  return `${Math.floor(hrs / 24)}d old`;
+}
+
+function isStale(iso) {
+  if (!iso) return false;
+  return Date.now() - new Date(iso).getTime() > STALE_HRS * 3600000;
+}
+
+function getTrend(history) {
+  if (!history || history.length < 2) return null;
+  const cur = history[history.length - 1];
+  const prev = history[history.length - 2];
+  if (prev === 0) return null;
+  const delta = (cur - prev) / Math.abs(prev);
+  if (delta > 0.05) return "trending up";
+  if (delta < -0.05) return "trending down";
+  return "stable";
+}
+
+function avgOf(history) {
+  if (!history || history.length === 0) return null;
+  return history.reduce((a, b) => a + b, 0) / history.length;
+}
+
+// Metric — 3-line tile: label / value + context / source + age
+// meta: pre-formatted "(optimal X · 7d avg Y · trend)" string
+// stale: dims tile + shifts source line to amber
+function Metric({ label, val, unit, color, meta, age, stale, source }) {
+  const sourceLabel = source === SOURCE_GEN4 ? "OURA LIVE" : source === SOURCE_GEN3 ? "GEN3 BLE" : null;
+  const sourceColor = stale ? "var(--accent-amber)" : source === SOURCE_GEN3 ? "cyan" : "var(--accent-blue)";
   return (
-    <div className="tel-block">
+    <div className={`tel-block${stale ? " tel-stale" : ""}`}>
       <div className="tel-label">{label}</div>
       <div className="tel-value" style={{ color }}>
         {val} <span className="tel-unit">{unit}</span>
       </div>
-      <div className="tel-bar-wrap">
-        <div className="tel-bar" style={{ width: `${Math.max(val === '--' ? 0 : 5, Math.min(100, pct))}%`, background: color }} />
-      </div>
-      <div className="tel-status" style={{ color }}>{status}</div>
-      {source === SOURCE_GEN4 && <div className="tel-source">● OURA LIVE</div>}
-      {source === SOURCE_GEN3 && <div className="tel-source" style={{ color: "cyan" }}>● GEN3 BLE</div>}
+      {meta && <div className="tel-meta">({meta})</div>}
+      {sourceLabel
+        ? <div className="tel-source" style={{ color: sourceColor }}>● {sourceLabel} · {age || "?"}{stale ? "  [flag: stale]" : ""}</div>
+        : <div className="tel-source" style={{ color: "var(--text-dim)" }}>AWAITING DATA</div>
+      }
     </div>
   );
 }
 
-function GlucosePanel({ reading, entryOpen, inputVal, onTap, onBLERead, onInputChange, onKeyDown, onSubmit }) {
+function GlucosePanel({ reading, entryOpen, inputVal, meta, age, stale, onTap, onBLERead, onInputChange, onKeyDown, onSubmit }) {
   const hasReading = reading !== null;
   const isElevated = hasReading && reading > THRESHOLDS.glucose;
-  const color = !hasReading
-    ? "var(--accent-amber)"
-    : isElevated
-    ? "var(--accent-red)"
-    : "var(--accent-green)";
-  const status = !hasReading ? "AWAITING INTERCEPT" : isElevated ? "ELEVATED" : "STABLE";
-  const pct = hasReading ? ((reading - 3.5) / (14 - 3.5)) * 100 : 0;
+  const color = !hasReading ? "var(--accent-amber)" : isElevated ? "var(--accent-red)" : "var(--accent-green)";
+  const sourceColor = stale ? "var(--accent-amber)" : "var(--accent-blue)";
 
   return (
     <div
-      className={`tel-block${!hasReading ? " glucose-pulse" : ""}`}
+      className={`tel-block${!hasReading ? " glucose-pulse" : ""}${stale ? " tel-stale" : ""}`}
       onClick={!entryOpen ? onTap : undefined}
       style={{ cursor: entryOpen ? "default" : "pointer" }}
     >
@@ -252,12 +283,16 @@ function GlucosePanel({ reading, entryOpen, inputVal, onTap, onBLERead, onInputC
           <div className="tel-value" style={{ color }}>
             {hasReading ? reading.toFixed(1) : "--"} <span className="tel-unit">mmol/L</span>
           </div>
-          <div className="tel-bar-wrap">
-            <div className="tel-bar" style={{ width: `${Math.max(hasReading ? 5 : 0, Math.min(100, pct))}%`, background: color }} />
-          </div>
-          <div className="tel-status" style={{ color }}>{status}</div>
-          {!hasReading && <div className="tel-tap-hint">TAP TO ENTER READING</div>}
-<div onClick={onBLERead} style={{ fontSize: "8px", color: "var(--accent-blue)", letterSpacing: "1px", marginTop: "4px", cursor: "pointer" }}>● BLE AUTO-READ</div>
+          {hasReading && meta && <div className="tel-meta">({meta})</div>}
+          {hasReading && age
+            ? <div className="tel-source" style={{ color: sourceColor }}>● MANUAL · {age}{stale ? "  [flag: stale]" : ""}</div>
+            : !hasReading && (
+              <>
+                <div className="tel-tap-hint">TAP TO ENTER READING</div>
+                <div onClick={onBLERead} style={{ fontSize: "8px", color: "var(--accent-blue)", letterSpacing: "1px", marginTop: "4px", cursor: "pointer" }}>● BLE AUTO-READ</div>
+              </>
+            )
+          }
         </>
       )}
     </div>
@@ -279,6 +314,11 @@ export default function MethuselahFinal() {
   const [clock,           setClock]           = useState(ts());
   const [ouraData,        setOuraData]        = useState({ hrv: null, rhr: null, totalSleepHrs: null, isLive: false, timestamp: null });
   const [glucoseReading,  setGlucoseReading]  = useState(null);
+  const [glucoseTimestamp, setGlucoseTimestamp] = useState(() => localStorage.getItem("glucoseTimestamp") || null);
+  const [hrvHist,   setHrvHist]   = useState(() => JSON.parse(localStorage.getItem("hrvHistory") || "[]"));
+  const [rhrHist,   setRhrHist]   = useState(() => JSON.parse(localStorage.getItem("rhrHistory") || "[]"));
+  const [sleepHist, setSleepHist] = useState(() => JSON.parse(localStorage.getItem("sleepDurationHistory") || "[]"));
+  const [glucHist,  setGlucHist]  = useState(() => JSON.parse(localStorage.getItem("glucoseHistory") || "[]"));
   const [glucoseEntryOpen, setGlucoseEntryOpen] = useState(false);
   const [glucoseInput,    setGlucoseInput]    = useState("");
   const [execState,       setExecState]       = useState("idle");
@@ -316,23 +356,28 @@ export default function MethuselahFinal() {
           if (totalSleepHrs !== null) addLog(`SLEEP DEBT: ${totalSleepHrs.toFixed(1)}H // LAST NIGHT`, "roche");
 
           // HRV 7-day rolling average
-          const hrvHistory = JSON.parse(localStorage.getItem("hrvHistory") || "[]");
-          const prevHrv = hrvHistory.length > 0 ? hrvHistory[hrvHistory.length - 1] : null;
-          const newHrvHistory = [...hrvHistory, hrv].slice(-7);
+          const newHrvHistory = [...hrvHist, hrv].slice(-7);
+          setHrvHist(newHrvHistory);
           localStorage.setItem("hrvHistory", JSON.stringify(newHrvHistory));
           const avgHrv = newHrvHistory.reduce((a, b) => a + b, 0) / newHrvHistory.length;
-          const trendHrv = prevHrv === null ? "STABLE" : hrv > prevHrv ? "TRENDING UP" : hrv < prevHrv ? "TRENDING DOWN" : "STABLE";
-          addLog(`HRV 7-DAY AVG: ${Math.round(avgHrv)} MS // ${trendHrv}`, "roche");
+          const trendHrv = getTrend(newHrvHistory);
+          addLog(`HRV 7-DAY AVG: ${Math.round(avgHrv)} MS // ${trendHrv || "STABLE"}`, "roche");
+
+          // RHR 7-day rolling average
+          if (rhr !== null) {
+            const newRhrHistory = [...rhrHist, rhr].slice(-7);
+            setRhrHist(newRhrHistory);
+            localStorage.setItem("rhrHistory", JSON.stringify(newRhrHistory));
+          }
 
           // Sleep duration 7-day rolling average
           if (totalSleepHrs !== null) {
-            const sleepHistory = JSON.parse(localStorage.getItem("sleepDurationHistory") || "[]");
-            const prevSleep = sleepHistory.length > 0 ? sleepHistory[sleepHistory.length - 1] : null;
-            const newSleepHistory = [...sleepHistory, totalSleepHrs].slice(-7);
+            const newSleepHistory = [...sleepHist, totalSleepHrs].slice(-7);
+            setSleepHist(newSleepHistory);
             localStorage.setItem("sleepDurationHistory", JSON.stringify(newSleepHistory));
             const avgSleep = newSleepHistory.reduce((a, b) => a + b, 0) / newSleepHistory.length;
-            const trendSleep = prevSleep === null ? "STABLE" : totalSleepHrs > prevSleep ? "TRENDING UP" : totalSleepHrs < prevSleep ? "TRENDING DOWN" : "STABLE";
-            addLog(`SLEEP DEBT 7-DAY AVG: ${avgSleep.toFixed(1)}H // ${trendSleep}`, "roche");
+            const trendSleep = getTrend(newSleepHistory);
+            addLog(`SLEEP DEBT 7-DAY AVG: ${avgSleep.toFixed(1)}H // ${trendSleep || "STABLE"}`, "roche");
           }
 
           const briFetch = calculateBRI({ glucose: null, hrv, rhr, sleepDurationHrs: totalSleepHrs, glucosePending: true });
@@ -404,8 +449,14 @@ export default function MethuselahFinal() {
       if (!isNaN(glucose) && glucose > 0.5 && glucose < 30) {
         setGlucoseReading(glucose);
         const today = new Date().toLocaleDateString("en-CA");
+        const nowIso = new Date().toISOString();
         localStorage.setItem("glucoseReading", glucose.toString());
         localStorage.setItem("glucoseDate", today);
+        localStorage.setItem("glucoseTimestamp", nowIso);
+        setGlucoseTimestamp(nowIso);
+        const newGlucHist = [...glucHist, glucose].slice(-7);
+        setGlucHist(newGlucHist);
+        localStorage.setItem("glucoseHistory", JSON.stringify(newGlucHist));
         setGlucoseEntryOpen(false);
         setGlucoseInput("");
         addLog("BLE INTERCEPT: " + glucose.toFixed(1) + " MMOL/L // AUTO-LOGGED", "roche");
@@ -425,8 +476,14 @@ export default function MethuselahFinal() {
     if (isNaN(val) || val < 1 || val > 30) return;
     setGlucoseReading(val);
     const today = new Date().toLocaleDateString("en-CA");
+    const nowIso = new Date().toISOString();
     localStorage.setItem("glucoseReading", val.toString());
     localStorage.setItem("glucoseDate", today);
+    localStorage.setItem("glucoseTimestamp", nowIso);
+    setGlucoseTimestamp(nowIso);
+    const newGlucHist = [...glucHist, val].slice(-7);
+    setGlucHist(newGlucHist);
+    localStorage.setItem("glucoseHistory", JSON.stringify(newGlucHist));
     addLog(`GLYCEMIC INTERCEPT: ${val.toFixed(1)} MMOL/L // MANUAL ENTRY`, "roche");
     const briGlucose = calculateBRI({ glucose: val, hrv: ouraData.hrv, rhr: ouraData.rhr, sleepDurationHrs: ouraData.totalSleepHrs, glucosePending: false });
     addLog(`BIOLOGICAL READINESS INDEX: ${briGlucose.score} // ${briGlucose.label} // ALL VECTORS CONFIRMED`, "", briGlucose.color);
@@ -473,12 +530,27 @@ export default function MethuselahFinal() {
 
   useEffect(() => { setBriefingOpen(false); }, [logic.level]);
 
-  const hrvPct   = hrv  !== null ? ((hrv  - 25) / (95 - 25))  * 100 : 0;
-  const rhrPct   = rhr  !== null ? ((rhr  - 40) / (100 - 40)) * 100 : 0;
-  // Sleep gauge: 4h → 0%, 10h → 100%, clamped
-  const sleepPct = sleepDurationHrs !== null
-    ? Math.min(100, Math.max(0, ((sleepDurationHrs - 4) / (10 - 4)) * 100))
-    : 0;
+  // Per-vector timestamps (source determines which ring's timestamp applies)
+  const ouraTs  = ouraData.timestamp;
+  const gen3Ts  = gen3Bridge?.timestamp ?? null;
+  const hrvTs   = logic.vectors.hrv.source   === SOURCE_GEN4 ? ouraTs : logic.vectors.hrv.source   === SOURCE_GEN3 ? gen3Ts : null;
+  const rhrTs   = logic.vectors.rhr.source   === SOURCE_GEN4 ? ouraTs : logic.vectors.rhr.source   === SOURCE_GEN3 ? gen3Ts : null;
+  const sleepTs = logic.vectors.sleepDurationHrs.source === SOURCE_GEN4 ? ouraTs : logic.vectors.sleepDurationHrs.source === SOURCE_GEN3 ? gen3Ts : null;
+
+  // Trend + avg per vector (histories come from state, seeded from localStorage on mount)
+  const hrvAvg   = avgOf(hrvHist);
+  const rhrAvg   = avgOf(rhrHist);
+  const sleepAvg = avgOf(sleepHist);
+  const glucAvg  = avgOf(glucHist);
+
+  // Meta strings — threshold pulled from THRESHOLDS.* so displayed rule always matches engine rule
+  function metaParts(threshold, avg, trend) {
+    return [threshold, avg, trend].filter(Boolean).join(" · ");
+  }
+  const hrvMeta   = hrv              !== null ? metaParts(`optimal ≥ ${THRESHOLDS.hrv}ms`,            hrvAvg   !== null ? `7d avg ${Math.round(hrvAvg)}ms`  : null, getTrend(hrvHist))   : null;
+  const rhrMeta   = rhr              !== null ? metaParts(`optimal < ${THRESHOLDS.rhr}bpm`,            rhrAvg   !== null ? `7d avg ${Math.round(rhrAvg)}bpm` : null, getTrend(rhrHist))   : null;
+  const sleepMeta = sleepDurationHrs !== null ? metaParts(`optimal ≥ ${THRESHOLDS.sleepDuration}h`,   sleepAvg !== null ? `7d avg ${sleepAvg.toFixed(1)}h`  : null, getTrend(sleepHist)) : null;
+  const glucMeta  = glucoseReading   !== null ? metaParts(`optimal < ${THRESHOLDS.glucose}`,           glucAvg  !== null ? `7d avg ${glucAvg.toFixed(1)}`    : null, getTrend(glucHist))  : null;
 
   const bri = calculateBRI({ glucose: glucoseReading, hrv, rhr, sleepDurationHrs, glucosePending: glucoseReading === null });
 
@@ -575,8 +647,11 @@ export default function MethuselahFinal() {
               reading={glucoseReading}
               entryOpen={glucoseEntryOpen}
               inputVal={glucoseInput}
+              meta={glucMeta}
+              age={formatAge(glucoseTimestamp)}
+              stale={isStale(glucoseTimestamp)}
               onTap={() => setGlucoseEntryOpen(true)}
-onBLERead={readBLEGlucose}
+              onBLERead={readBLEGlucose}
               onInputChange={e => setGlucoseInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter") submitGlucose(); if (e.key === "Escape") { setGlucoseEntryOpen(false); setGlucoseInput(""); } }}
               onSubmit={submitGlucose}
@@ -585,27 +660,30 @@ onBLERead={readBLEGlucose}
               label="HRV // SYSTEMIC FRICTION"
               val={hrv !== null ? Math.round(hrv) : "--"}
               unit="ms"
-              pct={hrvPct}
               color={hrv === null ? "var(--text-dim)" : hrv < THRESHOLDS.hrv ? "var(--accent-amber)" : "var(--accent-green)"}
-              status={hrv === null ? "AWAITING DATA" : hrv < THRESHOLDS.hrv ? "SUPPRESSED" : "OPTIMAL"}
+              meta={hrvMeta}
+              age={formatAge(hrvTs)}
+              stale={isStale(hrvTs)}
               source={logic.vectors.hrv.source}
             />
             <Metric
               label="CARDIAC LOAD"
               val={rhr !== null ? rhr : "--"}
               unit="bpm"
-              pct={rhrPct}
               color={rhr === null ? "var(--text-dim)" : rhr > THRESHOLDS.rhr ? "var(--accent-amber)" : "var(--accent-green)"}
-              status={rhr === null ? "AWAITING DATA" : rhr > THRESHOLDS.rhr ? "ELEVATED" : "OPTIMAL"}
+              meta={rhrMeta}
+              age={formatAge(rhrTs)}
+              stale={isStale(rhrTs)}
               source={logic.vectors.rhr.source}
             />
             <Metric
               label="SLEEP DEBT"
               val={sleepDurationHrs !== null ? sleepDurationHrs.toFixed(1) : "--"}
-              unit="HRS"
-              pct={sleepPct}
+              unit="hrs"
               color={sleepDurationHrs === null ? "var(--text-dim)" : sleepDurationHrs < THRESHOLDS.sleepDuration ? "var(--accent-amber)" : "var(--accent-green)"}
-              status={sleepDurationHrs === null ? "AWAITING DATA" : sleepDurationHrs < THRESHOLDS.sleepDuration ? "DEFICIENT" : "OPTIMAL"}
+              meta={sleepMeta}
+              age={formatAge(sleepTs)}
+              stale={isStale(sleepTs)}
               source={logic.vectors.sleepDurationHrs.source}
             />
           </div>

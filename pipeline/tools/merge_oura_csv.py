@@ -6,7 +6,7 @@ Never overwrites a field that already has a real value.
 """
 import csv
 
-OURA_CSV = "/Users/brydenvaniderstine/Desktop/oura_2026-05-29_2026-07-10_trends.csv"
+OURA_CSV = "/Users/brydenvaniderstine/Desktop/oura_2025-06-01_2026-08-01_trends.csv"
 COMP_CSV = "pipeline/data/findings/gen3_vs_gen4_comparison.csv"
 
 

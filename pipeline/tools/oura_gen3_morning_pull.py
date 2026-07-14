@@ -30,6 +30,7 @@ from decoders import (
     decode_debug_data_afe_statistics,
     decode_debug_data_acm_configuration,
     decode_debug_data_ppg_settings,
+    calculate_rmssd,
 )
 
 ADDR        = "71E77907-1EE9-4949-801C-02979071309C"
@@ -333,12 +334,14 @@ async def main():
         print(f"\n=== SPO2 IBI+AMPLITUDE DECODE (0x6E) ===")
         ibi6e_found = False
         ibi6e_all = []
+        ibi_packets = []  # list of per-packet IBI lists, for HRV RMSSD (needs packet boundaries preserved)
         for p in parsed:
             if p["tag"] == 0x6E:
                 ibi6e_found = True
                 try:
                     d = decode_spo2_ibi_amplitude(p["payload"])
                     ibi6e_all.extend(v for v in d["ibi_ms"] if 300 <= v <= 2000)
+                    ibi_packets.append(d["ibi_ms"])
                     hr_str = " ".join(f"{v:.0f}" for v in d["hr_bpm"] if v is not None)
                     print(f"  boot_ts={p['boot_ts']:>10}  ch={d['channel']}  "
                           f"ibi_ms={d['ibi_ms']}  hr=[{hr_str}]bpm")
@@ -349,6 +352,10 @@ async def main():
             import statistics as _stats
             ibi6e_hr_mean = round(60000 / _stats.mean(ibi6e_all), 1)
             print(f"  → {len(ibi6e_all)} valid IBI samples  HR mean={ibi6e_hr_mean:.1f}bpm")
+        hrv_rmssd_ms = calculate_rmssd(ibi_packets)
+        if hrv_rmssd_ms is not None:
+            print(f"  → HRV (RMSSD from IBI, Gen3 fallback): {hrv_rmssd_ms}ms "
+                  f"(approximation -- see pipeline/decoders/hrv_rmssd.py for validated error margin)")
         if not ibi6e_found:
             print("  No 0x6E SPO2 IBI+amplitude events found in this pull.")
 
@@ -460,16 +467,18 @@ async def main():
                     try:
                         d = decode_debug_data_finger_detection(p["payload"])
                         print(f"  boot_ts={p['boot_ts']:>10}  [FINGER DETECTION] "
-                              f"raw_u64={d['detection_u64']}  (semantics unresolved)")
+                              f"bytes={d['bytes']}  (fires every ~36000 ticks; "
+                              f"byte[3]/[7] are slow state counters, rest unresolved)")
                     except ValueError as e:
                         print(f"  boot_ts={p['boot_ts']:>10}  FINGER DETECTION DECODE FAIL: {e}")
                 elif sub == 0x28:
                     debug_found = True
                     try:
                         d = decode_debug_data_afe_statistics(p["payload"])
+                        drift_note = f"  DRIFT_FLAG={d['drift_flag']}" if d['drift_flag'] else ""
                         print(f"  boot_ts={p['boot_ts']:>10}  [AFE STATS] "
-                              f"kind={d['record_kind']}  all_zero={d['all_stats_zero']}  "
-                              f"stats_hex={d['stats_hex']}")
+                              f"kind={d['record_kind']}  fields={d['fields']}  "
+                              f"all_zero={d['all_stats_zero']}{drift_note}")
                     except ValueError as e:
                         print(f"  boot_ts={p['boot_ts']:>10}  AFE STATS DECODE FAIL: {e}")
                 elif sub == 0x29:
@@ -486,9 +495,9 @@ async def main():
                     debug_found = True
                     try:
                         d = decode_debug_data_ppg_settings(p["payload"])
+                        ch_note = f"  ch_a={d['channel_a']}  ch_b={d['channel_b']}" if not d['truncated'] else ""
                         print(f"  boot_ts={p['boot_ts']:>10}  [PPG SETTINGS] "
-                              f"chip={d['chip_variant_name']}  truncated={d['truncated']}  "
-                              f"settings_hex={d['settings_hex']}")
+                              f"chip={d['chip_variant_name']}  truncated={d['truncated']}{ch_note}")
                     except ValueError as e:
                         print(f"  boot_ts={p['boot_ts']:>10}  PPG SETTINGS DECODE FAIL: {e}")
         if not debug_found:
@@ -526,58 +535,31 @@ async def main():
         print(f"[AUTO-FILE] {pull_class} → {dest_path}")
 
         # ── BRIDGE WRITER — feeds Gen3 data to the web app ───────────────────
-        import json
-        from datetime import datetime
+        # Shared with oura_gen3_ble_daemon.py via gen3_bridge.py so the
+        # vectors-dict shape can't drift out of sync between the two tools.
+        from gen3_bridge import build_bridge_data, write_local_bridge_file, push_bridge_json
 
-        bridge_data = {
-            "source": "gen3_ble",
-            "timestamp": datetime.now().isoformat(),
-            "pull_file": _os.path.basename(dest_path),
-            "classifier": pull_class,
-            "vectors": {
-                "hrv_ms": None,
-                "rhr_bpm": round(sum(hr_avgs) / len(hr_avgs), 1) if hr_avgs else None,
-                "ibi_hr_bpm": ibi6e_hr_mean,
-                "deep_sleep_pct": None,
-                "sleep_temp_c": round(sum(temps) / len(temps), 2) if temps else None,
-                "spo2_avg_pct": round(sum(spo2_avgs) / len(spo2_avgs), 1) if spo2_avgs else None,
-                "battery_pct": fuel_gauge_pct,
-                "step_count": step_count_bridge,
-                "cadence_spm": cadence_spm_bridge,
-            },
-            "raw_sample_count": len(priority_events),
-        }
+        bridge_data = build_bridge_data(
+            pull_class=pull_class,
+            pull_file=_os.path.basename(dest_path),
+            priority_event_count=len(priority_events),
+            hr_avgs=hr_avgs,
+            ibi_hr_bpm=ibi6e_hr_mean,
+            temps=temps,
+            spo2_avgs=spo2_avgs,
+            fuel_gauge_pct=fuel_gauge_pct,
+            step_count=step_count_bridge,
+            cadence_spm=cadence_spm_bridge,
+            hrv_ms=hrv_rmssd_ms,
+        )
 
-        bridge_dir = _os.path.join(repo_root, 'pipeline', 'data', 'bridge')
-        _os.makedirs(bridge_dir, exist_ok=True)
-        bridge_path = _os.path.join(bridge_dir, 'gen3_latest.json')
-
-        with open(bridge_path, 'w') as f:
-            json.dump(bridge_data, f, indent=2)
-
+        bridge_path = write_local_bridge_file(bridge_data, repo_root)
         print(f"[BRIDGE] Written → {bridge_path}")
 
         # ── PUSH TO LIVE SITE — the local file above never reaches production ──
         # (pipeline/data/bridge/ is gitignored for data sovereignty; Vercel only
         # builds from git). This is what actually feeds methuselah.ca now — see
         # api/gen3-bridge.js. Best-effort: never fail the pull over a push error.
-        write_secret = _os.environ.get("GEN3_BRIDGE_WRITE_SECRET")
-        if not write_secret:
-            print("[BRIDGE PUSH] Skipped — GEN3_BRIDGE_WRITE_SECRET not set in this environment.")
-        else:
-            try:
-                import urllib.request, urllib.error
-                req = urllib.request.Request(
-                    "https://www.methuselah.ca/api/gen3-bridge",
-                    data=json.dumps(bridge_data).encode("utf-8"),
-                    headers={"Content-Type": "application/json", "X-Write-Secret": write_secret},
-                    method="POST",
-                )
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    print(f"[BRIDGE PUSH] {resp.status} → live site updated.")
-            except urllib.error.HTTPError as e:
-                print(f"[BRIDGE PUSH] FAILED — HTTP {e.code}: {e.read().decode(errors='replace')}")
-            except Exception as e:
-                print(f"[BRIDGE PUSH] FAILED — {e}")
+        print(f"[BRIDGE PUSH] {push_bridge_json(bridge_data)}")
 
 asyncio.run(main())

@@ -3,7 +3,12 @@
 # that produces a new finding, confirmed pattern, or resolved/
 # unresolved decoder question. Do not wait to be asked explicitly.
 # If a session ends without touching this file and a finding occurred,
-# that is an error. Last updated: 2026-07-07 (0x5D firing context confirmed ACTIVITY-only; 0x6B DONE; step count in bridge)
+# that is an error. Last updated: 2026-07-12 21:20 (0x76/0x49/0x4C/0x4F/0x58/0x5A
+# all fired for the first time ever, contradicting this same file's "never
+# fires"/"does not emit" status set only hours earlier — see IN PROGRESS
+# section and known_issues.md. Earlier same day: 0x61/28 and 0x61/33 pushed
+# further in PARTIAL; 0x61/15 promoted from too-sparse to PARTIAL; list
+# pruned, 16 diagnostic/no-value tags moved to CLOSED)
 # ─────────────────────────────────────────────────────────────
 #
 # ── CREDENTIAL HANDLING ─────────────────────────────────────
@@ -104,7 +109,7 @@ sub-types. This supersedes the earlier partial roadmap.
       the old Tier 3 list. Re-verified 2026-07-11 against all 10 corpus
       packets, all physically plausible. See known_issues.md 2026-07-10/11.
 
-## IN PROGRESS — real RE work started, not yet solved (3)
+## IN PROGRESS — real RE work started, not yet solved (9)
 - [ ] 0x61/0x09 _dd_sleep_statistics — 68 packets across corpus (updated 2026-07-07).
       Layout confirmed: b1-b2=f0, b3-b4=o3(secs_in_pfsm), b5-b6=f2(decaying),
       b7-b8=pad(0), b9-b10=f4(dynamic), b11-b12=f5(flag), b13=pfsm_state.
@@ -221,18 +226,60 @@ NEXT ACTION for 0x7E/0x7F: firmware RE or proto source to identify FFTset sub-me
 A working third walk experiment (fixing the buffer/timing capture failure — see
 known_issues.md 2026-07-09) would also let pace-sensitivity of b[9]/b[10] finally be tested.
 
-## NOT STARTED — Tier 1, high biometric value (1)
-- [ ] 0x76 bedtime_period — wired into script, never caught a real packet. Re-verified
-      2026-07-08: zero matches across all 23 raw pull files on disk (literal "0x76",
-      "Bedtime period" label, case-insensitive "bedtime" all checked). See known_issues.md.
+**2026-07-12 21:20 — first-ever firing of six tags, all previously "never
+observed" or "does not emit."** A single evening pull (`gen3_pull_20260712_212119.txt`)
+caught `0x76`/`0x49`/`0x4C`/`0x4F`/`0x58`/`0x5A` firing together as one
+cluster (143-tick window) — apparently a "finalize and report a completed
+sleep session" event. Full writeup in known_issues.md 2026-07-12 21:20.
+None promoted past IN PROGRESS — real structure found for one, hypotheses
+tested and found inconclusive for the others, nothing confirmed yet.
 
-(0x7E/0x7F moved to PARTIAL 2026-07-09 — see IN PROGRESS section. Count corrected;
-was previously listed here despite having active RE work, a pre-existing inconsistency.)
+- [ ] 0x76 bedtime_period — FIRED for the first time ever, contradicting
+      this file's own "CONFIRMED NON-FIRING" categorization from *earlier
+      the same day*. Decoded via the existing decoder (already implements
+      open_ring's layout): start_rt=63243278, end_rt=63605431 (span
+      362,153 ticks). Owner confirmed no nap today, so this almost
+      certainly refers to the already-logged 2026-07-11/12 overnight
+      sleep — but exact wall-clock placement is uncertain (see the
+      variable-tick-rate finding below). Decoder: `pipeline/decoders/0x76.py`
+      (already existed, unchanged).
+- [ ] 0x5A sleep_phase_data — NEW, not previously tracked in this roadmap
+      at all. Confirmed real chunked-transmission structure: 23 packets,
+      each starting with a sequential index byte (0-22, zero gaps/dupes/
+      out-of-range values verified) plus a fixed 13-byte remainder,
+      reassembling cleanly into one 299-byte structure. Tested a
+      2-bit-per-epoch sleep-stage hypothesis (motivated by heavy
+      `0x55`/`0xAA` alternating-bit patterns) — inconclusive, the data
+      reads more like padding/filler (long uniform byte runs) than a
+      clean per-epoch classifier at this point. This is the strongest
+      current lead on the long-standing `sleep_state`-flatness open
+      question (2026-06-28 entry, top of known_issues.md) but is NOT
+      solved. No decoder written yet.
+- [ ] 0x49/0x4C/0x4F/0x58 sleep_summary (1)/(2)/(3)/(4) — all fired for
+      the first time, directly contradicting this roadmap's prior "Gen3
+      does NOT emit (0 packets across 27 pulls)" status for 0x49/0x4C/0x4F.
+      `Sleep summary (1)` (4 bytes) and `Sleep summary (4)` (exactly 7
+      bytes, `[98,66,100,86,70,58,33]`) were tested against real Gen4
+      contributor scores for both plausible nights (2026-07-11 and
+      2026-07-12, from the trends CSV) — one exact match per night (66,
+      70) plus some near-misses within 1-3 points, but no clean
+      confirmation at any field-order alignment tried. `Sleep summary
+      (2)` (14 bytes) and `(3)` (11 bytes) not deeply analyzed yet. No
+      decoders written for any of the four.
 
-## NOT STARTED — Tier 2, weaker/auto-extracted confidence (12)
-- [ ] 0x49 sleep_summary_1 — Gen3 does NOT emit (0 packets across all 27 pulls)
-- [ ] 0x4C sleep_summary_2 — Gen3 does NOT emit (0 packets)
-- [ ] 0x4F sleep_summary_3 — Gen3 does NOT emit (0 packets)
+**Secondary finding while investigating the above**: today's data shows
+the boot_ts tick rate is NOT constant — roughly ~3 ticks/sec during a
+calmer late-morning period vs. ~14-24 ticks/sec during an intense
+walk/desk-activity period the same day (see the BLE daemon entry in
+known_issues.md). This means the project's long-standing "~3.70
+ticks/sec" constant may only hold for a specific activity context, not
+universally — affects any boot_ts-to-wall-clock reasoning done elsewhere
+in this project's history. Not resolved; flagging only.
+
+## NOT STARTED — Tier 2, weaker/auto-extracted confidence (7)
+(0x49/0x4C/0x4F sleep_summary_1/2/3 moved 2026-07-12 — "Gen3 does NOT emit"
+was contradicted the same day. See IN PROGRESS section above for the real
+firing and current status.)
 - [ ] 0x4A ppg_amplitude_ind — 243 packets. Format 5×u16 LE (NOT just first u16
       as open_ring claims). ANALYSIS COMPLETE (2026-06-29):
       f0: r=−0.561 with SpO2; saturates at 65535 when SpO2=88%; f0=0 universally
@@ -254,22 +301,8 @@ was previously listed here despite having active RE work, a pre-existing inconsi
       rare variants; structure differs from 14-byte form.
       CEILING: exact activity class enum labels (only 6 values observed); MET×8 unconfirmed
       without simultaneous Gen4 Average MET cross-validation.
-- [ ] 0x5B ble_connection_ind — PARTIAL DECODE (2026-06-30). 50 packets across
-      pulls. Open_ring decoder reads isolated u8s at offsets 0,1,6,7,8,9 — wrong.
-      Actual structure: byte[0] = subtype ∈ {2,3,4,5}; each subtype is a distinct
-      fixed-size record. Subtypes 2/4/5 always fire as a consecutive trio (1 tick
-      apart) on every BLE connection event; subtype 3 logs the peer MAC separately.
-      Sub=3: bytes[1]=addr_type (2=random-resolvable, 0=public), bytes[2:8]=6-byte
-      BLE MAC address. 7 unique MACs across all pulls (phone rotates random address).
-      Sub=4: u16_le(p[1:3])=u16_le(p[3:5]) always (min=max=fixed interval).
-      207×1.25ms=258.75ms (sleep/low-power mode); 27×1.25ms=33.75ms (active/app-open
-      mode). BLE spec confirmed — no firmware needed for these two fields.
-      Sub=2: b[7]∈{14,16,24,30} = negotiated connection interval (×1.25ms);
-      b[10]=8–180 = likely RSSI or packet error metric; b[2]∈{0,1,2,3} = reconnect
-      count within session.
-      Sub=5: 4×u16_le at offsets 1,5,7,9 — ranges 0–923 — likely TX/RX packet
-      counts or error counters; exact labels need firmware.
-- [ ] 0x5E selftest_event — 0 packets. Gen3 may not emit or very rare.
+(0x5B ble_connection_ind and 0x5E selftest_event moved 2026-07-12 — see CLOSED and
+CONFIRMED NON-FIRING sections below.)
 - [ ] 0x6C feature_session — PARTIAL DECODE extended (2026-06-30). b0 session classes:
       0x02=GREEN_IBI, 0x03=unknown, 0x04=unknown, 0x08=EHR_INHIBIT,
       0x0b=EHR/DHR_BOUNDARY, 0x0d=CVA. b1 direction now fully mapped via ASCII context:
@@ -321,7 +354,8 @@ was previously listed here despite having active RE work, a pre-existing inconsi
       CEILING: channel-wavelength mapping (red/IR/green); f2 physical meaning; b[4]
       semantics; no HR cross-validation (0x6A absent in DHR window).
 - [x] 0x80 green_ibi_quality_event — DONE 2026-06-28. See DONE section above.
-- [ ] 0x82/0x83 scan_start / scan_end — 0 packets. Gen3 does not emit.
+
+(0x82/0x83 scan_start/scan_end moved 2026-07-12 — see CLOSED section below.)
 
 ## NOT STARTED — unidentified/low-confidence (2)
 - [ ] 0x56 unknown_56 — NOT OBSERVED (2026-06-30). Zero packets across 34 pulls.
@@ -343,51 +377,112 @@ decoded, and moved to DONE above. 0x28/0x33 had real data and are PARTIAL
 here. The remaining 19 are CONFIRMED zero packets across all 29 files, not
 just unattempted — see known_issues.md 2026-07-11 for the full survey.
 
-- [~] 0x61/0x28 _dd_afe_statistics_values — PARTIAL, n=114 (largest sample
-      in the sweep). 104/114 records have non-zero stats bytes — richer
-      than open_ring's own reference capture. Real data exists to push
-      further than open_ring did; not attempted this pass. Good next
-      candidate. Decoder: `pipeline/decoders/0x61_28.py`.
-- [~] 0x61/0x33 _dd_open_afe_ppg_settings_data — PARTIAL, n=68. **Confirms
-      the Gen3 ring's PPG sensor chip is a MAX86171** (chip_variant=1 in
-      all 68 samples) — real hardware ID, not inferred. Settings bytes
-      beyond that are vendor register dumps, needs the MAX86171 datasheet
-      to decode further. Decoder: `pipeline/decoders/0x61_33.py`.
-- [ ] 0x61/0x15 _dd_finger_detection — checked 2026-07-11, n=4 (confirmed
-      real, too few to hypothesis-test). Raw u64, no bitfield guess
-      attempted. Decoder: `pipeline/decoders/0x61_15.py`.
-- [ ] 0x61/0x0F _dd_security_failure — CONFIRMED zero packets (2026-07-11 sweep).
-- [ ] 0x61/0x1A _dd_event_sync_statistics — CONFIRMED zero packets.
-- [ ] 0x61/0x1B _dd_bootloader_debug_log — CONFIRMED zero packets.
-- [ ] 0x61/0x1E _dd_fuel_gauge_register_dump — CONFIRMED zero packets.
-- [ ] 0x61/0x1F _dd_ring_hw_information — CONFIRMED zero packets.
-- [ ] 0x61/0x20 _dd_charging_ended_statistics — CONFIRMED zero packets (would
-      need a real charging/dock session capture, none in current corpus).
-- [ ] 0x61/0x21 _dd_fuel_gauge_logging_registers — CONFIRMED zero packets.
-- [ ] 0x61/0x23 _dd_event_sync_cache_statistics — CONFIRMED zero packets.
-- [ ] 0x61/0x25 _dd_hardware_test_start_values — CONFIRMED zero packets.
-- [ ] 0x61/0x26 _dd_hardware_test_result_values — CONFIRMED zero packets.
-- [ ] 0x61/0x27 _dd_charging_ended_statistics_continued — CONFIRMED zero packets.
-- [ ] 0x61/0x2A _dd_field_test_information — CONFIRMED zero packets.
-- [ ] 0x61/0x2B _dd_stack_usage_statistics — CONFIRMED zero packets (debug-only,
-      genuinely zero biometric value regardless).
-- [ ] 0x61/0x30 _dd_alt_periodic_counter — CONFIRMED zero packets.
+- [~] 0x61/0x28 _dd_afe_statistics_values — PARTIAL, n=140 (grew from 114).
+      2026-07-12: `stats_hex` confirmed to be exactly 6x u16 LE fields;
+      continuation-record field-shape correlates strongly with
+      `pfsm_state` (97%/89%/92% match across three distinct shapes), and
+      header-record field[0] confirmed as a genuine per-channel drift
+      flag via exact cross-record arithmetic. Field count/shape now
+      understood; field IDENTITY (physical channel/quantity) still
+      needs firmware. Decoder: `pipeline/decoders/0x61_28.py`.
+- [~] 0x61/0x33 _dd_open_afe_ppg_settings_data — PARTIAL, n=88 (grew from
+      68). **Confirms the Gen3 ring's PPG sensor chip is a MAX86171**
+      (chip_variant=1 in every sample) — real hardware ID, not inferred.
+      2026-07-12: the 12-byte settings blob confirmed to split into two
+      structurally-identical 6-byte per-channel (A/B) halves, with a
+      channel-marker byte, a constant register-address byte, and a
+      near-fixed calibration offset all identified. Register-level
+      identity within each half still needs the MAX86171 datasheet.
+      Decoder: `pipeline/decoders/0x61_33.py`.
+- [~] 0x61/0x15 _dd_finger_detection — PROMOTED to PARTIAL 2026-07-12 (was
+      RAW ONLY at n=4). The BLE daemon's continuous polling grew the corpus
+      to 11 unique real samples (18 raw log lines, several are duplicate
+      re-observations across daemon restarts). Real structure found: fires
+      on a strict periodic ~30-min schedule (36000 boot_ts ticks apart,
+      zero variance across 7 consecutive samples) rather than on wear-
+      transition events as the name might suggest; byte-level entropy
+      split identifies byte[1] as near-constant, byte[3] as a slow
+      state/generation counter that differs consistently between sessions,
+      and byte[7] (MSB) as low-entropy (0/1/2 only) with a clean one-time
+      transition caught mid-session. Remaining 5 bytes still high-entropy/
+      unresolved. Decoder updated to expose all 8 bytes individually, not
+      just the raw u64. Ceiling: physical meaning of the unresolved bytes
+      needs firmware or a deliberate remove-ring/put-back-on experiment.
+      Decoder: `pipeline/decoders/0x61_15.py`.
 - [ ] 0x61/0x35 _dd_ppg_signal_quality_stats — CONFIRMED zero packets. Would be
       genuinely valuable (SNR/signal quality, tells us how trustworthy other
       readings are) if it ever fires — worth re-checking as the corpus grows.
-- [ ] 0x61/0x36 _dd_charger_information — CONFIRMED zero packets (needs a dock session).
-- [ ] 0x61/0x3B _dd_alt_afe_period_tick — CONFIRMED zero packets.
-- [ ] 0x61/0x3C _dd_alt_ppg_cont — CONFIRMED zero packets.
-- [ ] 0x61/0x3D _dd_charger_debug_information — CONFIRMED zero packets (needs a dock session).
-- [ ] 0x61/0x3F _dd_daily_drop_sample — CONFIRMED zero packets.
+- [ ] 0x61/0x20 _dd_charging_ended_statistics — CONFIRMED zero packets (needs a
+      real charging/dock session capture). Part of the charging cluster with
+      0x27/0x36/0x3D below — kept together since a real charging session
+      would likely fire all four at once.
+- [ ] 0x61/0x27 _dd_charging_ended_statistics_continued — CONFIRMED zero packets.
+      See 0x20 note above.
+- [ ] 0x61/0x36 _dd_charger_information — CONFIRMED zero packets. See 0x20 note above.
+- [ ] 0x61/0x3D _dd_charger_debug_information — CONFIRMED zero packets. See 0x20 note above.
+
+## CLOSED — no biometric value even if fully decoded (16)
+
+PRUNED 2026-07-12: these were sitting in "NOT STARTED"/"PARTIAL" sections that imply
+open work. Per rule #3 (negative results get logged, not discarded), findings are kept
+here rather than deleted — but none of these will ever feed the dashboard or any
+biometric decoder, even if fully solved. No further RE work planned on any of them.
+
+**Tier 3 debug sub-types — bootloader/security/factory-test/sync-cache diagnostics,
+confirmed zero packets, zero biometric relevance by design (2026-07-11 sweep):**
+0x61/0x0F (_dd_security_failure), 0x61/0x1A (_dd_event_sync_statistics),
+0x61/0x1B (_dd_bootloader_debug_log), 0x61/0x1E (_dd_fuel_gauge_register_dump —
+also redundant with DONE 0x61/14), 0x61/0x1F (_dd_ring_hw_information),
+0x61/0x21 (_dd_fuel_gauge_logging_registers — redundant with DONE 0x61/14),
+0x61/0x23 (_dd_event_sync_cache_statistics), 0x61/0x25 (_dd_hardware_test_start_values),
+0x61/0x26 (_dd_hardware_test_result_values), 0x61/0x2A (_dd_field_test_information),
+0x61/0x2B (_dd_stack_usage_statistics — debug-only, explicitly zero biometric value
+regardless of outcome), 0x61/0x30 (_dd_alt_periodic_counter),
+0x61/0x3B (_dd_alt_afe_period_tick), 0x61/0x3C (_dd_alt_ppg_cont),
+0x61/0x3F (_dd_daily_drop_sample).
+
+- [x] 0x5B ble_connection_ind — real decode work done (PARTIAL, 2026-06-30, 50
+      packets), but the content is phone MAC addresses, RSSI, and BLE connection
+      intervals — connectivity metadata, not biometrics. Full writeup preserved
+      in git history (see 2026-06-30 entries) rather than duplicated here.
+- [ ] 0x5E selftest_event — self-test diagnostic, 0 packets. No biometric value
+      even if it fired.
+- [ ] 0x82/0x83 scan_start / scan_end — BLE scan diagnostic, 0 packets, Gen3
+      does not emit.
+
+(CONFIRMED NON-FIRING section removed 2026-07-12 — its only entry, 0x76, fired
+for the first time ever a few hours after this section was created. See
+IN PROGRESS section above for its new status, and known_issues.md for the
+full 2026-07-12 21:20 evening-pull writeup. Section header kept as a note
+in case something else ends up needing this category later — a real
+"never fires" finding can still become wrong at any time, as just
+demonstrated, so don't over-trust this categorization either.)
 
 ## Count check
-16 done + 3 in progress + 2 Tier-3 PARTIAL + 1 not-started-T1 + ~12 Tier-2 + 2 unidentified
-+ 19 Tier-3 confirmed-zero + 1 Tier-3 checked-too-sparse = **~56 decoder entries tracked**
+16 done + 9 in progress + 3 Tier-3 PARTIAL + ~7 Tier-2 + 2 unidentified
++ 5 Tier-3 confirmed-zero + 16 CLOSED = **~58 decoder entries tracked**
+(entry count grew by ~2 since 0x5A sleep_phase_data was not previously
+tracked in this roadmap at all)
+
 (Updated 2026-07-11: Tier 3 backlog swept — 9 sub-types had real data (6 promoted to
 DONE: 0x61/0x04/0x0A/0x0C/0x0D/0x24/0x29; 2 PARTIAL: 0x61/0x28/0x33; 1 checked-too-sparse:
-0x61/0x15). 19 Tier-3 sub-types confirmed zero packets across the full corpus, not just
-unattempted. See known_issues.md 2026-07-11. Count is approximate due to bundles.)
+0x61/0x15). See known_issues.md 2026-07-11.
+Updated 2026-07-12 (morning): pruned the list per an owner request to identify dead
+weight — 16 tags (mostly bootloader/security/factory-test/sync-cache Tier-3
+diagnostics with zero biometric relevance even if solved, plus 0x5B connectivity
+metadata and 0x82/83 BLE scan events) moved to CLOSED, no further RE work planned.
+0x61/0x15 promoted from checked-too-sparse to PARTIAL — the BLE daemon's continuous
+polling grew its sample count from n=4 to n=11 unique real records in one session.
+0x76 moved to a (now-removed) CONFIRMED NON-FIRING section.
+Updated 2026-07-12 21:20 (evening): the CONFIRMED NON-FIRING section created that
+same morning was contradicted a few hours later — 0x76 fired for the first time
+ever, along with 0x49/0x4C/0x4F/0x58 (previously "Gen3 does NOT emit") and 0x5A
+(not previously tracked). All six moved into IN PROGRESS with real findings and
+open hypotheses — none promoted further yet. See known_issues.md for the full
+writeup. Lesson: even a same-day "confirmed non-firing" categorization isn't
+permanent — re-verify before trusting any "never happens" claim in this file,
+regardless of how recently or how many times it was checked. Count is approximate
+due to bundles.)
 
 ## Suggested next-session order (updated 2026-07-06)
 
@@ -407,21 +502,19 @@ Protocol: `pipeline/tools/WALK_EXPERIMENT.md` — 500 steps, phone BT OFF, pull 
 3. **0x6B motion_period** — collect more packets by capturing pull during
    deliberate motion (sit→walk→sit transitions). Only 4 packets currently.
 
-4. **0x76 bedtime_period** — has never fired. Re-verified 2026-07-08 against all 23
-   raw pull files on disk — still zero packets. Decoder pipeline is fully wired
-   (PRIORITY_TAGS includes 0x76, pull script has a dedicated decode/print section,
-   `pipeline/decoders/0x76.py` already implements open_ring's exact layout) — this
-   is a data-capture gap, not a tooling gap. No confirmed mechanism for the absence;
-   open_ring itself notes 0x68 (`API_RAW_PPG_DATA`) as "declared but not observed in
-   any capture" in their own reference data, so genuinely rare/conditional emission
-   is an established pattern in this tag space, not unique to our setup. Not
-   actionable without catching it in a future pull — no known trigger to force it.
-   Re-confirmed again same day: a claimed "3 decoded packets" (cross-validation
-   promotion gate) traced to unsaved claude.ai session output with no hex payloads
-   or file reference — could not be located anywhere in the repo after an
-   exhaustive re-check (strict `[Bedtime period]` label match, pull/error logs,
-   decoder inventory). Per real-data-only discipline, not counted as a finding.
-   0x76 stays NOT PROMOTED — see `known_issues.md` addendum, 2026-07-08.
+4. ~~**0x76 bedtime_period**~~ — FIRED for the first time ever, 2026-07-12
+   21:20, alongside 0x49/0x4C/0x4F/0x58/0x5A. See IN PROGRESS section above
+   and `known_issues.md` for the full writeup. The months of "never fires"
+   history below is kept for context (it really did take that long), but
+   the item itself is no longer accurate as a description of current status.
+   Historical record (2026-06-08 through 2026-07-08, now superseded): had
+   never fired despite the decoder pipeline being fully wired
+   (`pipeline/decoders/0x76.py` already implements open_ring's exact
+   layout) — was treated as a data-capture gap, not a tooling gap, with no
+   confirmed trigger. A separately claimed "3 decoded packets" cross-
+   validation gate (2026-07-08) was traced to unsaved session output with
+   no hex payloads and could not be located anywhere in the repo — not
+   counted as a finding at the time, per real-data-only discipline.
 
 ## Gen4 Ground Truth Reference (added 2026-06-30)
 

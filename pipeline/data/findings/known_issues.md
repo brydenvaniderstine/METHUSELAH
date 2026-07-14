@@ -3968,3 +3968,441 @@ endpoint degrades to `gen3Bridge` staying `null`, identical to the
 current broken state. No regression risk from shipping this now.
 
 *Logged 2026-07-11.*
+
+## 2026-07-12 — CLOSED: Gen3 fallback confirmed working end-to-end on the live site
+
+The manual Vercel step from the 2026-07-11 entry above is done, and the
+CRITICAL finding from 2026-07-11 ("Gen3 fallback does NOT work on the
+live deployment") is now resolved and verified live, not just locally.
+
+**Provisioning completed:**
+1. Upstash for Redis (Vercel Marketplace, Free tier — usage-based, no
+   monthly commitment) created and linked to the `methuselah` project.
+   Auto-injected env vars matched `api/gen3-bridge.js`'s existing
+   assumptions exactly: `KV_REST_API_URL`, `KV_REST_API_TOKEN` — no code
+   changes needed.
+2. `GEN3_BRIDGE_WRITE_SECRET` set in Vercel (Production + Preview) and
+   locally (owner's shell profile). Rotated twice during setup after
+   accidental exposure in a chat transcript and a garbled terminal paste —
+   both times treated as compromised and regenerated rather than reused;
+   see credential-handling rule at the top of this file.
+3. **Key lesson for next time**: editing a Vercel env var does not
+   retroactively affect an already-running deployment — a fresh
+   deployment (Redeploy) is required before the new value takes effect.
+   The first two rotation attempts both 401'd against the live API for
+   exactly this reason; the fix each time was Deployments → latest →
+   Redeploy, then re-test.
+
+**Verification performed (real, not mocked):**
+- Direct `curl -X POST .../api/gen3-bridge` with the write secret → `200
+  {"ok":true}`; follow-up `GET` returned the written payload back —
+  confirms the KV wire format assumptions from the 2026-07-11 entry were
+  correct.
+- Real ring pull (`oura_gen3_morning_pull.py`, 256 packets, sleep window)
+  → console showed `[BRIDGE PUSH] 200 → live site updated.` — the full
+  path (ring → decoder → bridge file → KV → live API) works end-to-end
+  with real biometric data, not a synthetic test payload.
+- Full `SOURCE_SELECTOR_TEST.md` Test A re-run live against
+  methuselah.ca via browser automation: with `oura_token` removed,
+  CARDIAC LOAD correctly showed `63.3 BPM` `ELEVATED` `● GEN3 BLE`
+  (matching the real pull's RHR), and the command panel fired
+  `INITIATE ACTIVE RECOVERY PROTOCOL` off that Gen3-sourced value —
+  confirms the command engine reads the resolved vector, not just the
+  tile label (Test A step 9). HRV and REPAIR DEPTH correctly stayed
+  `AWAITING DATA` (no Gen3 decoder for those yet — expected). Sys-log's
+  `GEN3 INTERCEPT` line was present in both the Gen4-live and
+  Gen4-removed states, confirming it reads the bridge directly per Test A
+  step 6.
+
+**Status:** the July 13th Gen4 token expiry no longer breaks the live
+site. CARDIAC LOAD (and SpO2, sys-log only) will correctly show
+`● GEN3 BLE` once Gen4 goes stale >24h, per the "Expected state after
+July 13th" table in `SOURCE_SELECTOR_TEST.md`.
+
+*Logged 2026-07-12.*
+
+## 2026-07-12 — 0x61/0x28 and 0x61/0x33 pushed further within PARTIAL, real correlations found
+
+Follow-up to the 2026-07-11 Tier 3 sweep, which left both tags PARTIAL
+with "raw hex, not field-decoded" as the stated ceiling. Re-ran against
+the full 34-file corpus (grown from 29 at the time of the original sweep)
+looking specifically for the kind of correlation/invariant analysis that
+worked for 0x50/0x72/0x6C. Found real structure in both, but neither is
+promoted to DONE — the physical/register-level identity of individual
+fields still needs firmware or datasheet access.
+
+**0x61/0x28 (afe_statistics) — 140 records (70 continuation + 70
+header).** `stats_hex` confirmed to be exactly 6x u16 LE fields (no
+leftover bytes, 100% of records). Continuation record SHAPE (which of
+the 6 fields are nonzero, and whether they're equal) correlates strongly
+with the ring's independently-decoded `pfsm_state`: a 4-fields-equal
+pattern fires almost exclusively during pfsm 5/6 (sleep/transitional,
+36/37 = 97%), a single-field pattern fires almost exclusively during
+pfsm=3 (active, 16/18 = 89%), and a third field[0]=field[4]=field[5]
+pattern fires almost exclusively during pfsm=5 (12/13 = 92%). Separately,
+header records' field[0] (normally always 0) turned out to be a genuine
+drift-flag: in all 3 cases where it's nonzero (423, 424, 375), the
+immediately-preceding continuation record's "should be 4 equal fields"
+pattern was actually a near-miss where one field exceeded the other three
+by almost exactly that same amount — confirmed by exact cross-record
+arithmetic, not inferred. `pipeline/decoders/0x61_28.py` updated to
+expose the 6 fields directly and flag drift when present; pull script's
+print line updated to match. Ceiling: field count/shape is now
+state-dependent and understood; field IDENTITY (which physical
+channel/quantity each slot represents) is not.
+
+**0x61/0x33 (ppg_settings) — 88 records (45 full-length, 43 truncated).**
+The 12-byte `settings_hex` splits cleanly into two structurally-identical
+6-byte halves — a per-channel (A/B) register pair, consistent with the
+dual-PPG-channel pattern already established elsewhere in this ring's
+protocol (0x6E, 0x77 both alternate channel A/B). Byte[2]/byte[8] act as
+a channel-half marker (`0x01`/`0x10` in 39/45 = 87% of records);
+byte[3]/byte[9] are a constant `0xCC` register-address byte in 100% of
+records, both halves; byte[5]/byte[11] are equal in 44/45 (98%);
+byte[6] = byte[0] + 17 in 39/45 (87%), a near-fixed per-channel
+calibration offset. `pipeline/decoders/0x61_33.py` updated to expose
+`channel_a`/`channel_b` as split 6-byte lists; pull script's print line
+updated to match. Ceiling: the two-halves structure is solid; individual
+register identity within each half (LED current? PD gain? ADC range?)
+needs the MAX86171 datasheet.
+
+Both decoders re-verified against the full corpus after the change: 140/140
+and 88/88 real records decode without exception, zero failures.
+
+## 2026-07-12 — Two comparison-CSV rows logged (2026-07-10/11, 2026-07-11/12); SpO2 bias reversal found
+
+Data for these two nights was delivered via a separate claude.ai conversation
+(not this session), with an explicit instruction to reconcile against
+current repo state before trusting it, per this project's real-data-only
+discipline. Independently re-decoded both raw pull files directly
+(`gen3_pull_20260711_102734.txt`, `gen3_pull_20260712_100655.txt`) rather
+than transcribing the delivered numbers as-is. Full rows in
+`gen3_vs_gen4_comparison.csv`; summary here:
+
+**Verification result: accurate overall, one small unverified discrepancy.**
+0x6A sleep-state distribution, HR ranges, 0x6F SpO2 ranges, 0x5D absence,
+and 0x61/0x09 pfsm findings all matched exactly on independent re-decode
+for both nights. One minor gap: night 1's 0x6E was reported as "466
+samples, HR mean 64.5bpm"; this session's re-decode of the same file gives
+470 samples / 63.9bpm — close but not identical, cause not identified
+(possibly a different valid-sample filter). Not treated as invalidating
+anything else in the report.
+
+**New finding — SpO2 bias direction reversed on both nights.** Every prior
+row in the comparison CSV shows Gen4 reading higher than Gen3 by ~2-5%
+(the basis for the SPO2_OFFSET=6 calibration finding, mean gap +3.97%).
+Both of these new nights show the opposite: Gen3 averaged 95.0% vs Gen4's
+94% (2026-07-10/11), and Gen3 averaged 97.1% vs Gen4's 95% (2026-07-11/12)
+— Gen3 higher both times, not lower. Two consecutive nights is enough to
+flag as a real pattern shift, not noise. No cause identified — flagging,
+not concluding. Worth checking against the next few nights' data before
+deciding whether this changes the SPO2_OFFSET calibration conversation.
+
+**No pfsm=6 sample either night** — both nights have full, real Gen4
+ground truth (deep sleep 7% and 20% respectively) but zero usable
+0x61/0x09 f2/f4 data points, consistent with the already-quantified ~1-in-3
+capture-sparsity pattern (2026-07-11 entry above). Logged explicitly in
+the CSV notes rather than silently omitted, per the task instruction that
+delivered this data.
+
+**Flagged, not concluded — 2026-07-11/12 sleep-state distribution.** 5/6
+samples read `state=0`, only 1/6 `state=1` — unusual vs. the ~100%
+`state=1` pattern seen on most other confirmed sleep-window nights in this
+corpus, though not unprecedented (2026-07-09/10 was 100% `state=0`;
+2026-07-03 showed a mid-night transition). This pull also logged its own
+buffer-rollover warning (~37799 min gap from the prior pull — real data
+loss between captures), which is a plausible confound and should be
+weighed before treating the state split as a new decoder finding. Ties
+into the still-open `state=1`-flatness question from the 2026-06-28 entry
+at the top of this file (window-sampling artifact vs. incomplete
+decoder) — this data point doesn't resolve that question, just adds a
+data point to it.
+
+**0x75 sleep temp anomaly, night 1 only** — a single 0x75 event fired
+(7 samples, 36.48-36.67°C), notably higher than every prior
+`gen3_sleep_temp_min/max` value in the CSV (33-35.7°C range across 6
+prior rows with temp data). No cause identified — flagging for awareness,
+not concluding a sensor issue.
+
+**No conflict with recent Bryden-side changes** — checked `git log` on
+the findings files before touching anything; the most recent commit
+(`810c8b7`, the KV bridge fix) is already fully known to this session.
+No surprise changes from elsewhere.
+
+*Logged 2026-07-12.*
+
+## 2026-07-12 — BLE streaming daemon built and validated live; two protocol
+bugs found and fixed; real event-rate assumption was wrong
+
+Built `pipeline/tools/oura_gen3_ble_daemon.py` (see SESSION_HANDOFF.md for
+the full design writeup and the owner decision that unblocked it — the
+official Oura app's BLE slot is no longer worth protecting). This entry
+covers what real-hardware testing found, since none of it could be
+verified without the physical ring.
+
+**Two protocol bugs found and fixed, both real-hardware-only discoveries:**
+
+1. **Tag `0x11` is an end-of-transfer terminator/ack, not a real event.**
+   Appears as the last 1-2 packets of every history-fetch response. Its
+   "boot_ts" bytes are garbage (observed once at ~185.8M — nearly 3x any
+   real event's boot_ts — and once at 0), which corrupted the daemon's
+   "highest boot_ts seen" checkpoint when included in that calculation,
+   causing the next incremental request to ask for data "since" a point
+   in the ring's own future and get nothing back, which then falsely
+   tripped a ring-reboot-detection safeguard and forced a full buffer
+   re-fetch.
+2. **Tag `0x1f` is a second, different terminator, with an empty
+   payload.** Same corrupting effect, different garbage boot_ts values
+   (328480, 197920 observed — this time too *low*, not too high). Found
+   during the same live session. Fixed generally rather than by hardcoding
+   a second tag: the checkpoint calculation now excludes any tag not
+   present in `EVENT_TAGS`'s known 0x41-0x83 event range, rather than
+   accumulating a blocklist of protocol-control tags one discovery at a
+   time. Both tags are still logged for visibility, just not trusted to
+   advance the checkpoint.
+
+Also fixed: the ring's `since_boot_ts` history filter is confirmed
+**inclusive** (returns events with boot_ts >= X, not > X) — caused one
+duplicate event to be logged and decoded at every cycle boundary until
+fixed to request `since_boot_ts + 1`.
+
+**Poll interval assumption was wrong, revised twice from real data.**
+The whole daemon design was built around "~1.8 min worst case while
+walking" (the buffer-fill figure from earlier one-shot-pull-era work).
+Live testing found real event rates far higher than that assumed:
+- First run at the originally-planned 60s: the 256-event buffer filled in
+  ~66 seconds *just sitting at a desk*, not walking.
+- Tightened to 30s: every single cycle still returned exactly 256 events
+  with zero gaps in a continuity check (confirmed no loss, but zero
+  margin) — measured sustained rate ~14 events/sec, meaning the buffer
+  could fill in ~18 seconds during active daytime use.
+- Default is now 5s. This may need revisiting once there's comparable
+  overnight-sleep data — the true rate likely varies a lot by context
+  (this was all daytime desk/walking activity, not sleep).
+
+**Validated end-to-end with the ring in range, including a real
+disconnect.** A genuine BLE disconnect occurred mid-session (15:38:49,
+likely the ring going briefly out of range during a walk) — the daemon's
+reconnect-with-backoff logic fired correctly, reconnected within ~22
+seconds, and resumed polling with zero false reboot-detection or data
+loss across the boundary (confirmed via boot_ts continuity check: 9,633
+real events, zero gaps larger than 500 ticks anywhere in the session,
+including exactly at the disconnect point).
+
+**First-ever automated capture of 0x7E/0x7F step-feature data at scale:
+255 samples each, during a real walk.** This tag pair has been a
+persistent pain point in this project — every prior one-shot walk
+experiment (2026-07-07, 2026-07-09) either lost the raw pull to buffer
+roll or captured zero step-feature packets due to buffer/timing issues
+(see the 2026-07-07/09 entries above). The daemon's continuous polling
+captured a full walk's worth on the first real attempt, with zero manual
+timing required. Worth revisiting the still-open pace-sensitivity question
+(`b[9]`/`b[10]` walk-vs-other-activity is confirmed, fast-vs-slow pace is
+not) now that reliable capture exists — the blocker was never the
+decoder, it was getting usable data in the first place.
+
+*Logged 2026-07-12.*
+
+## 2026-07-12 — Roadmap pruned; 0x61/0x15 finger_detection promoted from
+too-sparse to PARTIAL using fresh daemon data
+
+**Roadmap pruning.** Per an owner request to identify dead weight in
+`open_ring_roadmap.md`, 16 tags were moved out of sections that implied
+open work into a new CLOSED section: 14 Tier-3 debug sub-types
+(bootloader logs, security-failure records, factory-test registers,
+sync-cache stats — genuinely zero biometric value even if fully decoded,
+two of them redundant with the already-DONE `0x61/14` battery decoder),
+plus `0x5B` (BLE connectivity metadata: phone MAC addresses, RSSI,
+connection intervals — real decode work exists but it's not biometrics)
+and `0x82`/`0x83` (BLE scan events). Separately, `0x76` (bedtime_period)
+moved to a new CONFIRMED NON-FIRING section — distinct from CLOSED
+because it would be valuable if it fired, it just never has despite
+repeated re-verification, so "not started" was the wrong framing (implies
+pending work; there is none). Nothing was deleted — findings stay logged
+per the roadmap's own rule #3, only the categorization changed.
+
+**0x61/0x15 (_dd_finger_detection) pushed from "too sparse to analyze"
+(n=4) to PARTIAL (n=11 unique real samples).** The jump came entirely
+from today's BLE daemon session — continuous polling captured 7
+consecutive real samples in one sitting, more than doubling the entire
+prior corpus. That was enough for real byte-level analysis instead of
+leaving it as an undifferentiated raw u64:
+
+- **Fires on a strict periodic schedule, not on wear-transition
+  events.** All 7 consecutive daemon-session samples are exactly 36,000
+  boot_ts ticks apart, zero variance — roughly a 30-minute periodic
+  status report at today's measured tick rates. This argues against the
+  naive "fires when the ring detects finger on/off" reading of the tag
+  name; it's a periodic poll, consistent with how other `0x61` debug
+  sub-types behave.
+- **Byte-level entropy split found** across the 8-byte payload: byte[1]
+  is near-constant (3, one exception); byte[3] is stable *within* a
+  session but differs consistently *between* sessions (1 across four
+  older pulls from 2026-07-02/05/05/07, 2 across today's daemon session);
+  byte[7] (the MSB) is low-entropy (only 0/1/2 observed across all 11
+  samples) and shows a clean one-time 0→1 transition caught exactly
+  halfway through the 7-sample session. The remaining 5 bytes stay
+  high-entropy with no pattern found — likely the actual sensor payload.
+- Decoder (`pipeline/decoders/0x61_15.py`) updated to expose all 8 bytes
+  individually alongside the raw u64; re-verified against all 18 raw log
+  lines (11 unique + 7 duplicate re-observations from daemon restarts),
+  zero decode failures.
+- **Ceiling unchanged**: still no physical meaning for the high-entropy
+  bytes or exact semantics of the two slow counters. Would need firmware
+  or a deliberate remove-ring/put-back-on experiment during a live
+  capture to make further progress — not more corpus analysis.
+
+**What's left on the roadmap is now genuinely at ceiling, not idle.**
+Every remaining PARTIAL/IN PROGRESS item (`0x61/09` f2/f4, `0x4A`, `0x50`,
+`0x6C`, `0x6D`, `0x72`, `0x73`, `0x77`, `0x61/28`, `0x61/33`) has an
+explicit CEILING note in the roadmap pointing at firmware or datasheet
+access as the actual blocker — none of them are stuck due to unanalyzed
+corpus data. The one item with a real, achievable next step that doesn't
+require external resources is the `0x7E`/`0x7F` pace-sensitivity walk
+comparison, now realistic given today's clean daemon-based capture (see
+the "BLE streaming daemon" entry above) — that's the one piece of
+roadmap work that's actually actionable today, not blocked.
+
+*Logged 2026-07-12.*
+
+## 2026-07-12 21:20 — Evening pull: first-ever firing of six tags that were
+"NEVER OBSERVED" or "Gen3 does NOT emit" for months — real structural
+finding, content interpretation still open
+
+Pull run from a separate Claude session (`gen3_pull_20260712_212119.txt`,
+ACTIVE WINDOW), independently verified against the real saved file before
+logging anything, per real-data-only discipline.
+
+**Cosmetic artifact first, so it doesn't get mistaken for a real finding**:
+the pull's top-line "Boot-relative timestamp range... Span: ~36598.5
+hours" is bogus — caused by the same `0x11` end-of-transfer terminator
+packet (`payload=7b000300`) identified and excluded from checkpoint math
+in `oura_gen3_ble_daemon.py` earlier today. That fix was only applied to
+the daemon, not to `oura_gen3_morning_pull.py` (this one-shot script),
+which still does a naive min/max over every parsed event including
+terminator tags for its top-of-output span line. Confirmed the real event
+span is 8,104 ticks (~5-6 min at today's rates) — completely normal, no
+actual data problem. Worth porting the same exclusion to the one-shot
+script too at some point; low priority, cosmetic only.
+
+**Six tags fired for the first time ever, together, as one cluster**:
+`0x76` (bedtime_period — "CONFIRMED NON-FIRING" as of *this morning's*
+roadmap prune, now contradicted), `0x49`/`0x4C`/`0x4F`/`0x58` (Sleep
+summary 1-4 — previously "Gen3 does NOT emit, 0 packets across 27 pulls"),
+and `0x5A` (Sleep phase data — not previously tracked in the roadmap at
+all). All clustered within a 143-tick window (boot_ts 63610235-63610378),
+consistent with a single "finalize and report a completed sleep session"
+event.
+
+**0x5A Sleep phase data — confirmed real chunked-transmission structure,
+content not decoded.** 23 packets fired, each with first payload byte
+being a sequential index 0-22 (verified: zero gaps, zero duplicates,
+zero out-of-range values) and a fixed 13-byte remainder. Reassembles
+cleanly into one 299-byte structure. Tested a 2-bit-per-epoch sleep-stage
+hypothesis (motivated by heavy `0x55`/`0xAA` alternating-bit patterns in
+the reassembled bytes) — the bit-pair distribution is skewed but the
+data is dominated by long uniform runs of those two byte values, which
+reads more like padding/filler than a rich per-epoch classifier. Not
+concluded either way. This is the strongest new lead for the
+`sleep_state`-flatness open question from the 2026-06-28 entry at the top
+of this file, but it is NOT solved — flagging the opportunity, not
+claiming the answer.
+
+**Sleep summary (1)/(4) — tested a "these are 0-100 scores" hypothesis
+against real Gen4 ground truth, result is inconclusive, not confirmed.**
+`Sleep summary (1)` is 4 bytes, first byte = 0x63 = 99 (plausible overall
+sleep score). `Sleep summary (4)` is exactly 7 bytes — `[98, 66, 100, 86,
+70, 58, 33]` — matching Gen4's own 7-field contributor-score shape
+(deep_sleep/efficiency/latency/rem_sleep/restfulness/timing/total_sleep,
+confirmed from today's App Data export). Owner confirmed no nap today, so
+this almost certainly refers to the 2026-07-11/12 overnight sleep already
+logged in `gen3_vs_gen4_comparison.csv`. Checked both nights' real
+trends-CSV contributor scores directly: one exact match per night (66 =
+July 12 Restfulness Score; 70 = July 11 Sleep Score) and some near-misses
+within 1-3 points of July 12's high scores (98/100 vs REM 99/Deep 97/Total
+99) — not a clean confirmation at any field-order alignment tried. Real
+field order unknown, so positional comparison isn't fully valid either.
+**Not promoted past hypothesis.** `Sleep summary (2)` (14 bytes, tested as
+7×u16 LE, got plausible-looking but not-validated duration-shaped values)
+and `Sleep summary (3)` (11 bytes) not deeply analyzed this session.
+
+**Secondary finding, complicates timing analysis broadly**: while trying
+to place `0x76`'s decoded `start_rt`/`end_rt` (span 362,153 ticks) on a
+real calendar, found today's boot_ts tick rate is NOT constant —
+roughly ~3 ticks/sec during today's calmer late-morning period (anchored
+against two known real-world timestamps: ~10:07am pull and ~3:17pm daemon
+start) vs. the ~14-24 ticks/sec measured during this afternoon's intense
+walk/desk-activity daemon session (see the "BLE streaming daemon" entry
+above). This means the project's long-standing "~3.70 ticks/sec" constant
+is not a safe universal conversion factor — it may only hold for a
+specific activity context, not all of them. Not resolved this session;
+flagging as a real open question that affects any boot_ts-to-wall-clock
+reasoning done elsewhere in this project's history.
+
+**Why this may have never fired before**: pure speculation, not
+confirmed — possibly requires a truly *completed* sleep session still
+present in the buffer at pull time (versus a session still in progress,
+or one that's already been evicted by the 255-event circular buffer
+before a pull catches it). Worth watching whether this recurs on future
+evening pulls, or whether it was a one-off triggered by something specific
+about today.
+
+No decoders exist yet for `0x49`/`0x4C`/`0x4F`/`0x58`/`0x5A` — today's
+analysis was done ad hoc against the raw saved file, not via
+`pipeline/decoders/`. `open_ring_roadmap.md` updated to reflect all of
+this; see there for the corrected tag statuses.
+
+*Logged 2026-07-12.*
+
+## 2026-07-13 05:41 — Last comparison-CSV row before Gen4 token expiry;
+large HR gap explained as a buffer-window artifact, not a decode problem
+
+Morning pull (`gen3_pull_20260713_054157.txt`) run directly in this
+session — real BLE connection, real ring, verified end to end, not
+transcribed from elsewhere. 256 raw packets, zero decode failures,
+SLEEP WINDOW classification, 100% state=1 across 8 `0x6A` samples.
+
+**Same cosmetic artifact as last night**: the top-line "Span: ~1529
+hours" is the `0x11` terminator packet again, unrelated to real data
+(real 0x6A/0x6F/0x6E samples all self-consistent and physiologically
+normal). Confirms this is a recurring, understood, harmless quirk of the
+one-shot script specifically (still not ported the daemon's fix over).
+
+**Large Gen3/Gen4 HR gap investigated before logging as a finding, and
+resolved as non-comparability, not an error.** Gen3 `0x6A` avg 73.6bpm vs
+Gen4's whole-night avg 63bpm — a ~10bpm gap, far larger than any prior
+night in this dataset. Checked the actual sample span before treating
+this as notable: the 8 `0x6A` samples span only 2,112 boot_ts ticks,
+which at the established ~3 ticks/sec idle-context rate is roughly
+10-12 minutes of real time — confirming this pull's buffer only covered
+a short slice near the very end of the sleep session, not a whole-night
+average the way Gen4's figure is. Gen4's own data supports this reading
+being physiologically plausible: it flags the night as broken
+("Restfulness: Pay attention", only 19% deep sleep, 66% light) — an
+elevated HR in the last ~10 minutes before waking fits that pattern.
+**Lesson for future comparison rows**: Gen3's `0x6A` figures are only
+ever a snapshot of whatever the buffer happened to be holding at pull
+time, not a night-long average — a night where the pull catches a
+pre-waking slice specifically will not be comparable to Gen4's average
+even when both decoders are working correctly.
+
+**SpO2 bias reverted to the original direction, confirming the prior
+2-night reversal was temporary, not a new pattern.** This night: Gen4
+96% vs Gen3 94.2%, Gen4 higher by 1.8% — matching the historical norm
+(Gen4 consistently higher, mean +3.97%) rather than continuing the
+Gen3-higher reversal seen on the 2026-07-10/11 and 07-11/12 rows. Two
+nights was not enough to call that a permanent shift, and it wasn't one.
+
+**The 0x76/Sleep-summary/0x5A cluster from last night's 21:20 evening
+pull did NOT recur on this morning's pull.** One data point toward
+"genuinely rare," not "now permanently unlocked" — consistent with the
+open question logged in the 2026-07-12 21:20 entry above. `0x61/0x15`
+finger detection fired again on schedule (bytes=[119,2,24,2,75,3,47,0]),
+consistent with its already-characterized ~36000-tick periodic cadence.
+
+Comparison row logged to `gen3_vs_gen4_comparison.csv` with full context.
+This is very likely the last row this project will be able to add with
+real, independently-obtained Gen4 ground truth — the token expires
+today.
+
+*Logged 2026-07-13.*

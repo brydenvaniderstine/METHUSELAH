@@ -46,3 +46,7 @@ decode_debug_data_finger_detection = _load("0x61_15.py", "decoder_0x61_15")
 decode_debug_data_afe_statistics   = _load("0x61_28.py", "decoder_0x61_28")
 decode_debug_data_acm_configuration = _load("0x61_29.py", "decoder_0x61_29")
 decode_debug_data_ppg_settings  = _load("0x61_33.py", "decoder_0x61_33")
+
+# hrv_rmssd.py isn't a byte decoder (no digit-prefixed filename issue), so it's
+# imported normally rather than via the importlib workaround above.
+from .hrv_rmssd import calculate_rmssd

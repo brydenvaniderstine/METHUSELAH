@@ -285,10 +285,10 @@ the prime directive — it risks softening the command into a suggestion.
 ### Threshold calibration — personal vs universal
 
 Current thresholds:
-- deep_sleep: 13% — clinical floor, applies universally (healthy adult range 13–23%)
+- sleepDuration: 7h — general sleep-health floor (7–9h adult range); universal. Replaces `deep_sleep` as the fourth command vector 2026-07-14 (see rationale below).
 - hrv: 25ms — personalised to 355-night baseline of 29.3ms avg (−1 standard deviation)
 - glucose: 5.8 mmol/L — standard clinical threshold, applies universally
-- rhr: 60 bpm — standard clinical threshold, applies universally
+- rhr: 63 bpm — standard clinical threshold, applies universally
 
 The HRV threshold is the only one currently personalised to this user.
 When METHUSELAH expands to additional users, HRV threshold must be
@@ -299,9 +299,14 @@ a personal HRV baseline (minimum 30 nights of data) before the engine
 can fire accurate HRV commands for that user. Until that exists,
 the 25ms threshold is accurate for this user only.
 
-Rationale for deep_sleep at 13%: clinical literature places the healthy
-adult floor at 13% of total sleep time. Below 13% is where measurable
-physiological consequences begin regardless of personal baseline.
-Personal baseline (16.4% avg over 355 nights) sits in the healthy
-middle of the 13–23% range — using 13% as threshold fires only when
-genuinely below the clinical minimum, not just below personal best.
+Rationale for sleepDuration replacing deep_sleep (2026-07-14): deep sleep % was
+replaced as the fourth tile because no reliable Gen3 source exists for it —
+0x6A state proportion produced no variance (9/11 nights at 100% single state),
+0x61/f2/f4 blocked by data scarcity (36% of sleep pulls missing it, n=5 with
+r=0.17–0.44), 0x5A uncharted territory. Sleep duration is directly measurable
+from both Gen4 (total_sleep_duration field) and Gen3 (daemon 0x6A asleep-packet
+accumulation overnight), making it interchangeable between rings. The transparency
+principle applies: show what the ring actually measures, not a downstream
+inference that doesn't survive the Gen4 → Gen3 transition. BRI brackets:
+{ optimal: 8h, nominal: 7h }. `deep_sleep_pct` infrastructure left intact in
+pipeline/tools — not deleted, just not surfaced in the primary UI.
