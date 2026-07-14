@@ -32,15 +32,15 @@ export const COMMANDS = {
     briefing: (value, threshold) =>
       `Your resting heart rate read ${value} bpm, above your threshold of ${threshold} bpm. Active recovery — light movement, no training load — allows your cardiovascular system to reset.`,
   },
-  deepSleep: {
+  sleepDuration: {
     name:    "SLEEP PROTOCOL",
     cmd:     "INITIATE SLEEP PROTOCOL TONIGHT.",
-    rat:     (value) => `REPAIR DEPTH DEFICIENT (${value.toFixed(0)}% DEEP SLEEP).`,
+    rat:     (value) => `SLEEP LOAD DEFICIENT (${value.toFixed(1)}H LAST NIGHT).`,
     color:   "var(--text-main)",
     border:  "var(--accent-amber)",
     level:   "warn",
     briefing: (value, threshold) =>
-      `Your deep sleep was ${value.toFixed(0)}% last night, below your threshold of ${threshold}%. Follow the sleep protocol tonight to restore slow-wave sleep and hormonal recovery.`,
+      `You slept ${value.toFixed(1)} hours last night, below your threshold of ${threshold}h. Follow the sleep protocol tonight to restore recovery and hormonal repair.`,
   },
   nominal: {
     name:    "",

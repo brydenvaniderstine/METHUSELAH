@@ -18,8 +18,9 @@
 //   so it does not participate in evaluate()'s priority cascade. Adding a
 //   fifth command vector is a v3 discussion per the priority-order comment
 //   in engine/index.js; this just makes the value/source interchangeable.
-// - HRV: Gen3 NOT READY (0x5D does not fire reliably overnight)
-// - Deep sleep: Gen3 NOT READY (0x6A has no sleep-stage breakdown yet)
+// - HRV: Gen3 READY (RMSSD from 0x6E/0x80 IBI, sleep-window only, validated 2026-07-13)
+// - Sleep duration: Gen3 READY via daemon (0x6A state accumulation overnight).
+//   Morning pull cannot provide this — ring buffer only holds ~10min of 0x6A tail.
 // - Glucose: no wearable source on either generation — manual entry only
 
 const FRESHNESS_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -44,10 +45,10 @@ function resolveVector(gen4Value, gen3Value, manualValue) {
 /**
  * Resolve the best available value for each engine vector.
  *
- * @param {Object|null} gen4 - Oura API state, shape { hrv, rhr, deepSleepPct, isLive, timestamp }
- * @param {Object|null} gen3 - Gen3 bridge JSON, shape { timestamp, vectors: { rhr_bpm, hrv_ms, deep_sleep_pct, ... } }
+ * @param {Object|null} gen4 - Oura API state, shape { hrv, rhr, totalSleepHrs, isLive, timestamp }
+ * @param {Object|null} gen3 - Gen3 bridge JSON, shape { timestamp, vectors: { rhr_bpm, hrv_ms, sleep_duration_hrs, ... } }
  * @param {Object} manual - manually entered values, shape { glucose }
- * @returns {{ glucose: Vector, hrv: Vector, rhr: Vector, deepSleepPct: Vector, spo2: Vector }}
+ * @returns {{ glucose: Vector, hrv: Vector, rhr: Vector, sleepDurationHrs: Vector, spo2: Vector }}
  */
 export function resolveVectors(gen4, gen3, manual = {}) {
   const gen4Fresh = gen4 && gen4.isLive && isFresh(gen4.timestamp) ? gen4 : null;
@@ -67,11 +68,16 @@ export function resolveVectors(gen4, gen3, manual = {}) {
       null
     ),
 
-    // Gen3 not offered — 0x5D overnight decoder incomplete
-    hrv: resolveVector(gen4Fresh?.hrv ?? null, null, null),
+    // Gen3: RMSSD computed from 0x6E/0x80 IBI streams, sleep-window only
+    hrv: resolveVector(gen4Fresh?.hrv ?? null, gen3Fresh?.vectors?.hrv_ms ?? null, null),
 
-    // Gen3 not offered — 0x6A has no sleep-stage breakdown yet
-    deepSleepPct: resolveVector(gen4Fresh?.deepSleepPct ?? null, null, null),
+    // Gen4: total_sleep_duration from Oura API; Gen3: accumulated from daemon 0x6A state transitions.
+    // Morning pull cannot provide this (only captures last ~10min of 0x6A buffer).
+    sleepDurationHrs: resolveVector(
+      gen4Fresh?.totalSleepHrs ?? null,
+      gen3Fresh?.vectors?.sleep_duration_hrs ?? null,
+      null
+    ),
 
     // No wearable source on either generation
     glucose: resolveVector(null, null, manual?.glucose ?? null),

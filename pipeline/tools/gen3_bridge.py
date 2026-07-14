@@ -1,0 +1,77 @@
+"""Shared Gen3 bridge JSON construction + live-site push.
+
+Extracted from oura_gen3_morning_pull.py so oura_gen3_ble_daemon.py can push
+periodic updates without duplicating the vectors-dict shape or the KV write
+path a second time -- that format has to stay in sync with api/gen3-bridge.js
+and web/src/App.js, and drift between two independent copies is exactly the
+kind of bug this project has already had to debug once (the KV wire-format
+work, 2026-07-12).
+"""
+import json
+import os
+import urllib.request
+import urllib.error
+from datetime import datetime
+
+
+def build_bridge_data(pull_class, pull_file, priority_event_count,
+                       hr_avgs=None, ibi_hr_bpm=None, temps=None,
+                       spo2_avgs=None, fuel_gauge_pct=None,
+                       step_count=None, cadence_spm=None,
+                       deep_sleep_pct=None, hrv_ms=None,
+                       sleep_duration_hrs=None):
+    """Build the bridge JSON dict in the exact shape api/gen3-bridge.js
+    and App.js expect. All vector args are optional accumulator lists
+    (averaged here) or precomputed scalars -- caller decides what it has.
+    """
+    return {
+        "source": "gen3_ble",
+        "timestamp": datetime.now().isoformat(),
+        "pull_file": pull_file,
+        "classifier": pull_class,
+        "vectors": {
+            "hrv_ms": hrv_ms,
+            "rhr_bpm": round(sum(hr_avgs) / len(hr_avgs), 1) if hr_avgs else None,
+            "ibi_hr_bpm": ibi_hr_bpm,
+            "sleep_duration_hrs": sleep_duration_hrs,
+            "deep_sleep_pct": deep_sleep_pct,
+            "sleep_temp_c": round(sum(temps) / len(temps), 2) if temps else None,
+            "spo2_avg_pct": round(sum(spo2_avgs) / len(spo2_avgs), 1) if spo2_avgs else None,
+            "battery_pct": fuel_gauge_pct,
+            "step_count": step_count,
+            "cadence_spm": cadence_spm,
+        },
+        "raw_sample_count": priority_event_count,
+    }
+
+
+def write_local_bridge_file(bridge_data, repo_root):
+    bridge_dir = os.path.join(repo_root, "pipeline", "data", "bridge")
+    os.makedirs(bridge_dir, exist_ok=True)
+    bridge_path = os.path.join(bridge_dir, "gen3_latest.json")
+    with open(bridge_path, "w") as f:
+        json.dump(bridge_data, f, indent=2)
+    return bridge_path
+
+
+def push_bridge_json(bridge_data, timeout=10):
+    """Best-effort POST to the live site. Never raises -- returns a status
+    string for the caller to print/log. Mirrors the exact behavior already
+    verified working in oura_gen3_morning_pull.py on 2026-07-12.
+    """
+    write_secret = os.environ.get("GEN3_BRIDGE_WRITE_SECRET")
+    if not write_secret:
+        return "Skipped — GEN3_BRIDGE_WRITE_SECRET not set in this environment."
+    try:
+        req = urllib.request.Request(
+            "https://www.methuselah.ca/api/gen3-bridge",
+            data=json.dumps(bridge_data).encode("utf-8"),
+            headers={"Content-Type": "application/json", "X-Write-Secret": write_secret},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return f"{resp.status} → live site updated."
+    except urllib.error.HTTPError as e:
+        return f"FAILED — HTTP {e.code}: {e.read().decode(errors='replace')}"
+    except Exception as e:
+        return f"FAILED — {e}"

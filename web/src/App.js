@@ -277,7 +277,7 @@ export default function MethuselahFinal() {
   const [input,           setInput]           = useState("");
   const [authError,       setAuthError]       = useState(false);
   const [clock,           setClock]           = useState(ts());
-  const [ouraData,        setOuraData]        = useState({ hrv: null, rhr: null, deepSleepPct: null, isLive: false, timestamp: null });
+  const [ouraData,        setOuraData]        = useState({ hrv: null, rhr: null, totalSleepHrs: null, isLive: false, timestamp: null });
   const [glucoseReading,  setGlucoseReading]  = useState(null);
   const [glucoseEntryOpen, setGlucoseEntryOpen] = useState(false);
   const [glucoseInput,    setGlucoseInput]    = useState("");
@@ -305,15 +305,15 @@ export default function MethuselahFinal() {
         if (mainSleep && mainSleep.average_hrv) {
           const hrv = mainSleep.average_hrv;
           const rhr = mainSleep.lowest_heart_rate ?? null;
-          const deepSleepPct =
+          const totalSleepHrs =
             mainSleep.total_sleep_duration > 0
-              ? (mainSleep.deep_sleep_duration / mainSleep.total_sleep_duration) * 100
+              ? Math.round((mainSleep.total_sleep_duration / 3600) * 10) / 10
               : null;
-          setOuraData({ hrv, rhr, deepSleepPct, isLive: true, timestamp: new Date().toISOString() });
+          setOuraData({ hrv, rhr, totalSleepHrs, isLive: true, timestamp: new Date().toISOString() });
           setOuraStatus("OURA_LIVE");
           addLog(`OURA INTERCEPT: ${hrv} MS HRV // LAST NIGHT`, "roche");
           if (rhr !== null) addLog(`CARDIAC INTERCEPT: ${rhr} BPM // LAST NIGHT`, "roche");
-          if (deepSleepPct !== null) addLog(`REPAIR DEPTH: ${deepSleepPct.toFixed(0)}% // LAST NIGHT`, "roche");
+          if (totalSleepHrs !== null) addLog(`SLEEP LOAD: ${totalSleepHrs.toFixed(1)}H // LAST NIGHT`, "roche");
 
           // HRV 7-day rolling average
           const hrvHistory = JSON.parse(localStorage.getItem("hrvHistory") || "[]");
@@ -324,18 +324,18 @@ export default function MethuselahFinal() {
           const trendHrv = prevHrv === null ? "STABLE" : hrv > prevHrv ? "TRENDING UP" : hrv < prevHrv ? "TRENDING DOWN" : "STABLE";
           addLog(`HRV 7-DAY AVG: ${Math.round(avgHrv)} MS // ${trendHrv}`, "roche");
 
-          // Deep Sleep 7-day rolling average
-          if (deepSleepPct !== null) {
-            const deepHistory = JSON.parse(localStorage.getItem("deepSleepHistory") || "[]");
-            const prevDeep = deepHistory.length > 0 ? deepHistory[deepHistory.length - 1] : null;
-            const newDeepHistory = [...deepHistory, deepSleepPct].slice(-7);
-            localStorage.setItem("deepSleepHistory", JSON.stringify(newDeepHistory));
-            const avgDeep = newDeepHistory.reduce((a, b) => a + b, 0) / newDeepHistory.length;
-            const trendDeep = prevDeep === null ? "STABLE" : deepSleepPct > prevDeep ? "TRENDING UP" : deepSleepPct < prevDeep ? "TRENDING DOWN" : "STABLE";
-            addLog(`REPAIR DEPTH 7-DAY AVG: ${avgDeep.toFixed(0)}% // ${trendDeep}`, "roche");
+          // Sleep duration 7-day rolling average
+          if (totalSleepHrs !== null) {
+            const sleepHistory = JSON.parse(localStorage.getItem("sleepDurationHistory") || "[]");
+            const prevSleep = sleepHistory.length > 0 ? sleepHistory[sleepHistory.length - 1] : null;
+            const newSleepHistory = [...sleepHistory, totalSleepHrs].slice(-7);
+            localStorage.setItem("sleepDurationHistory", JSON.stringify(newSleepHistory));
+            const avgSleep = newSleepHistory.reduce((a, b) => a + b, 0) / newSleepHistory.length;
+            const trendSleep = prevSleep === null ? "STABLE" : totalSleepHrs > prevSleep ? "TRENDING UP" : totalSleepHrs < prevSleep ? "TRENDING DOWN" : "STABLE";
+            addLog(`SLEEP LOAD 7-DAY AVG: ${avgSleep.toFixed(1)}H // ${trendSleep}`, "roche");
           }
 
-          const briFetch = calculateBRI({ glucose: null, hrv, rhr, deepSleepPct, glucosePending: true });
+          const briFetch = calculateBRI({ glucose: null, hrv, rhr, sleepDurationHrs: totalSleepHrs, glucosePending: true });
           addLog(`BIOLOGICAL READINESS INDEX: ${briFetch.score} // ${briFetch.label} // GLUCOSE PENDING`, "", briFetch.color);
 
           return true;
@@ -409,7 +409,7 @@ export default function MethuselahFinal() {
         setGlucoseEntryOpen(false);
         setGlucoseInput("");
         addLog("BLE INTERCEPT: " + glucose.toFixed(1) + " MMOL/L // AUTO-LOGGED", "roche");
-        const bri = calculateBRI({ glucose, hrv: ouraData.hrv, rhr: ouraData.rhr, deepSleepPct: ouraData.deepSleepPct, glucosePending: false });
+        const bri = calculateBRI({ glucose, hrv: ouraData.hrv, rhr: ouraData.rhr, sleepDurationHrs: ouraData.totalSleepHrs, glucosePending: false });
         addLog("BIOLOGICAL READINESS INDEX: " + bri.score + " // " + bri.label + " // ALL VECTORS CONFIRMED", "", bri.color);
       } else {
         addLog("BLE // NO READING YET — ENTER MANUALLY", "event");
@@ -428,7 +428,7 @@ export default function MethuselahFinal() {
     localStorage.setItem("glucoseReading", val.toString());
     localStorage.setItem("glucoseDate", today);
     addLog(`GLYCEMIC INTERCEPT: ${val.toFixed(1)} MMOL/L // MANUAL ENTRY`, "roche");
-    const briGlucose = calculateBRI({ glucose: val, hrv: ouraData.hrv, rhr: ouraData.rhr, deepSleepPct: ouraData.deepSleepPct, glucosePending: false });
+    const briGlucose = calculateBRI({ glucose: val, hrv: ouraData.hrv, rhr: ouraData.rhr, sleepDurationHrs: ouraData.totalSleepHrs, glucosePending: false });
     addLog(`BIOLOGICAL READINESS INDEX: ${briGlucose.score} // ${briGlucose.label} // ALL VECTORS CONFIRMED`, "", briGlucose.color);
     setGlucoseEntryOpen(false);
     setGlucoseInput("");
@@ -465,19 +465,22 @@ export default function MethuselahFinal() {
   }, [locked]);
 
   const logic = evaluateSources(ouraData, gen3Bridge, { glucose: glucoseReading });
-  const { hrv, rhr, deepSleepPct } = {
+  const { hrv, rhr, sleepDurationHrs } = {
     hrv: logic.vectors.hrv.value,
     rhr: logic.vectors.rhr.value,
-    deepSleepPct: logic.vectors.deepSleepPct.value,
+    sleepDurationHrs: logic.vectors.sleepDurationHrs.value,
   };
 
   useEffect(() => { setBriefingOpen(false); }, [logic.level]);
 
-  const hrvPct  = hrv  !== null ? ((hrv  - 25) / (95 - 25))   * 100 : 0;
-  const rhrPct  = rhr  !== null ? ((rhr  - 40) / (100 - 40))  * 100 : 0;
-  const deepPct = deepSleepPct !== null ? Math.min(100, (deepSleepPct / 30) * 100) : 0;
+  const hrvPct   = hrv  !== null ? ((hrv  - 25) / (95 - 25))  * 100 : 0;
+  const rhrPct   = rhr  !== null ? ((rhr  - 40) / (100 - 40)) * 100 : 0;
+  // Sleep gauge: 4h → 0%, 10h → 100%, clamped
+  const sleepPct = sleepDurationHrs !== null
+    ? Math.min(100, Math.max(0, ((sleepDurationHrs - 4) / (10 - 4)) * 100))
+    : 0;
 
-  const bri = calculateBRI({ glucose: glucoseReading, hrv, rhr, deepSleepPct, glucosePending: glucoseReading === null });
+  const bri = calculateBRI({ glucose: glucoseReading, hrv, rhr, sleepDurationHrs, glucosePending: glucoseReading === null });
 
   const handleExecute = () => {
     setExecState("active");
@@ -597,13 +600,13 @@ onBLERead={readBLEGlucose}
               source={logic.vectors.rhr.source}
             />
             <Metric
-              label="REPAIR DEPTH"
-              val={deepSleepPct !== null ? deepSleepPct.toFixed(0) : "--"}
-              unit="%"
-              pct={deepPct}
-              color={deepSleepPct === null ? "var(--text-dim)" : deepSleepPct < THRESHOLDS.deepSleep ? "var(--accent-amber)" : "var(--accent-green)"}
-              status={deepSleepPct === null ? "AWAITING DATA" : deepSleepPct < THRESHOLDS.deepSleep ? "DEFICIENT" : "OPTIMAL"}
-              source={logic.vectors.deepSleepPct.source}
+              label="SLEEP LOAD"
+              val={sleepDurationHrs !== null ? sleepDurationHrs.toFixed(1) : "--"}
+              unit="HRS"
+              pct={sleepPct}
+              color={sleepDurationHrs === null ? "var(--text-dim)" : sleepDurationHrs < THRESHOLDS.sleepDuration ? "var(--accent-amber)" : "var(--accent-green)"}
+              status={sleepDurationHrs === null ? "AWAITING DATA" : sleepDurationHrs < THRESHOLDS.sleepDuration ? "DEFICIENT" : "OPTIMAL"}
+              source={logic.vectors.sleepDurationHrs.source}
             />
           </div>
 
