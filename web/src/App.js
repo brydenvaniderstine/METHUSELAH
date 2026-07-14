@@ -175,22 +175,6 @@ body::before {
 .auth-hint { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
 .auth-decrypt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 3px; font-weight: 700; padding: 12px; background: var(--text-main); color: var(--bg); border: none; cursor: pointer; box-shadow: 3px 3px 0 var(--accent-amber); margin-top: 8px; text-transform: uppercase; width: 80vw; max-width: 300px; }
 .auth-error { font-size: 9px; color: var(--accent-red); letter-spacing: 2px; animation: fadeIn 0.2s ease; }
-.oura-setup {
-  position: fixed; inset: 0; background: var(--bg); z-index: 10000;
-  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px;
-  font-family: var(--font-mono); padding: 24px; box-sizing: border-box;
-}
-.oura-title { font-size: 13px; color: var(--accent-amber); letter-spacing: 4px; font-weight: 700; text-align: center; }
-.oura-sub { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; text-align: center; line-height: 1.8; }
-.oura-input {
-  background: transparent; border: 1px solid var(--line-bright); color: var(--accent-green);
-  font-family: var(--font-mono); font-size: 11px; padding: 12px; text-align: center;
-  width: 80vw; max-width: 400px; outline: none; transition: border-color 0.2s; letter-spacing: 1px;
-}
-.oura-input:focus { border-color: var(--accent-green); }
-.oura-btn { font-family: var(--font-mono); font-size: 11px; letter-spacing: 3px; font-weight: 700; padding: 12px; background: var(--text-main); color: var(--bg); border: none; cursor: pointer; box-shadow: 3px 3px 0 var(--accent-amber); text-transform: uppercase; width: 80vw; max-width: 400px; }
-.oura-skip { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; cursor: pointer; text-decoration: underline; margin-top: 8px; background: none; border: none; font-family: var(--font-mono); text-transform: uppercase; }
-.oura-badge { font-size: 8px; color: var(--accent-blue); letter-spacing: 1px; margin-top: 4px; }
 `;
 
 const MASTER_KEY = "v1";
@@ -305,14 +289,9 @@ export default function MethuselahFinal() {
   const ts = () => new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   const [locked,          setLocked]          = useState(true);
-  const [showOuraSetup,   setShowOuraSetup]   = useState(false);
-  const [ouraToken,       setOuraToken]       = useState("");
-  const [ouraInput,       setOuraInput]       = useState("");
-  const [ouraStatus,      setOuraStatus]      = useState("DISCONNECTED");
   const [input,           setInput]           = useState("");
   const [authError,       setAuthError]       = useState(false);
   const [clock,           setClock]           = useState(ts());
-  const [ouraData,        setOuraData]        = useState({ hrv: null, rhr: null, totalSleepHrs: null, isLive: false, timestamp: null });
   const [glucoseReading,  setGlucoseReading]  = useState(null);
   const [glucoseTimestamp, setGlucoseTimestamp] = useState(() => localStorage.getItem("glucoseTimestamp") || null);
   const [hrvHist,   setHrvHist]   = useState(() => JSON.parse(localStorage.getItem("hrvHistory") || "[]"));
@@ -329,84 +308,6 @@ export default function MethuselahFinal() {
 
   const addLog = (msg, type = "", color = null) => setLogs(prev => [{ time: ts(), msg, type, color }, ...prev].slice(0, 12));
 
-  const fetchOuraData = async (token) => {
-    try {
-      const today = new Date();
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const fmt = (d) => d.toISOString().split('T')[0];
-      const start = fmt(yesterday);
-      const end = fmt(today);
-      const res = await fetch(`/api/oura?token=${token}&start_date=${start}&end_date=${end}`);
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-      const data = await res.json();
-      if (data.data && data.data.length > 0) {
-        const mainSleep = data.data.find(s => s.type === "long_sleep") || data.data[0];
-        if (mainSleep && mainSleep.average_hrv) {
-          const hrv = mainSleep.average_hrv;
-          const rhr = mainSleep.lowest_heart_rate ?? null;
-          const totalSleepHrs =
-            mainSleep.total_sleep_duration > 0
-              ? Math.round((mainSleep.total_sleep_duration / 3600) * 10) / 10
-              : null;
-          setOuraData({ hrv, rhr, totalSleepHrs, isLive: true, timestamp: new Date().toISOString() });
-          setOuraStatus("OURA_LIVE");
-          addLog(`OURA INTERCEPT: ${hrv} MS HRV // LAST NIGHT`, "roche");
-          if (rhr !== null) addLog(`CARDIAC INTERCEPT: ${rhr} BPM // LAST NIGHT`, "roche");
-          if (totalSleepHrs !== null) addLog(`SLEEP DEBT: ${totalSleepHrs.toFixed(1)}H // LAST NIGHT`, "roche");
-
-          // HRV 7-day rolling average
-          const newHrvHistory = [...hrvHist, hrv].slice(-7);
-          setHrvHist(newHrvHistory);
-          localStorage.setItem("hrvHistory", JSON.stringify(newHrvHistory));
-          const avgHrv = newHrvHistory.reduce((a, b) => a + b, 0) / newHrvHistory.length;
-          const trendHrv = getTrend(newHrvHistory);
-          addLog(`HRV 7-DAY AVG: ${Math.round(avgHrv)} MS // ${trendHrv || "STABLE"}`, "roche");
-
-          // RHR 7-day rolling average
-          if (rhr !== null) {
-            const newRhrHistory = [...rhrHist, rhr].slice(-7);
-            setRhrHist(newRhrHistory);
-            localStorage.setItem("rhrHistory", JSON.stringify(newRhrHistory));
-          }
-
-          // Sleep duration 7-day rolling average
-          if (totalSleepHrs !== null) {
-            const newSleepHistory = [...sleepHist, totalSleepHrs].slice(-7);
-            setSleepHist(newSleepHistory);
-            localStorage.setItem("sleepDurationHistory", JSON.stringify(newSleepHistory));
-            const avgSleep = newSleepHistory.reduce((a, b) => a + b, 0) / newSleepHistory.length;
-            const trendSleep = getTrend(newSleepHistory);
-            addLog(`SLEEP DEBT 7-DAY AVG: ${avgSleep.toFixed(1)}H // ${trendSleep || "STABLE"}`, "roche");
-          }
-
-          const briFetch = calculateBRI({ glucose: null, hrv, rhr, sleepDurationHrs: totalSleepHrs, glucosePending: true });
-          addLog(`BIOLOGICAL READINESS INDEX: ${briFetch.score} // ${briFetch.label} // GLUCOSE PENDING`, "", briFetch.color);
-
-          return true;
-        }
-      }
-      addLog("OURA // NO SLEEP DATA FOUND FOR LAST NIGHT", "event");
-      return false;
-    } catch (err) {
-      addLog("OURA BRIDGE FAILED // CHECK TOKEN", "event");
-      return false;
-    }
-  };
-
-  const handleOuraConnect = async () => {
-    if (!ouraInput.trim()) return;
-    const success = await fetchOuraData(ouraInput.trim());
-    if (success) {
-      localStorage.setItem("oura_token", ouraInput.trim());
-      setOuraToken(ouraInput.trim());
-      setShowOuraSetup(false);
-      addLog("OURA TOKEN SAVED // DATA SOVEREIGNTY CONFIRMED", "event");
-    } else {
-      addLog("OURA TOKEN INVALID // PLEASE RETRY", "event");
-    }
-  };
-
   const unlock = () => {
     setLocked(false);
     setAuthError(false);
@@ -414,13 +315,6 @@ export default function MethuselahFinal() {
     const protocolDate = localStorage.getItem("protocolExecutedDate");
     if (protocolDate === today) {
       setExecState("satisfied");
-    }
-    const saved = localStorage.getItem("oura_token");
-    if (saved) {
-      setOuraToken(saved);
-      fetchOuraData(saved);
-    } else {
-      setShowOuraSetup(true);
     }
     const storedDate    = localStorage.getItem("glucoseDate");
     const storedReading = localStorage.getItem("glucoseReading");
@@ -460,7 +354,7 @@ export default function MethuselahFinal() {
         setGlucoseEntryOpen(false);
         setGlucoseInput("");
         addLog("BLE INTERCEPT: " + glucose.toFixed(1) + " MMOL/L // AUTO-LOGGED", "roche");
-        const bri = calculateBRI({ glucose, hrv: ouraData.hrv, rhr: ouraData.rhr, sleepDurationHrs: ouraData.totalSleepHrs, glucosePending: false });
+        const bri = calculateBRI({ glucose, hrv, rhr, sleepDurationHrs, glucosePending: false });
         addLog("BIOLOGICAL READINESS INDEX: " + bri.score + " // " + bri.label + " // ALL VECTORS CONFIRMED", "", bri.color);
       } else {
         addLog("BLE // NO READING YET — ENTER MANUALLY", "event");
@@ -485,7 +379,7 @@ export default function MethuselahFinal() {
     setGlucHist(newGlucHist);
     localStorage.setItem("glucoseHistory", JSON.stringify(newGlucHist));
     addLog(`GLYCEMIC INTERCEPT: ${val.toFixed(1)} MMOL/L // MANUAL ENTRY`, "roche");
-    const briGlucose = calculateBRI({ glucose: val, hrv: ouraData.hrv, rhr: ouraData.rhr, sleepDurationHrs: ouraData.totalSleepHrs, glucosePending: false });
+    const briGlucose = calculateBRI({ glucose: val, hrv, rhr, sleepDurationHrs, glucosePending: false });
     addLog(`BIOLOGICAL READINESS INDEX: ${briGlucose.score} // ${briGlucose.label} // ALL VECTORS CONFIRMED`, "", briGlucose.color);
     setGlucoseEntryOpen(false);
     setGlucoseInput("");
@@ -500,19 +394,39 @@ export default function MethuselahFinal() {
   }, []);
 
   useEffect(() => {
-    // Was a static /gen3_latest.json file — never actually reached production
-    // because its source is gitignored (data sovereignty) and the local
-    // prebuild copy step silently no-ops on Vercel. Now backed by a private
-    // KV store via api/gen3-bridge.js instead of a committed file.
-    fetch('/api/gen3-bridge')
-      .then(res => res.ok ? res.json() : null)
-      .catch(() => null)
-      .then(data => {
-        if (data && data.source === 'gen3_ble') {
-          setGen3Bridge(data);
-        }
-      });
+    const fetchBridge = () =>
+      fetch('/api/gen3-bridge')
+        .then(res => res.ok ? res.json() : null)
+        .catch(() => null)
+        .then(data => { if (data && data.source === 'gen3_ble') setGen3Bridge(data); });
+    fetchBridge();
+    const id = setInterval(fetchBridge, 5 * 60 * 1000); // refresh every 5 min
+    return () => clearInterval(id);
   }, []);
+
+  // Update 7-day histories from Gen3 bridge — once per bridge date
+  useEffect(() => {
+    if (!gen3Bridge?.vectors || !gen3Bridge.timestamp) return;
+    const bridgeDate = new Date(gen3Bridge.timestamp).toLocaleDateString("en-CA");
+    if (localStorage.getItem("lastBridgeHistoryDate") === bridgeDate) return;
+    const v = gen3Bridge.vectors;
+    if (v.hrv_ms != null) {
+      const h = [...hrvHist, v.hrv_ms].slice(-7);
+      setHrvHist(h); localStorage.setItem("hrvHistory", JSON.stringify(h));
+      addLog(`GEN3 HRV: ${Math.round(v.hrv_ms)} MS // LAST NIGHT`, "roche");
+    }
+    if (v.rhr_bpm != null) {
+      const h = [...rhrHist, v.rhr_bpm].slice(-7);
+      setRhrHist(h); localStorage.setItem("rhrHistory", JSON.stringify(h));
+      addLog(`GEN3 CARDIAC: ${Math.round(v.rhr_bpm)} BPM // LAST NIGHT`, "roche");
+    }
+    if (v.sleep_duration_hrs != null) {
+      const h = [...sleepHist, v.sleep_duration_hrs].slice(-7);
+      setSleepHist(h); localStorage.setItem("sleepDurationHistory", JSON.stringify(h));
+      addLog(`GEN3 SLEEP: ${v.sleep_duration_hrs.toFixed(1)}H // LAST NIGHT`, "roche");
+    }
+    localStorage.setItem("lastBridgeHistoryDate", bridgeDate);
+  }, [gen3Bridge]);
 
   useEffect(() => {
     if (!locked) {
@@ -521,7 +435,7 @@ export default function MethuselahFinal() {
     }
   }, [locked]);
 
-  const logic = evaluateSources(ouraData, gen3Bridge, { glucose: glucoseReading });
+  const logic = evaluateSources(null, gen3Bridge, { glucose: glucoseReading });
   const { hrv, rhr, sleepDurationHrs } = {
     hrv: logic.vectors.hrv.value,
     rhr: logic.vectors.rhr.value,
@@ -530,12 +444,11 @@ export default function MethuselahFinal() {
 
   useEffect(() => { setBriefingOpen(false); }, [logic.level]);
 
-  // Per-vector timestamps (source determines which ring's timestamp applies)
-  const ouraTs  = ouraData.timestamp;
+  // Per-vector timestamps — Gen4 dead, all vectors from Gen3 bridge timestamp
   const gen3Ts  = gen3Bridge?.timestamp ?? null;
-  const hrvTs   = logic.vectors.hrv.source   === SOURCE_GEN4 ? ouraTs : logic.vectors.hrv.source   === SOURCE_GEN3 ? gen3Ts : null;
-  const rhrTs   = logic.vectors.rhr.source   === SOURCE_GEN4 ? ouraTs : logic.vectors.rhr.source   === SOURCE_GEN3 ? gen3Ts : null;
-  const sleepTs = logic.vectors.sleepDurationHrs.source === SOURCE_GEN4 ? ouraTs : logic.vectors.sleepDurationHrs.source === SOURCE_GEN3 ? gen3Ts : null;
+  const hrvTs   = logic.vectors.hrv.source   === SOURCE_GEN3 ? gen3Ts : null;
+  const rhrTs   = logic.vectors.rhr.source   === SOURCE_GEN3 ? gen3Ts : null;
+  const sleepTs = logic.vectors.sleepDurationHrs.source === SOURCE_GEN3 ? gen3Ts : null;
 
   // Trend + avg per vector (histories come from state, seeded from localStorage on mount)
   const hrvAvg   = avgOf(hrvHist);
@@ -570,33 +483,13 @@ export default function MethuselahFinal() {
     }, 3000);
   };
 
-  const badgeColor = ouraStatus === "OURA_LIVE" ? "var(--accent-blue)" : "var(--text-dim)";
-  const badgeLabel = ouraStatus === "OURA_LIVE" ? "OURA LIVE" : "OFFLINE";
+  const gen3Live = gen3Bridge?.timestamp && !isStale(gen3Bridge.timestamp);
+  const badgeColor = gen3Live ? "var(--accent-blue)" : "var(--text-dim)";
+  const badgeLabel = gen3Live ? "GEN3 LIVE" : "OFFLINE";
 
   return (
     <>
       <style>{CSS}</style>
-
-      {showOuraSetup && !locked && (
-        <div className="oura-setup">
-          <div className="oura-title">OURA INTEGRATION</div>
-          <div className="oura-sub">
-            YOUR DATA. YOUR DEVICE. YOUR CONTROL.<br />
-            PASTE YOUR PERSONAL ACCESS TOKEN BELOW.<br />
-            STORED LOCALLY. NEVER SHARED.
-          </div>
-          <input
-            className="oura-input"
-            type="password"
-            value={ouraInput}
-            onChange={e => setOuraInput(e.target.value)}
-            placeholder="PASTE OURA TOKEN HERE"
-          />
-          <button className="oura-btn" onClick={handleOuraConnect}>CONNECT OURA</button>
-          <button className="oura-skip" onClick={() => setShowOuraSetup(false)}>SKIP FOR NOW</button>
-          <div className="oura-badge">● OURA RING // HRV + RHR + SLEEP VECTORS</div>
-        </div>
-      )}
 
       {locked ? (
         <div className="auth-overlay">
@@ -706,7 +599,7 @@ export default function MethuselahFinal() {
                 )}
                 <div className="cmd-rationale">{logic.rat}</div>
                 {logic.level === "awaiting" ? (
-                  <div className="tel-tap-hint">NO SOURCES CONNECTED — CONNECT OURA OR BRING GEN3 RING IN RANGE</div>
+                  <div className="tel-tap-hint">NO DATA — RUN DAEMON OR MORNING PULL</div>
                 ) : logic.level !== "optimal" ? (
                   <button className="btn-execute" onClick={handleExecute}>
                     EXECUTE PROTOCOL
