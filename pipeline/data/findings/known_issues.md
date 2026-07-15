@@ -4406,3 +4406,19 @@ real, independently-obtained Gen4 ground truth — the token expires
 today.
 
 *Logged 2026-07-13.*
+
+## 2026-07-15 — Gen4 ground truth permanently closed; BLE daemon overnight reconnect failure diagnosed and fixed
+
+**⚠️ Gen4 comparison is permanently unavailable.** Oura API token expired 2026-07-13. Oura app membership inactive. All detail views (raw HRV, exact sleep duration, sleep stages) are paywalled and inaccessible. The three composite scores still locally cached on the phone (Readiness 82, Sleep 78, Activity 61) are not accessible as raw data. **No comparison source exists now or in the future.** All Gen3 data must be trusted and debugged entirely on its own terms. Do not reference Oura-app comparison as a validation or calibration method anywhere in this project going forward.
+
+**Overnight daemon run 2026-07-14 — reconnect failure root cause confirmed.** The daemon connected at 21:08, ran 21 clean cycles (5,376 events, zero decode failures), and disconnected at 21:12 when the ring went out of range. Reconnect timestamps observed in terminal: 21:13, 23:11, 01:12, 03:12, 05:14 — roughly 2-hour intervals, not the expected ~10-second retry cadence.
+
+**Root cause: `BleakClient.connect()` does not respect `timeout=30` on macOS (bleak 0.21.1 / CoreBluetooth backend) for previously-bonded peripherals.** CoreBluetooth's `connectPeripheral:options:` queues a pending connection request indefinitely rather than timing out after the specified duration. The `asyncio.wait_for` wrapper that bleak uses internally does not cancel the underlying CoreBluetooth request in this version. Result: each `open_connection()` call blocked for the full ~2h between ring advertisement windows. The `asyncio.sleep(10)` retry code in the daemon loop was never reached because the function never returned. Only 5 actual reconnect attempts occurred in 8 hours instead of the hundreds that should have. The log file confirms: 5377 total lines, only 2 distinct boot_ts clusters, no intermediate "Connecting..." print lines (which go to stdout, not the log).
+
+**Fix applied:** `scan_for_ring(timeout_seconds, poll_interval)` added to `gen3_ble_connection.py`. Uses `BleakScanner.discover()` in short scan windows (default 30s) to detect the ring advertising before calling `open_connection()`. The daemon's reconnect path now: (1) scans until ring is detected, (2) calls `open_connection()` immediately while the ring is still advertising. Reacts within seconds of the ring returning to range instead of waiting for a system-level timeout.
+
+**Morning-pull safety net added to daemon.** If `sleep_secs_accumulated < morning_pull_threshold_hrs * 3600` (default 4h) at session end, daemon fires `oura_gen3_morning_pull.py` automatically to capture whatever the ring's buffer still holds.
+
+**Off-finger vs out-of-range advertising behavior: unknown.** No data in this corpus links wear state (via `0x53` or `0x61/0x0d` `ticks_advertising_mode`) to BLE advertising interval changes. Cannot confirm or deny that removing the ring from the finger reduces advertising frequency vs. simply going out of range with the ring worn. Conservative default for overnight runs: keep the ring on (avoids triggering a wear-state transition), but this is a hypothesis, not a confirmed finding.
+
+*Logged 2026-07-15.*

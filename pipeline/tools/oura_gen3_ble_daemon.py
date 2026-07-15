@@ -54,7 +54,7 @@ from collections import Counter
 _sys.path.insert(0, _os.path.dirname(__file__))
 _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..'))
 
-from gen3_ble_connection import open_connection, request_history, ConnectError
+from gen3_ble_connection import open_connection, request_history, scan_for_ring, ConnectError
 from gen3_bridge import build_bridge_data, write_local_bridge_file, push_bridge_json
 from decoders import (
     decode_sleep_period_info_2,
@@ -183,6 +183,7 @@ def decode_cycle_events(events):
 async def main():
     poll_seconds = float(_sys.argv[1]) if len(_sys.argv) > 1 else 5
     duration_hr = float(_sys.argv[2]) if len(_sys.argv) > 2 else 8
+    morning_pull_threshold_hrs = 4  # fire safety-net morning pull if less than this captured
     end_time = time.time() + duration_hr * 3600
 
     repo_root = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', '..')
@@ -213,14 +214,30 @@ async def main():
         cycle = 0
         while time.time() < end_time:
             if client is None:
+                # Scan first: BleakClient.connect() on macOS does not respect its
+                # timeout= for bonded peripherals — CoreBluetooth queues the request
+                # indefinitely instead of raising after 30s, producing ~2h gaps between
+                # real reconnect attempts (confirmed 2026-07-14 overnight run).
+                # BleakScanner.discover() uses a short-lived scan window so we know the
+                # ring is actively advertising before calling open_connection().
+                scan_window = min(30, max(5, int(end_time - time.time())))
+                print(f"[{time.strftime('%H:%M:%S')}] Scanning for ring ({scan_window}s window)...")
+                found = await scan_for_ring(
+                    timeout_seconds=min(1800, int(end_time - time.time())),
+                    poll_interval=scan_window,
+                )
+                if not found:
+                    print(f"[{time.strftime('%H:%M:%S')}] Ring not found in scan window — will retry.")
+                    continue
                 try:
-                    print(f"[{time.strftime('%H:%M:%S')}] Connecting...")
+                    print(f"[{time.strftime('%H:%M:%S')}] Ring detected — connecting...")
                     client, received = await open_connection(disconnected_callback=on_disconnect)
                     disconnected.clear()
                     print(f"[{time.strftime('%H:%M:%S')}] Connected and authenticated.")
                 except (ConnectError, Exception) as e:
-                    print(f"[{time.strftime('%H:%M:%S')}] Connect failed: {e} — retrying in 10s.")
-                    await asyncio.sleep(10)
+                    print(f"[{time.strftime('%H:%M:%S')}] Connect failed: {e} — will rescan.")
+                    client = None
+                    await asyncio.sleep(5)
                     continue
 
             try:
@@ -330,6 +347,23 @@ async def main():
 
     print(f"\n=== Daemon session complete. Total events logged: {total_events_logged} ===")
     print(f"Full log: {log_path}")
+
+    # Safety net: if daemon captured less than the threshold of sleep data,
+    # fire a one-shot morning pull to capture whatever the ring's buffer still holds.
+    if sleep_secs_accumulated < morning_pull_threshold_hrs * 3600:
+        captured_hrs = round(sleep_secs_accumulated / 3600, 2)
+        print(f"\n[SAFETY NET] Only {captured_hrs}h of sleep data captured "
+              f"(threshold: {morning_pull_threshold_hrs}h) — firing morning pull...")
+        import subprocess
+        pull_script = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                     "oura_gen3_morning_pull.py")
+        result = subprocess.run([_sys.executable, pull_script], capture_output=False)
+        if result.returncode == 0:
+            print("[SAFETY NET] Morning pull completed.")
+        else:
+            print(f"[SAFETY NET] Morning pull exited with code {result.returncode}.")
+    else:
+        print(f"Sleep data OK ({round(sleep_secs_accumulated / 3600, 2)}h) — no safety-net pull needed.")
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ working code.
 """
 import asyncio
 import struct
-from bleak import BleakClient
+from bleak import BleakClient, BleakScanner
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
@@ -30,6 +30,37 @@ async def wr(client, data):
 
 class ConnectError(Exception):
     pass
+
+
+async def scan_for_ring(timeout_seconds=1800, poll_interval=5):
+    """Passively scan for the ring's BLE advertisement.
+
+    On macOS, BleakClient.connect() for a known peripheral UUID does NOT
+    reliably respect its timeout= parameter — CoreBluetooth queues
+    connectPeripheral: indefinitely instead of returning after the timeout.
+    Confirmed overnight 2026-07-14: only 5 "reconnect attempts" happened
+    in 8h (one every ~2h) because each open_connection() call blocked until
+    CoreBluetooth finally connected, rather than retrying every 10s.
+
+    This function scans continuously with a short-lived BleakScanner that
+    restarts every poll_interval seconds so it stays responsive without
+    holding the CoreBluetooth scan socket open indefinitely. Returns True
+    when the ring is detected in advertisements, False on timeout.
+
+    Caller should call open_connection() immediately on True return while
+    the ring is still in advertising state.
+    """
+    deadline = asyncio.get_event_loop().time() + timeout_seconds
+    while asyncio.get_event_loop().time() < deadline:
+        remaining = deadline - asyncio.get_event_loop().time()
+        scan_window = min(poll_interval, remaining)
+        if scan_window <= 0:
+            break
+        devices = await BleakScanner.discover(timeout=scan_window)
+        for d in devices:
+            if d.address.upper() == ADDR.upper():
+                return True
+    return False
 
 
 async def open_connection(disconnected_callback=None):
