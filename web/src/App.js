@@ -141,6 +141,13 @@ body::before {
 .optimal-label { color: var(--accent-green); font-weight: 700; letter-spacing: 3px; font-size: 11px; animation: breathe 3s infinite; }
 @keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
+.weekly-grid { width: 100%; display: flex; flex-direction: column; gap: 8px; margin: 10px 0 8px; }
+.weekly-row { display: flex; align-items: baseline; gap: 10px; font-size: 9px; letter-spacing: 1px; }
+.weekly-label { color: var(--text-dim); min-width: 90px; flex-shrink: 0; }
+.weekly-val { color: var(--text-main); font-weight: 700; min-width: 80px; }
+.weekly-trend { color: var(--text-dim); }
+.weekly-caveat { color: var(--text-dim); font-size: 8px; opacity: 0.6; }
+
 .sys-log {
   flex: 1;
   overflow-y: auto;
@@ -208,6 +215,14 @@ function getTrend(history) {
 function avgOf(history) {
   if (!history || history.length === 0) return null;
   return history.reduce((a, b) => a + b, 0) / history.length;
+}
+
+function trendGlyph(history) {
+  const t = getTrend(history);
+  if (t === "trending up")   return "▲";
+  if (t === "trending down") return "▼";
+  if (t === "stable")        return "—";
+  return null;
 }
 
 // Metric — 3-line tile: label / value + context / source + age
@@ -298,6 +313,8 @@ export default function MethuselahFinal() {
   const [rhrHist,   setRhrHist]   = useState(() => JSON.parse(localStorage.getItem("rhrHistory") || "[]"));
   const [sleepHist, setSleepHist] = useState(() => JSON.parse(localStorage.getItem("sleepDurationHistory") || "[]"));
   const [glucHist,  setGlucHist]  = useState(() => JSON.parse(localStorage.getItem("glucoseHistory") || "[]"));
+  const [spo2Hist,  setSpo2Hist]  = useState(() => JSON.parse(localStorage.getItem("spo2History") || "[]"));
+  const [stepHist,  setStepHist]  = useState(() => JSON.parse(localStorage.getItem("stepHistory") || "[]"));
   const [glucoseEntryOpen, setGlucoseEntryOpen] = useState(false);
   const [glucoseInput,    setGlucoseInput]    = useState("");
   const [execState,       setExecState]       = useState("idle");
@@ -425,6 +442,14 @@ export default function MethuselahFinal() {
       setSleepHist(h); localStorage.setItem("sleepDurationHistory", JSON.stringify(h));
       addLog(`GEN3 SLEEP: ${v.sleep_duration_hrs.toFixed(1)}H // LAST NIGHT`, "roche");
     }
+    if (v.spo2_avg_pct != null) {
+      const h = [...spo2Hist, v.spo2_avg_pct].slice(-7);
+      setSpo2Hist(h); localStorage.setItem("spo2History", JSON.stringify(h));
+    }
+    if (v.step_count != null && v.step_count > 0) {
+      const h = [...stepHist, v.step_count].slice(-7);
+      setStepHist(h); localStorage.setItem("stepHistory", JSON.stringify(h));
+    }
     localStorage.setItem("lastBridgeHistoryDate", bridgeDate);
   }, [gen3Bridge]);
 
@@ -455,6 +480,8 @@ export default function MethuselahFinal() {
   const rhrAvg   = avgOf(rhrHist);
   const sleepAvg = avgOf(sleepHist);
   const glucAvg  = avgOf(glucHist);
+  const spo2Avg  = avgOf(spo2Hist);
+  const stepAvg  = avgOf(stepHist);
 
   // Meta strings — threshold pulled from THRESHOLDS.* so displayed rule always matches engine rule
   function metaParts(threshold, avg, trend) {
@@ -619,8 +646,25 @@ export default function MethuselahFinal() {
               <div className="cmd-text" style={{ color: logic.color }}>PROTOCOL COMPLETE.</div>
             ) : (
               <>
-                <div className="cmd-text" style={{ color: "var(--accent-green)" }}>PROTOCOL EXECUTED TODAY.</div>
-                <div className="cmd-rationale" style={{ color: "var(--text-dim)" }}>RETURN TOMORROW FOR UPDATED TELEMETRY.</div>
+                <div className="cmd-meta">WEEKLY PATTERN // 7-DAY REVIEW</div>
+                <div className="weekly-grid">
+                  <div className="weekly-row">
+                    <span className="weekly-label">SPO2</span>
+                    <span className="weekly-val">{spo2Avg !== null ? `${spo2Avg.toFixed(1)}% AVG` : '--'}</span>
+                    <span className="weekly-trend">{trendGlyph(spo2Hist) || (spo2Hist.length < 2 ? 'BUILDING' : '')}</span>
+                    {spo2Avg !== null && <span className="weekly-caveat">GEN3 ~3-5% LOW</span>}
+                  </div>
+                  <div className="weekly-row">
+                    <span className="weekly-label">STEPS</span>
+                    <span className="weekly-val">{stepAvg !== null ? `${Math.round(stepAvg)}/DAY` : '--'}</span>
+                    <span className="weekly-trend">{trendGlyph(stepHist) || (stepHist.length < 2 ? 'BUILDING' : '')}</span>
+                  </div>
+                  <div className="weekly-row">
+                    <span className="weekly-label">SLEEP ONSET</span>
+                    <span className="weekly-val weekly-caveat">AWAITING DATA</span>
+                  </div>
+                </div>
+                <div className="cmd-rationale" style={{ color: "var(--text-dim)" }}>PROTOCOL EXECUTED // RETURN TOMORROW</div>
               </>
             )}
           </div>
