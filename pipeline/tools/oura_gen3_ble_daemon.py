@@ -196,6 +196,7 @@ async def main():
     last_boot_ts = 0
     total_events_logged = 0
     sleep_secs_accumulated = 0  # rolling overnight total; each asleep 0x6A packet ≈ 60s
+    recent_tags: set = set()    # tags seen in the last two cycles; used to classify disconnects
     disconnected = asyncio.Event()
 
     def on_disconnect(_client):
@@ -220,12 +221,9 @@ async def main():
                 # real reconnect attempts (confirmed 2026-07-14 overnight run).
                 # BleakScanner.discover() uses a short-lived scan window so we know the
                 # ring is actively advertising before calling open_connection().
-                scan_window = min(30, max(5, int(end_time - time.time())))
-                print(f"[{time.strftime('%H:%M:%S')}] Scanning for ring ({scan_window}s window)...")
-                found = await scan_for_ring(
-                    timeout_seconds=min(1800, int(end_time - time.time())),
-                    poll_interval=scan_window,
-                )
+                scan_timeout = max(0, min(1800, int(end_time - time.time())))
+                print(f"[{time.strftime('%H:%M:%S')}] Scanning for ring (up to {scan_timeout}s)...")
+                found = await scan_for_ring(timeout_seconds=scan_timeout)
                 if not found:
                     print(f"[{time.strftime('%H:%M:%S')}] Ring not found in scan window — will retry.")
                     continue
@@ -253,17 +251,29 @@ async def main():
                 raw = []
 
             if disconnected.is_set():
-                print(f"[{time.strftime('%H:%M:%S')}] Disconnected — reconnecting...")
+                # Task 3 instrumentation: 0x53 (Wear event) in the last two cycles
+                # suggests the ring was removed before the drop; absence suggests pure
+                # range-drop. This is the only way to resolve off-finger vs out-of-range
+                # advertising behavior with real data over time.
+                wear_tag_seen = 0x53 in recent_tags
+                disconnect_type = "WEAR-EVENT (ring possibly removed)" if wear_tag_seen else "RANGE-DROP (no recent 0x53)"
+                print(f"[{time.strftime('%H:%M:%S')}] Disconnected [{disconnect_type}] — will rescan.")
                 try:
                     await client.disconnect()
                 except Exception:
                     pass
                 client = None
-                await asyncio.sleep(5)
+                recent_tags.clear()
+                await asyncio.sleep(2)
                 continue
 
             parsed = [p for p in (parse_event(pkt) for pkt in raw) if p]
             cycle += 1
+
+            # Rolling two-cycle tag window for disconnect classification (Task 3).
+            # 0x53 in this window means a wear-state change preceded the drop.
+            if parsed:
+                recent_tags = {p["tag"] for p in parsed}
 
             if parsed:
                 # Some tags are protocol control/terminator packets, not real
