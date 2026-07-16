@@ -52,21 +52,40 @@ async def scan_for_ring(timeout_seconds=1800):
     """
     if timeout_seconds <= 0:
         return False
-    found_event = asyncio.Event()
+    deadline = asyncio.get_event_loop().time() + timeout_seconds
+    while asyncio.get_event_loop().time() < deadline:
+        remaining = deadline - asyncio.get_event_loop().time()
+        if remaining <= 0:
+            break
+        found_event = asyncio.Event()
 
-    def detection_callback(device, _advertisement_data):
-        if device.address.upper() == ADDR.upper():
-            found_event.set()
+        def detection_callback(device, _advertisement_data):
+            if device.address.upper() == ADDR.upper():
+                found_event.set()
 
-    scanner = BleakScanner(detection_callback)
-    await scanner.start()
-    try:
-        await asyncio.wait_for(found_event.wait(), timeout=timeout_seconds)
-        return True
-    except asyncio.TimeoutError:
-        return False
-    finally:
-        await scanner.stop()
+        scanner = BleakScanner(detection_callback)
+        try:
+            await scanner.start()
+        except Exception as e:
+            # CoreBluetooth can throw if BT state is changing (lid open/close,
+            # BT toggle). Wait and retry rather than crashing the daemon.
+            print(f"[scan_for_ring] Scanner start failed ({e}) — retrying in 10s.")
+            await asyncio.sleep(10)
+            continue
+        try:
+            await asyncio.wait_for(found_event.wait(), timeout=min(30, remaining))
+            return True
+        except asyncio.TimeoutError:
+            pass
+        except Exception as e:
+            print(f"[scan_for_ring] Scanner wait failed ({e}) — retrying in 10s.")
+            await asyncio.sleep(10)
+        finally:
+            try:
+                await scanner.stop()
+            except Exception:
+                pass
+    return False
 
 
 async def open_connection(disconnected_callback=None):
@@ -85,6 +104,11 @@ async def open_connection(disconnected_callback=None):
 
     client = BleakClient(ADDR, timeout=30, disconnected_callback=disconnected_callback)
     await client.connect()
+    # Brief pause: on macOS a fast reconnect (bonded peripheral, seconds after
+    # a drop) can leave the GATT service table not yet populated even though
+    # connect() returned. Without this, the first write_gatt_char raises
+    # "Service Discovery has not been performed yet" (confirmed 2026-07-15).
+    await asyncio.sleep(1)
     await client.start_notify(NOTIFY_CHAR, on_notify)
 
     await wr(client, b"\x08\x03\x00\x00\x00")
