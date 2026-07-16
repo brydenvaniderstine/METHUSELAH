@@ -6,7 +6,9 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
 import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(__file__))
 _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..'))
+from gen3_ble_connection import scan_for_ring
 from decoders import (
     decode_sleep_period_info_2,
     decode_hrv_event,
@@ -85,7 +87,12 @@ def parse_event(data: bytes):
             "length": length, "boot_ts": ts_boot, "payload": payload}
 
 async def main():
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Connecting to Gen3 ring...")
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Scanning for ring...")
+    found = await scan_for_ring(timeout_seconds=120)
+    if not found:
+        print("Ring not found in scan window — is it nearby and charged?")
+        return
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Ring detected — connecting...")
     async with BleakClient(ADDR, timeout=30) as client:
         print("Connected.")
         await client.start_notify(NOTIFY_CHAR, on_notify)

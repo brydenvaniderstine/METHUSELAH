@@ -33,6 +33,12 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
+**Date:** 2026-07-16
+
+- **Night 2 data loss — daemon process died on lid close at 20:26.** Sequence: WiFi dropped (lid close) → bridge push failed → macOS Bluetooth state reset → GATT service table invalidated → `Service Discovery has not been performed yet` on next poll → daemon correctly entered rescan loop → BleakScanner crashed on same Bluetooth reset → unhandled exception killed process. Morning pull safety net fired at 05:31 but user was already up and moving; buffer had rolled over to active-window data. Sleep data for 2026-07-15 night is gone.
+- **Three fixes committed:** (1) `scan_for_ring()` now retries on scanner crash (30s windows, try/except, 10s wait) instead of propagating. (2) `open_connection()` adds 1s post-connect pause to let GATT settle — fixes "Service Discovery has not been performed yet" on fast reconnect. (3) `oura_gen3_morning_pull.py` updated to use `scan_for_ring()` — was failing with TimeoutError on direct connect (same macOS bonded-peripheral bug as the daemon).
+- **Correct overnight launch command going forward:** `nohup python3 pipeline/tools/oura_gen3_ble_daemon.py > /tmp/daemon_tonight.txt 2>&1 &` — check startup with `tail -f /tmp/daemon_tonight.txt`, then close the lid once connected. Review in morning with `cat /tmp/daemon_tonight.txt`.
+
 **Date:** 2026-07-15
 
 - **Gen4 ground truth permanently closed.** Oura API token expired 2026-07-13. Gen4 app membership inactive. All Gen4 detail views paywalled. **There is no comparison source available now or going forward.** Gen3 BLE data must be trusted and debugged entirely on its own terms. Do not suggest or rely on Oura-app comparison in any future session — this is a hard closed door.

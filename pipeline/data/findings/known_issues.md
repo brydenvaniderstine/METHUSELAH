@@ -4422,3 +4422,19 @@ today.
 **Off-finger vs out-of-range advertising behavior: unknown.** No data in this corpus links wear state (via `0x53` or `0x61/0x0d` `ticks_advertising_mode`) to BLE advertising interval changes. Cannot confirm or deny that removing the ring from the finger reduces advertising frequency vs. simply going out of range with the ring worn. Conservative default for overnight runs: keep the ring on (avoids triggering a wear-state transition), but this is a hypothesis, not a confirmed finding.
 
 *Logged 2026-07-15.*
+
+## 2026-07-16 — Daemon process death on lid close; data loss night 2
+
+**Process died at 20:26 when lid was closed.** Sequence: (1) bridge push failed with `[Errno 50] Network is down` as WiFi dropped on lid close; (2) immediately after, next poll raised `Poll failed: Service Discovery has not been performed yet` — macOS Bluetooth state reset during lid close invalidated the GATT service table on the live connection; (3) daemon correctly set client=None and started scanning; (4) BleakScanner likely crashed on the same Bluetooth state change and propagated an unhandled exception, killing the process. Log file timestamp confirms: last write at 20:26, process dead.
+
+**Data loss:** ring buffer held ~8h of sleep data overnight but by 05:31 when morning pull ran, user was already up and moving. Buffer had rolled over to active-window walking data. Sleep data for 2026-07-15 night is gone.
+
+**Fixes applied 2026-07-16:**
+- `scan_for_ring()` now runs in 30s retry windows with try/except. CoreBluetooth crash on lid close is caught, logged, retried after 10s — no longer propagates to kill the process.
+- `open_connection()` adds 1s pause after `connect()` to let GATT service discovery settle. Fixes "Service Discovery has not been performed yet" on fast reconnect after a drop.
+- `oura_gen3_morning_pull.py` updated to use `scan_for_ring()` instead of direct `BleakClient.connect()` — was failing with TimeoutError (same macOS bonded-peripheral blocking-connect bug as the daemon).
+- **Run command going forward:** `nohup python3 pipeline/tools/oura_gen3_ble_daemon.py > /tmp/daemon_tonight.txt 2>&1 &` — decouples process from terminal session.
+
+**Task 3 (off-finger vs out-of-range): still no data.** Both disconnects last night were classified RANGE-DROP (no recent 0x53) — consistent with a lid-close Bluetooth reset rather than a ring removal, not a useful data point for the wear-state hypothesis.
+
+*Logged 2026-07-16.*
