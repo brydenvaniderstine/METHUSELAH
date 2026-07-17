@@ -229,9 +229,23 @@ async def main():
                     continue
                 try:
                     print(f"[{time.strftime('%H:%M:%S')}] Ring detected — connecting...")
-                    client, received = await open_connection(disconnected_callback=on_disconnect)
+                    # 25s asyncio-level timeout: BleakClient.connect(timeout=30) does not
+                    # reliably fire on macOS for bonded peripherals (CoreBluetooth queues
+                    # connectPeripheral: indefinitely). The ring also stops advertising
+                    # within seconds of a sleep-stage transition, so if we don't connect
+                    # within ~25s the window has closed — confirmed 2026-07-17 overnight
+                    # where connect() blocked from 04:31 until manually killed at 05:27.
+                    client, received = await asyncio.wait_for(
+                        open_connection(disconnected_callback=on_disconnect),
+                        timeout=25,
+                    )
                     disconnected.clear()
                     print(f"[{time.strftime('%H:%M:%S')}] Connected and authenticated.")
+                except asyncio.TimeoutError:
+                    print(f"[{time.strftime('%H:%M:%S')}] Connect timed out (ring likely "
+                          f"stopped advertising) — will rescan.")
+                    client = None
+                    continue
                 except (ConnectError, Exception) as e:
                     print(f"[{time.strftime('%H:%M:%S')}] Connect failed: {e} — will rescan.")
                     client = None

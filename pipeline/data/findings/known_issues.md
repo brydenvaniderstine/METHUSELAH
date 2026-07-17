@@ -4438,3 +4438,26 @@ today.
 **Task 3 (off-finger vs out-of-range): still no data.** Both disconnects last night were classified RANGE-DROP (no recent 0x53) — consistent with a lid-close Bluetooth reset rather than a ring removal, not a useful data point for the wear-state hypothesis.
 
 *Logged 2026-07-16.*
+
+## 2026-07-17 — Ring BLE advertising suppressed during SLEEP_REGIME; connect() blocks mid-handshake
+
+**Confirmed from morning pull debug data (advertising field in 0x28 / 0x33 packets):**
+
+The Gen3 ring completely suppresses BLE advertising during deep sleep (pfsm_state=6, SLEEP_REGIME). It only advertises during brief sleep-stage transitions (pfsm_state=5, TRANSITIONAL). This explains why the scan-then-connect approach introduced 2026-07-15 still had one catastrophic block: at 04:31, the scanner detected the ring during a TRANSITIONAL window and `open_connection()` was called. By the time CoreBluetooth had started the handshake, the ring had returned to SLEEP_REGIME and stopped advertising. `BleakClient.connect()` then blocked indefinitely (confirmed: next log entry not until 06:27 when morning pull was manually fired).
+
+**Measured advertising values (from 2026-07-17 morning pull debug output):**
+- `advertising=0` when `pfsm_state=6` (SLEEP_REGIME) — no advertisements at all
+- `advertising=2034744` when `pfsm_state=5` (TRANSITIONAL) — ring advertising
+
+**Fix applied 2026-07-17:** Added asyncio-level timeout around `open_connection()` in daemon reconnect path:
+```python
+client, received = await asyncio.wait_for(
+    open_connection(disconnected_callback=on_disconnect),
+    timeout=25,
+)
+```
+On `asyncio.TimeoutError`, daemon logs "Connect timed out (ring likely stopped advertising) — will rescan." and immediately returns to scanning for the next TRANSITIONAL window. No sleep delay before rescan — the next transition could happen within seconds.
+
+**Why 25s timeout:** The full `open_connection()` auth handshake takes approximately 8–10s on a clean fast reconnect. 25s gives 2.5x margin for slow CoreBluetooth wake while still aborting before the next typical sleep cycle could complete.
+
+*Logged 2026-07-17.*

@@ -33,6 +33,14 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
+**Date:** 2026-07-17
+
+- **Night 3 results — 6h45m gap, one missed connection window.** Daemon launched cleanly, ran 5 cycles before first disconnect. At 04:31, scanner detected the ring during a TRANSITIONAL sleep-stage window and called `open_connection()`. Ring returned to SLEEP_REGIME before the handshake completed — `BleakClient.connect()` blocked indefinitely. Daemon log shows no further entries until 06:27 when morning pull was manually fired. 6h45m window of missed data.
+- **Root cause confirmed from morning pull debug data.** `advertising=0` when `pfsm_state=6` (SLEEP_REGIME); `advertising=2034744` when `pfsm_state=5` (TRANSITIONAL). Ring completely suppresses BLE advertising during deep sleep, only advertises during brief stage transitions. The scan-then-connect pattern (added 2026-07-16) correctly detected the ring during one such transition, but `open_connection()` had no asyncio-level timeout — if the ring stops advertising mid-handshake, CoreBluetooth blocks indefinitely.
+- **Fix applied — `asyncio.wait_for` timeout around `open_connection()`.** `pipeline/tools/oura_gen3_ble_daemon.py` reconnect path now wraps `open_connection()` with `asyncio.wait_for(..., timeout=25)`. On `asyncio.TimeoutError`, logs "Connect timed out (ring likely stopped advertising) — will rescan." with no sleep delay (next transition could be seconds away). 25s gives 2.5× the typical 8-10s handshake time while still aborting before the ring can complete a full transition cycle. Full writeup in `known_issues.md` 2026-07-17 entry.
+- **Morning pull data recovered.** Ring pulled at 06:27: HR mean 59.8bpm, HRV 51.1ms RMSSD, SpO2 ~92-93%, sleep temp 35.45-35.90°C. 9 × 0x6A samples (4× state=0, 5× state=1). Sleep data for 2026-07-16 night recovered via safety net — not lost.
+- **All prior nights' fixes (scan-first, GATT settle, lid-close crash recovery) remain intact.** No regressions.
+
 **Date:** 2026-07-16
 
 - **Night 2 data loss — daemon process died on lid close at 20:26.** Sequence: WiFi dropped (lid close) → bridge push failed → macOS Bluetooth state reset → GATT service table invalidated → `Service Discovery has not been performed yet` on next poll → daemon correctly entered rescan loop → BleakScanner crashed on same Bluetooth reset → unhandled exception killed process. Morning pull safety net fired at 05:31 but user was already up and moving; buffer had rolled over to active-window data. Sleep data for 2026-07-15 night is gone.
@@ -149,6 +157,8 @@ conflict, this file takes precedence — it is version-controlled.
 ## Next session priority
 
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
+
+0. **Tonight's run — the `asyncio.wait_for` fix is in place.** Launch with: `cd ~/Desktop/METHUSELAH && nohup python3 -u pipeline/tools/oura_gen3_ble_daemon.py > /tmp/daemon_tonight.txt 2>&1 &`. Check startup with `tail -f /tmp/daemon_tonight.txt`, close lid once authenticated. If the daemon hits a timeout ("Connect timed out — will rescan"), it should immediately return to scanning — no 5s sleep, no multi-hour block. Morning: `cat /tmp/daemon_tonight.txt`.
 
 0. **Commit the tile rework** — `web/src/App.js` changes (3-line tile format, Sleep Debt, staleness, 7d avg) are staged and verified clean but not yet committed. Commit alongside `pipeline/decoders/hrv_rmssd.py` and daemon changes from 2026-07-13.
 0. **Live end-to-end tile verification** — tile rework verified in no-data state only. First overnight daemon session will confirm Gen3-sourced HRV and Sleep Debt values appear in the correct tile slot with `● GEN3 BLE` and correct age label. Gen4 live path also needs re-verification once a new Oura token is provisioned.
