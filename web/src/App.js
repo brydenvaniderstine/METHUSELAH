@@ -155,6 +155,7 @@ body::before {
   padding-top: 8px;
   display: flex;
   flex-direction: column-reverse;
+  justify-content: flex-end;
   gap: 2px;
   min-height: 100px;
 }
@@ -372,7 +373,7 @@ export default function MethuselahFinal() {
         setGlucoseInput("");
         addLog("BLE INTERCEPT: " + glucose.toFixed(1) + " MMOL/L // AUTO-LOGGED", "roche");
         const bri = calculateBRI({ glucose, hrv, rhr, sleepDurationHrs, glucosePending: false });
-        addLog("BIOLOGICAL READINESS INDEX: " + bri.score + " // " + bri.label + " // ALL VECTORS CONFIRMED", "", bri.color);
+        addLog("BIOLOGICAL READINESS INDEX: " + bri.score + " // " + bri.label + " // ALL VECTORS CONFIRMED");
       } else {
         addLog("BLE // NO READING YET — ENTER MANUALLY", "event");
       }
@@ -395,7 +396,7 @@ export default function MethuselahFinal() {
     const newGlucHist = [...glucHist, val].slice(-7);
     setGlucHist(newGlucHist);
     localStorage.setItem("glucoseHistory", JSON.stringify(newGlucHist));
-    addLog(`GLYCEMIC INTERCEPT: ${val.toFixed(1)} MMOL/L // MANUAL ENTRY`, "roche");
+    addLog(`MANUAL GLUCOSE: ${val.toFixed(1)} MMOL/L`, "roche");
     const briGlucose = calculateBRI({ glucose: val, hrv, rhr, sleepDurationHrs, glucosePending: false });
     addLog(`BIOLOGICAL READINESS INDEX: ${briGlucose.score} // ${briGlucose.label} // ALL VECTORS CONFIRMED`, "", briGlucose.color);
     setGlucoseEntryOpen(false);
@@ -430,17 +431,17 @@ export default function MethuselahFinal() {
     if (v.hrv_ms != null) {
       const h = [...hrvHist, v.hrv_ms].slice(-7);
       setHrvHist(h); localStorage.setItem("hrvHistory", JSON.stringify(h));
-      addLog(`GEN3 HRV: ${Math.round(v.hrv_ms)} MS // LAST NIGHT`, "roche");
+      addLog(`GEN3 HRV: ${Math.round(v.hrv_ms)} MS`, "roche");
     }
     if (v.rhr_bpm != null) {
       const h = [...rhrHist, v.rhr_bpm].slice(-7);
       setRhrHist(h); localStorage.setItem("rhrHistory", JSON.stringify(h));
-      addLog(`GEN3 CARDIAC: ${Math.round(v.rhr_bpm)} BPM // LAST NIGHT`, "roche");
+      addLog(`GEN3 RHR: ${Math.round(v.rhr_bpm)} BPM`, "roche");
     }
     if (v.sleep_duration_hrs != null) {
       const h = [...sleepHist, v.sleep_duration_hrs].slice(-7);
       setSleepHist(h); localStorage.setItem("sleepDurationHistory", JSON.stringify(h));
-      addLog(`GEN3 SLEEP: ${v.sleep_duration_hrs.toFixed(1)}H // LAST NIGHT`, "roche");
+      addLog(`GEN3 SLEEP: ${v.sleep_duration_hrs.toFixed(1)}H`, "roche");
     }
     if (v.spo2_avg_pct != null) {
       const h = [...spo2Hist, v.spo2_avg_pct].slice(-7);
@@ -604,7 +605,7 @@ export default function MethuselahFinal() {
               source={logic.vectors.rhr.source}
             />
             <Metric
-              label="SLEEP DEBT"
+              label="SLEEP DURATION"
               val={sleepDurationHrs !== null ? sleepDurationHrs.toFixed(1) : "--"}
               unit="hrs"
               color={sleepDurationHrs === null ? "var(--text-dim)" : sleepDurationHrs < THRESHOLDS.sleepDurationCritical ? "var(--accent-red)" : sleepDurationHrs < THRESHOLDS.sleepDurationWarn ? "var(--accent-amber)" : "var(--accent-green)"}
@@ -618,7 +619,7 @@ export default function MethuselahFinal() {
           <div className="command-wrap" style={{ borderColor: execState === "satisfied" ? "#00ff66" : bri.color }}>
             <div className="corner tl" /><div className="corner tr" />
             <div className="corner bl" /><div className="corner br" />
-            <div className="cmd-meta">PROTOCOL // {logic.level.toUpperCase()} // {clock}</div>
+            <div className="cmd-meta">{logic.level.toUpperCase()} // {clock}</div>
             {execState === "idle" ? (
               <>
                 <div
@@ -639,7 +640,7 @@ export default function MethuselahFinal() {
                     EXECUTE PROTOCOL
                   </button>
                 ) : (
-                  <div className="optimal-label">BASELINE STABLE. // ACTIVE</div>
+                  <div className="optimal-label">BASELINE STABLE.</div>
                 )}
               </>
             ) : execState === "active" ? (
@@ -679,7 +680,7 @@ export default function MethuselahFinal() {
           <div className="sys-log" ref={logRef}>
             {gen3Bridge && (
               <div className="log-line">
-                <span className="log-time">[{new Date(gen3Bridge.timestamp).toLocaleTimeString()}]</span>
+                <span className="log-time">[{new Date(gen3Bridge.timestamp).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}]</span>
                 <span style={{ color: "cyan" }}>
                   {`GEN3 INTERCEPT: ${gen3Bridge.classifier} // ` +
                    `RHR ${gen3Bridge.vectors.rhr_bpm != null ? gen3Bridge.vectors.rhr_bpm.toFixed(1) + ' BPM' : 'N/A'} // ` +
