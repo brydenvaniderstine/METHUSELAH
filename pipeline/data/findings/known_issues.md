@@ -4461,3 +4461,64 @@ On `asyncio.TimeoutError`, daemon logs "Connect timed out (ring likely stopped a
 **Why 25s timeout:** The full `open_connection()` auth handshake takes approximately 8–10s on a clean fast reconnect. 25s gives 2.5x margin for slow CoreBluetooth wake while still aborting before the next typical sleep cycle could complete.
 
 *Logged 2026-07-17.*
+
+## 2026-07-18 — pfsm_state=8 first observation; asyncio.wait_for fix confirmed overnight
+
+**pfsm_state=8 — new undocumented state, candidate: CHARGING / OFF_BODY_DOCKED**
+
+First observation: morning pull `gen3_pull_20260718_083359.txt` (ACTIVE WINDOW),
+boot_ts=68012196. Context: ring had been on charger since approximately 08:29 (battery
+log shows 80% → 100% charging sequence in the daemon log, reason=3 = charging, reason=1
+= charge complete).
+
+Key fields from the 0x61/0x09 record at boot_ts=68012196:
+- `pfsm_state=8` — not in the existing label table (known: 0=AWAKE, 1=ASLEEP, 3/4=ACTIVE_REGIME, 5=TRANSITIONAL, 6=SLEEP_REGIME, 128=ECHO_RECORD)
+- `seconds_in_pfsm_state=1749` (29.15 min)
+- `advertising=118,852,865` — approximately 60× higher than a typical TRANSITIONAL window (~2M), suggesting the ring was advertising continuously for an extended period
+- `systime_s=3627.1` (~60 min of total measurement time)
+
+The advertising level is the strongest signal: 118M vs ~2M for TRANSITIONAL implies the ring
+was in a mode where BLE advertising runs without the normal SLEEP_REGIME suppression.
+Off-body / charger context is the most parsimonious explanation — ring advertises freely
+while docked, waiting for the app to connect. **Not confirmed** — single observation,
+no firmware ground truth.
+
+Sequence around pfsm=8 in the pull:
+1. pfsm=3 ACTIVE_REGIME (waking activity)
+2. pfsm=5 TRANSITIONAL (brief)
+3. pfsm=3 ACTIVE_REGIME
+4. [charging battery log 80%→100%]
+5. pfsm=128 ECHO_RECORD 29.13 min
+6. **pfsm=8 UNKNOWN 29.15 min** ← new
+7. pfsm=128 ECHO_RECORD 13 sec
+8. pfsm=1 ASLEEP 1 sec (ring detecting finger at connection time, not real sleep)
+9. pfsm=128 ECHO_RECORD 1 sec
+
+Next step: watch for pfsm=8 recurrence on future pulls after charger use. If it reliably
+co-occurs with charging context, label is `CHARGING` or `OFF_BODY`. If it appears in
+non-charging contexts too, the label is wrong.
+
+**asyncio.wait_for fix confirmed working overnight (2026-07-17/18)**
+
+First real overnight test of the 25s `asyncio.wait_for` timeout applied 2026-07-17.
+Daemon log shows:
+- 03:00:13 "Connect timed out" — resolved within 25s, immediately returned to scanning ✓
+- 05:01:41 "Connect timed out" — resolved within 25s, immediately returned to scanning ✓
+
+Previously (pre-fix, 2026-07-14 overnight), the same scenario blocked for ~2h. Fix is
+confirmed effective in production overnight conditions.
+
+Overnight capture summary (2026-07-17/18):
+- Connection 1: 22:48–22:51 (18 cycles, pre-sleep MIXED/SLEEP/ACTIVE)
+- Connection 2: 02:55–02:59 (18 cycles, SLEEP WINDOW)
+- Timeout at 03:00 and 05:01 — resolved in <25s each ✓
+- Connection 3: 08:29 morning (1 cycle, ACTIVE WINDOW)
+- Total: 8,961 events, 2.7h sleep data, safety-net morning pull fired
+
+Sleep metrics from daemon log (state=1 samples only):
+- HR: 54.0–79.0 bpm, avg 59.4 bpm (180 samples)
+- SpO2: 83–100%, avg 93.2% (6,305 samples)
+- Sleep temp: 33.69–35.97°C (251 samples)
+- Sleep state: 73% state=1, 27% state=0
+
+*Logged 2026-07-18.*
