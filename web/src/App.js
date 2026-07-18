@@ -489,7 +489,7 @@ export default function MethuselahFinal() {
   }
   const hrvMeta   = hrv              !== null ? metaParts(`optimal ≥ ${THRESHOLDS.hrv}ms`,            hrvAvg   !== null ? `7d avg ${Math.round(hrvAvg)}ms`  : null, getTrend(hrvHist))   : null;
   const rhrMeta   = rhr              !== null ? metaParts(`optimal < ${THRESHOLDS.rhr}bpm`,            rhrAvg   !== null ? `7d avg ${Math.round(rhrAvg)}bpm` : null, getTrend(rhrHist))   : null;
-  const sleepMeta = sleepDurationHrs !== null ? metaParts(`optimal ≥ ${THRESHOLDS.sleepDuration}h`,   sleepAvg !== null ? `7d avg ${sleepAvg.toFixed(1)}h`  : null, getTrend(sleepHist)) : null;
+  const sleepMeta = sleepDurationHrs !== null ? metaParts(`optimal ≥ ${THRESHOLDS.sleepDurationWarn}h`, sleepAvg !== null ? `7d avg ${sleepAvg.toFixed(1)}h`  : null, getTrend(sleepHist)) : null;
   const glucMeta  = glucoseReading   !== null ? metaParts(`optimal < ${THRESHOLDS.glucose}`,           glucAvg  !== null ? `7d avg ${glucAvg.toFixed(1)}`    : null, getTrend(glucHist))  : null;
 
   const bri = calculateBRI({ glucose: glucoseReading, hrv, rhr, sleepDurationHrs, glucosePending: glucoseReading === null });
@@ -601,7 +601,7 @@ export default function MethuselahFinal() {
               label="SLEEP DEBT"
               val={sleepDurationHrs !== null ? sleepDurationHrs.toFixed(1) : "--"}
               unit="hrs"
-              color={sleepDurationHrs === null ? "var(--text-dim)" : sleepDurationHrs < THRESHOLDS.sleepDuration ? "var(--accent-amber)" : "var(--accent-green)"}
+              color={sleepDurationHrs === null ? "var(--text-dim)" : sleepDurationHrs < THRESHOLDS.sleepDurationCritical ? "var(--accent-red)" : sleepDurationHrs < THRESHOLDS.sleepDurationWarn ? "var(--accent-amber)" : "var(--accent-green)"}
               meta={sleepMeta}
               age={formatAge(sleepTs)}
               stale={isStale(sleepTs)}

@@ -149,9 +149,12 @@ def main(log_path, do_push=False):
     if prev_state is not None and prev_ts is not None and last_6a_ts is not None:
         state_runs.append((prev_state, prev_ts, last_6a_ts))
 
-    # Sleep duration from state=1 tick spans
-    state1_ticks = sum(end - start for (s, start, end) in state_runs if s != 0)
-    sleep_duration_hrs = round(state1_ticks / tick_rate / 3600, 2) if state1_ticks > 0 else None
+    # Sleep duration: only from 0x4C firmware summary (authoritative).
+    # 0x6A state=1 tick spans are NOT used — the ring stops emitting 0x6A
+    # before the sleep session ends, so tick-derived duration systematically
+    # undercounts. The 0x4C cluster fires during the morning pull after the
+    # daemon ends; recompute_bridge is called before that pull completes.
+    sleep_duration_hrs = None  # populated by morning pull via 0x4C, not here
 
     # HRV from all night's IBI
     hrv_ms = calculate_rmssd(ibi_packets_all) if ibi_packets_all else None
@@ -165,7 +168,7 @@ def main(log_path, do_push=False):
              if any(ibi_packets_all) else None
 
     print(f"Results:")
-    print(f"  sleep_duration_hrs: {sleep_duration_hrs}  (state=1 ticks={state1_ticks:,})")
+    print(f"  sleep_duration_hrs: {sleep_duration_hrs}  (from 0x4C only — not derived from 0x6A)")
     print(f"  hrv_ms (RMSSD):     {hrv_ms}  (from {sum(len(p) for p in ibi_packets_all)} IBI values)")
     print(f"  rhr_bpm:            {rhr_bpm}")
     print(f"  spo2_avg_pct:       {spo2}")

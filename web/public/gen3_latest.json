@@ -1,19 +1,20 @@
 {
   "source": "gen3_ble",
-  "timestamp": "2026-07-14T05:36:51.612334",
-  "pull_file": "gen3_pull_20260714_053651_MIXED.txt",
-  "classifier": "MIXED WINDOW",
+  "timestamp": "2026-07-18T09:58:11.130284",
+  "pull_file": "gen3_daemon_20260717_224745.txt",
+  "classifier": "SLEEP WINDOW",
   "vectors": {
-    "hrv_ms": 129.5,
-    "rhr_bpm": 78.8,
-    "ibi_hr_bpm": 75.5,
+    "hrv_ms": 56.0,
+    "rhr_bpm": 61.8,
+    "ibi_hr_bpm": 60.3,
     "sleep_duration_hrs": null,
     "deep_sleep_pct": null,
-    "sleep_temp_c": 35.2,
-    "spo2_avg_pct": 90.3,
-    "battery_pct": null,
+    "sleep_stages": null,
+    "sleep_temp_c": 35.01,
+    "spo2_avg_pct": 93.2,
+    "battery_pct": 81.8,
     "step_count": null,
     "cadence_spm": null
   },
-  "raw_sample_count": 218
+  "raw_sample_count": 8960
 }

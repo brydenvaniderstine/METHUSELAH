@@ -393,21 +393,20 @@ async def main():
     else:
         print(f"[POST-RUN] Recompute exited with code {_rc.returncode}.")
 
-    # Safety net: if daemon captured less than the threshold of sleep data,
-    # fire a one-shot morning pull to capture whatever the ring's buffer still holds.
-    if sleep_secs_accumulated < morning_pull_threshold_hrs * 3600:
-        captured_hrs = round(sleep_secs_accumulated / 3600, 2)
-        print(f"\n[SAFETY NET] Only {captured_hrs}h of sleep data captured "
-              f"(threshold: {morning_pull_threshold_hrs}h) — firing morning pull...")
-        pull_script = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
-                                     "oura_gen3_morning_pull.py")
-        result = _subprocess.run([_sys.executable, pull_script], capture_output=False)
-        if result.returncode == 0:
-            print("[SAFETY NET] Morning pull completed.")
-        else:
-            print(f"[SAFETY NET] Morning pull exited with code {result.returncode}.")
+    # Always fire a morning pull immediately after the daemon ends.
+    # The ring's 0x4C sleep summary (authoritative total sleep duration) only
+    # appears in a fresh BLE pull while the completed session is still buffered.
+    # The daemon's own 0x6A stream does not contain 0x4C. Running the pull
+    # right here (~06:47) catches the ring before the buffer rolls or the
+    # session transitions to active state.
+    print(f"\n[MORNING PULL] Firing post-daemon pull to capture 0x4C sleep summary...")
+    pull_script = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                 "oura_gen3_morning_pull.py")
+    result = _subprocess.run([_sys.executable, pull_script], capture_output=False)
+    if result.returncode == 0:
+        print("[MORNING PULL] Completed.")
     else:
-        print(f"Sleep data OK ({round(sleep_secs_accumulated / 3600, 2)}h) — no safety-net pull needed.")
+        print(f"[MORNING PULL] Exited with code {result.returncode}.")
 
 
 if __name__ == "__main__":

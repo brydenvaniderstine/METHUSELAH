@@ -32,15 +32,25 @@ export const COMMANDS = {
     briefing: (value, threshold) =>
       `Your resting heart rate read ${value} bpm, above your threshold of ${threshold} bpm. Active recovery — light movement, no training load — allows your cardiovascular system to reset.`,
   },
-  sleepDuration: {
+  sleepDurationWarn: {
     name:    "SLEEP PROTOCOL",
     cmd:     "INITIATE SLEEP PROTOCOL TONIGHT.",
-    rat:     (value) => `SLEEP DEBT DEFICIENT (${value.toFixed(1)}H LAST NIGHT).`,
+    rat:     (value) => `${value.toFixed(1)}H LAST NIGHT — TARGET 8H.`,
     color:   "var(--text-main)",
     border:  "var(--accent-amber)",
     level:   "warn",
-    briefing: (value, threshold) =>
-      `You slept ${value.toFixed(1)} hours last night, below your threshold of ${threshold}h. Follow the sleep protocol tonight to restore recovery and hormonal repair.`,
+    briefing: (value) =>
+      `You slept ${value.toFixed(1)} hours last night. Target is 8h. Prioritise sleep tonight.`,
+  },
+  sleepDurationCritical: {
+    name:    "SLEEP PROTOCOL",
+    cmd:     "ACUTE SLEEP DEFICIT. RECOVERY REQUIRED.",
+    rat:     (value) => `${value.toFixed(1)}H LAST NIGHT — CRITICALLY LOW.`,
+    color:   "var(--text-main)",
+    border:  "var(--accent-red)",
+    level:   "critical",
+    briefing: (value) =>
+      `You slept ${value.toFixed(1)} hours last night. This is an acute deficit. Prioritise sleep immediately — reduce obligations tonight.`,
   },
   nominal: {
     name:    "",
