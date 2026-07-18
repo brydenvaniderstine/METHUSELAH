@@ -625,6 +625,30 @@ async def main():
         # Shared with oura_gen3_ble_daemon.py via gen3_bridge.py so the
         # vectors-dict shape can't drift out of sync between the two tools.
         from gen3_bridge import build_bridge_data, write_local_bridge_file, push_bridge_json
+        import json as _json
+        from datetime import datetime as _dt, timezone as _tz
+
+        # Guard: never downgrade the bridge from SLEEP WINDOW to ACTIVE WINDOW.
+        # The daemon pushes SLEEP WINDOW with good HRV + sleep duration data; a
+        # safety-net morning pull that catches the ring in ACTIVE state must not
+        # erase that. If the existing bridge is SLEEP WINDOW and was pushed within
+        # the last 18 hours, skip the push for ACTIVE WINDOW pulls.
+        _should_push = True
+        _existing_bridge_path = _os.path.join(repo_root, "pipeline", "data", "bridge", "gen3_latest.json")
+        if pull_class == "ACTIVE WINDOW" and _os.path.exists(_existing_bridge_path):
+            try:
+                with open(_existing_bridge_path) as _bf:
+                    _existing = _json.load(_bf)
+                _existing_class = _existing.get("classifier", "")
+                _existing_ts_str = _existing.get("timestamp", "")
+                if _existing_class == "SLEEP WINDOW" and _existing_ts_str:
+                    _existing_age_h = (_dt.now() - _dt.fromisoformat(_existing_ts_str)).total_seconds() / 3600
+                    if _existing_age_h < 18:
+                        print(f"[BRIDGE] Skipping push — existing SLEEP WINDOW bridge is only "
+                              f"{_existing_age_h:.1f}h old; not downgrading to ACTIVE WINDOW.")
+                        _should_push = False
+            except Exception as _e:
+                print(f"[BRIDGE] Could not read existing bridge for downgrade check: {_e}")
 
         bridge_data = build_bridge_data(
             pull_class=pull_class,
@@ -641,13 +665,16 @@ async def main():
             sleep_stages=sleep_stages_bridge,
         )
 
-        bridge_path = write_local_bridge_file(bridge_data, repo_root)
-        print(f"[BRIDGE] Written → {bridge_path}")
+        if _should_push:
+            bridge_path = write_local_bridge_file(bridge_data, repo_root)
+            print(f"[BRIDGE] Written → {bridge_path}")
 
-        # ── PUSH TO LIVE SITE — the local file above never reaches production ──
-        # (pipeline/data/bridge/ is gitignored for data sovereignty; Vercel only
-        # builds from git). This is what actually feeds methuselah.ca now — see
-        # api/gen3-bridge.js. Best-effort: never fail the pull over a push error.
-        print(f"[BRIDGE PUSH] {push_bridge_json(bridge_data)}")
+            # ── PUSH TO LIVE SITE — the local file above never reaches production ──
+            # (pipeline/data/bridge/ is gitignored for data sovereignty; Vercel only
+            # builds from git). This is what actually feeds methuselah.ca now — see
+            # api/gen3-bridge.js. Best-effort: never fail the pull over a push error.
+            print(f"[BRIDGE PUSH] {push_bridge_json(bridge_data)}")
+        else:
+            print(f"[BRIDGE] Local data built but not pushed (downgrade protection active).")
 
 asyncio.run(main())

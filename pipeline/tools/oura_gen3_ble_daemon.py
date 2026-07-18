@@ -175,6 +175,7 @@ def decode_cycle_events(events):
         "cadence_spm": round(sum(cadence_samples) / len(cadence_samples), 1) if cadence_samples else None,
         "hrv_ms": hrv_ms,
         "asleep_6a_count": asleep_6a_count,  # asleep-state packets this cycle, ~60s each
+        "ibi_packets": ibi_packets,  # raw IBI packet lists this cycle, for nightly accumulation
     }
     pull_class = classify(tags_seen, motion_event_count)
     return accum, pull_class, fails
@@ -196,6 +197,7 @@ async def main():
     last_boot_ts = 0
     total_events_logged = 0
     sleep_secs_accumulated = 0  # rolling overnight total; each asleep 0x6A packet ≈ 60s
+    ibi_packets_all: list = []  # all IBI packet lists across all cycles, for nightly RMSSD
     recent_tags: set = set()    # tags seen in the last two cycles; used to classify disconnects
     disconnected = asyncio.Event()
 
@@ -323,6 +325,9 @@ async def main():
                 # Only count during SLEEP WINDOW so activity-session packets don't inflate the total.
                 if pull_class == "SLEEP WINDOW":
                     sleep_secs_accumulated += accum["asleep_6a_count"] * 60
+                    # Accumulate IBI across all sleep cycles for nightly RMSSD.
+                    # Per-cycle window (~5s) has too few pairs for calculate_rmssd's min_pairs=10.
+                    ibi_packets_all.extend(accum["ibi_packets"])
 
                 priority_data_present = any([
                     accum["hr_avgs"], accum["spo2_avgs"], accum["temps"],
@@ -330,9 +335,10 @@ async def main():
                     accum["step_count"] is not None,
                 ])
                 if priority_data_present:
-                    # HRV only meaningful in sleep context — Gen4's metric is overnight;
-                    # daytime IBI-derived RMSSD (56-70ms) is incomparable to sleep (24-31ms)
-                    hrv_for_bridge = accum["hrv_ms"] if pull_class == "SLEEP WINDOW" else None
+                    # HRV: use nightly accumulated IBI (not per-cycle) so there are enough
+                    # successive-difference pairs. Only push in sleep context.
+                    nightly_hrv = calculate_rmssd(ibi_packets_all) if ibi_packets_all else None
+                    hrv_for_bridge = nightly_hrv if pull_class == "SLEEP WINDOW" else None
                     sleep_hrs_for_bridge = round(sleep_secs_accumulated / 3600, 2) if sleep_secs_accumulated > 0 else None
                     bridge_data = build_bridge_data(
                         pull_class=pull_class,
