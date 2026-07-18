@@ -511,8 +511,9 @@ export default function MethuselahFinal() {
   };
 
   const gen3Live = gen3Bridge?.timestamp && !isStale(gen3Bridge.timestamp);
-  const badgeColor = gen3Live ? "var(--accent-blue)" : "var(--text-dim)";
-  const badgeLabel = gen3Live ? "GEN3 LIVE" : "OFFLINE";
+  const gen3Present = !!gen3Bridge?.timestamp;
+  const badgeColor = gen3Live ? "var(--accent-blue)" : gen3Present ? "var(--accent-amber)" : "var(--text-dim)";
+  const badgeLabel = gen3Live ? "OURA LIVE" : gen3Present ? "OURA" : "OFFLINE";
 
   return (
     <>
