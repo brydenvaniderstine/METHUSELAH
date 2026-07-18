@@ -445,10 +445,16 @@ export default function MethuselahFinal() {
     if (v.spo2_avg_pct != null) {
       const h = [...spo2Hist, v.spo2_avg_pct].slice(-7);
       setSpo2Hist(h); localStorage.setItem("spo2History", JSON.stringify(h));
+      const avg = h.reduce((a, b) => a + b, 0) / h.length;
+      const trend = h.length >= 2 ? (h[h.length-1] - h[0] > 0.3 ? "TRENDING UP" : h[0] - h[h.length-1] > 0.3 ? "TRENDING DOWN" : "STABLE") : "BUILDING";
+      addLog(`GEN3 SPO2 7D AVG: ${avg.toFixed(1)}% // ${trend} // NOTE: GEN3 READS ~3-5% LOW`, "roche");
     }
     if (v.step_count != null && v.step_count > 0) {
       const h = [...stepHist, v.step_count].slice(-7);
       setStepHist(h); localStorage.setItem("stepHistory", JSON.stringify(h));
+      const avg = Math.round(h.reduce((a, b) => a + b, 0) / h.length);
+      const trend = h.length >= 2 ? (h[h.length-1] - h[0] > 200 ? "TRENDING UP" : h[0] - h[h.length-1] > 200 ? "TRENDING DOWN" : "STABLE") : "BUILDING";
+      addLog(`GEN3 STEPS 7D AVG: ${avg}/DAY // ${trend}`, "roche");
     }
     localStorage.setItem("lastBridgeHistoryDate", bridgeDate);
   }, [gen3Bridge]);
