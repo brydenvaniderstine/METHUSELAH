@@ -324,7 +324,8 @@ async def main():
         ss_tags = {0x49: decode_sleep_summary_1, 0x4C: decode_sleep_summary_2,
                    0x4F: decode_sleep_summary_3, 0x58: decode_sleep_summary_4}
         ss_found = False
-        sleep_stages_bridge = None  # populated from 0x4C when cluster fires
+        sleep_stages_bridge = None   # populated from 0x4C when cluster fires
+        sleep_duration_bridge = None  # computed from 0x4C non-wake epochs × 30s ÷ 3600
         for p in parsed:
             if p["tag"] in ss_tags:
                 ss_found = True
@@ -337,13 +338,19 @@ async def main():
                               f"b1={d['b1']} b2={d['b2']} b3={d['b3']}")
                     elif p["tag"] == 0x4C:
                         durs = d["stage_durations_min"]
+                        # Total sleep = non-wake epochs × 30s ÷ 3600.
+                        # stage0=WAKE excluded; stage1/2/3 are sleep stages.
+                        # Epoch duration confirmed 30s (matches 0x5A, cross-validated 2026-07-12).
+                        _sleep_epochs = d["stage1_epochs"] + d["stage2_epochs"] + d["stage3_epochs"]
+                        sleep_duration_bridge = round(_sleep_epochs * 30 / 3600, 2)
                         print(f"  [{tag_hex}] boot_ts={p['boot_ts']:>10}  "
                               f"STAGE COUNTS: "
                               f"s0(WAKE?)={d['stage0_epochs']}ep/{durs[0]}min  "
                               f"s1(LIGHT)={d['stage1_epochs']}ep/{durs[1]}min  "
                               f"s2(REM?)={d['stage2_epochs']}ep/{durs[2]}min  "
                               f"s3(DEEP?)={d['stage3_epochs']}ep/{durs[3]}min  "
-                              f"u16_4={d['u16_4']} u16_5={d['u16_5']} u16_6={d['u16_6']}")
+                              f"u16_4={d['u16_4']} u16_5={d['u16_5']} u16_6={d['u16_6']}  "
+                              f"→ sleep_duration={sleep_duration_bridge}h")
                         sleep_stages_bridge = {
                             "wake_min":  durs[0],
                             "light_min": durs[1],
@@ -662,6 +669,7 @@ async def main():
             step_count=step_count_bridge,
             cadence_spm=cadence_spm_bridge,
             hrv_ms=hrv_rmssd_ms,
+            sleep_duration_hrs=sleep_duration_bridge,
             sleep_stages=sleep_stages_bridge,
         )
 

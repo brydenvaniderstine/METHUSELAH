@@ -393,6 +393,14 @@ async def main():
     else:
         print(f"[POST-RUN] Recompute exited with code {_rc.returncode}.")
 
+    # Brief pause so CoreBluetooth fully releases the peripheral before the
+    # morning pull opens a new connection. Without this, connectPeripheral
+    # queues indefinitely behind the just-disconnected bond (macOS bug, confirmed
+    # 2026-07-14). 10s is conservative; 5s has been seen to be insufficient.
+    import time as _time
+    print("[POST-RUN] Waiting 10s for CoreBluetooth to release peripheral...")
+    _time.sleep(10)
+
     # Always fire a morning pull immediately after the daemon ends.
     # The ring's 0x4C sleep summary (authoritative total sleep duration) only
     # appears in a fresh BLE pull while the completed session is still buffered.
