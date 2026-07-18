@@ -12,6 +12,8 @@ from gen3_ble_connection import scan_for_ring
 from decoders import (
     decode_sleep_period_info_2,
     decode_hrv_event,
+    decode_sleep_phase_data,
+    summarize_sleep_phase_data,
     decode_debug_data_sleep_statistics,
     decode_debug_data_battery_level,
     decode_debug_data_fuel_gauge,
@@ -65,7 +67,7 @@ EVENT_TAGS = {
     0x83: "Scan end",
 }
 
-PRIORITY_TAGS = {0x44, 0x47, 0x49, 0x4B, 0x4C, 0x4E, 0x4F, 0x53, 0x55, 0x58, 0x5D, 0x60, 0x69, 0x6A, 0x6B, 0x6E, 0x6F, 0x71, 0x72, 0x75, 0x76, 0x77, 0x7E, 0x7F}
+PRIORITY_TAGS = {0x44, 0x47, 0x49, 0x4B, 0x4C, 0x4E, 0x4F, 0x53, 0x55, 0x58, 0x5A, 0x5D, 0x60, 0x69, 0x6A, 0x6B, 0x6E, 0x6F, 0x71, 0x72, 0x75, 0x76, 0x77, 0x7E, 0x7F}
 
 def encrypt_nonce(nonce):
     return AES.new(AUTH_KEY, AES.MODE_ECB).encrypt(pad(nonce, 16))
@@ -312,6 +314,36 @@ async def main():
                     print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
         if not bedtime_found:
             print("  No 0x76 bedtime period events found in this pull.")
+
+        print(f"\n=== SLEEP PHASE DATA DECODE (0x5A) — 2-bit per epoch, stage 1=LIGHT confirmed ===")
+        phase_packets = {}
+        for p in parsed:
+            if p["tag"] == 0x5A:
+                raw_p = p["payload"]
+                if len(raw_p) == 14:
+                    idx = raw_p[0]
+                    phase_packets[idx] = bytes(raw_p[1:])
+                else:
+                    print(f"  boot_ts={p['boot_ts']:>10}  UNEXPECTED LENGTH {len(raw_p)}")
+        if phase_packets:
+            try:
+                result = decode_sleep_phase_data(phase_packets)
+                print(f"  {summarize_sleep_phase_data(result)}")
+                counts = result["stage_counts"]
+                labels = result["stage_labels"]
+                durs = result["stage_durations_min"]
+                for s in sorted(counts):
+                    print(f"    stage {s} [{labels[s]:8s}]: {counts[s]:4d} epochs "
+                          f"= {durs.get(s,0):5.1f} min")
+                if result["no_data_epochs"]:
+                    print(f"    NO DATA (0xFF):     {result['no_data_epochs']:4d} epochs (empty buffer slots)")
+                if not result["complete"]:
+                    print(f"  WARNING: partial capture — missing chunks {result['missing_chunks']}")
+            except Exception as e:
+                print(f"  DECODE FAIL: {e}")
+        else:
+            print("  No 0x5A sleep phase data packets found in this pull.")
+            print("  (0x5A only fires when a completed sleep session is in the buffer — rare)")
 
         print(f"\n=== REAL STEP FEATURE DECODE (0x7E/0x7F) — FFT spectral features, NOT step counters ===")
         print("  Only b[9] (0x7E) / b[10] (0x7F) have a confirmed interpretation (walk vs. other-")

@@ -50,3 +50,21 @@ decode_debug_data_ppg_settings  = _load("0x61_33.py", "decoder_0x61_33")
 # hrv_rmssd.py isn't a byte decoder (no digit-prefixed filename issue), so it's
 # imported normally rather than via the importlib workaround above.
 from .hrv_rmssd import calculate_rmssd
+
+# 0x5a is a chunked multi-packet decoder (different interface — takes a dict of
+# chunk_index→bytes rather than a single payload). Export both entry points directly.
+def _load_0x5a():
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location(
+        "pipeline.decoders.decoder_0x5a",
+        os.path.join(_HERE, "0x5a.py")
+    )
+    mod = _ilu.module_from_spec(spec)
+    _sys.modules["pipeline.decoders.decoder_0x5a"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+_mod_0x5a = _load_0x5a()
+decode_sleep_phase_data           = _mod_0x5a.decode
+decode_sleep_phase_data_from_raw  = _mod_0x5a.decode_from_raw_packets
+summarize_sleep_phase_data        = _mod_0x5a.summarize
