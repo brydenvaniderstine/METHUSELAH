@@ -378,16 +378,30 @@ async def main():
     print(f"\n=== Daemon session complete. Total events logged: {total_events_logged} ===")
     print(f"Full log: {log_path}")
 
+    # Always recompute the final bridge from the complete daemon log.
+    # This runs after the main loop so it has all IBI + sleep data for the
+    # nightly RMSSD and sleep duration — more accurate than per-cycle pushes
+    # which only see a 5-second slice.
+    print(f"\n[POST-RUN] Recomputing bridge from full daemon log...")
+    import subprocess as _subprocess
+    recompute_script = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                      "recompute_bridge_from_daemon.py")
+    _rc = _subprocess.run([_sys.executable, recompute_script, log_path, "--push"],
+                          capture_output=False)
+    if _rc.returncode == 0:
+        print("[POST-RUN] Bridge recomputed and pushed.")
+    else:
+        print(f"[POST-RUN] Recompute exited with code {_rc.returncode}.")
+
     # Safety net: if daemon captured less than the threshold of sleep data,
     # fire a one-shot morning pull to capture whatever the ring's buffer still holds.
     if sleep_secs_accumulated < morning_pull_threshold_hrs * 3600:
         captured_hrs = round(sleep_secs_accumulated / 3600, 2)
         print(f"\n[SAFETY NET] Only {captured_hrs}h of sleep data captured "
               f"(threshold: {morning_pull_threshold_hrs}h) — firing morning pull...")
-        import subprocess
         pull_script = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
                                      "oura_gen3_morning_pull.py")
-        result = subprocess.run([_sys.executable, pull_script], capture_output=False)
+        result = _subprocess.run([_sys.executable, pull_script], capture_output=False)
         if result.returncode == 0:
             print("[SAFETY NET] Morning pull completed.")
         else:
