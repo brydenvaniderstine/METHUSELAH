@@ -19,10 +19,14 @@ def build_bridge_data(pull_class, pull_file, priority_event_count,
                        spo2_avgs=None, fuel_gauge_pct=None,
                        step_count=None, cadence_spm=None,
                        deep_sleep_pct=None, hrv_ms=None,
-                       sleep_duration_hrs=None):
+                       sleep_duration_hrs=None, sleep_stages=None):
     """Build the bridge JSON dict in the exact shape api/gen3-bridge.js
     and App.js expect. All vector args are optional accumulator lists
     (averaged here) or precomputed scalars -- caller decides what it has.
+
+    sleep_stages: dict from 0x4C decode, shape:
+      { wake_min, light_min, rem_min, deep_min, source_tag }
+    Populated only when the 0x76/0x5A cluster fires. None otherwise.
     """
     return {
         "source": "gen3_ble",
@@ -35,6 +39,7 @@ def build_bridge_data(pull_class, pull_file, priority_event_count,
             "ibi_hr_bpm": ibi_hr_bpm,
             "sleep_duration_hrs": sleep_duration_hrs,
             "deep_sleep_pct": deep_sleep_pct,
+            "sleep_stages": sleep_stages,
             "sleep_temp_c": round(sum(temps) / len(temps), 2) if temps else None,
             "spo2_avg_pct": round(sum(spo2_avgs) / len(spo2_avgs), 1) if spo2_avgs else None,
             "battery_pct": fuel_gauge_pct,

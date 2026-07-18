@@ -681,7 +681,10 @@ export default function MethuselahFinal() {
                    `SPO2 ${gen3Bridge.vectors.spo2_avg_pct != null ? gen3Bridge.vectors.spo2_avg_pct + '%' : 'N/A'} // ` +
                    `STEPS ${gen3Bridge.vectors.step_count != null ? gen3Bridge.vectors.step_count : 'N/A'} // ` +
                    `TEMP ${gen3Bridge.vectors.sleep_temp_c != null ? gen3Bridge.vectors.sleep_temp_c + '°C' : 'N/A'} // ` +
-                   `BATTERY ${gen3Bridge.vectors.battery_pct != null ? gen3Bridge.vectors.battery_pct + '%' : 'N/A'}`}
+                   `BATTERY ${gen3Bridge.vectors.battery_pct != null ? gen3Bridge.vectors.battery_pct + '%' : 'N/A'}` +
+                   (gen3Bridge.vectors.sleep_stages != null
+                     ? ` // STAGES W${gen3Bridge.vectors.sleep_stages.wake_min}m L${gen3Bridge.vectors.sleep_stages.light_min}m R${gen3Bridge.vectors.sleep_stages.rem_min}m D${gen3Bridge.vectors.sleep_stages.deep_min}m`
+                     : '')}
                 </span>
               </div>
             )}

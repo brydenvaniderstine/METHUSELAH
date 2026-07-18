@@ -324,6 +324,7 @@ async def main():
         ss_tags = {0x49: decode_sleep_summary_1, 0x4C: decode_sleep_summary_2,
                    0x4F: decode_sleep_summary_3, 0x58: decode_sleep_summary_4}
         ss_found = False
+        sleep_stages_bridge = None  # populated from 0x4C when cluster fires
         for p in parsed:
             if p["tag"] in ss_tags:
                 ss_found = True
@@ -343,6 +344,13 @@ async def main():
                               f"s2(REM?)={d['stage2_epochs']}ep/{durs[2]}min  "
                               f"s3(DEEP?)={d['stage3_epochs']}ep/{durs[3]}min  "
                               f"u16_4={d['u16_4']} u16_5={d['u16_5']} u16_6={d['u16_6']}")
+                        sleep_stages_bridge = {
+                            "wake_min":  durs[0],
+                            "light_min": durs[1],
+                            "rem_min":   durs[2],
+                            "deep_min":  durs[3],
+                            "source_tag": "0x4C",
+                        }
                     elif p["tag"] == 0x4F:
                         print(f"  [{tag_hex}] boot_ts={p['boot_ts']:>10}  "
                               f"u16=[{d['u16_0']},{d['u16_1']},{d['u16_2']},{d['u16_3']},{d['u16_4']}]  "
@@ -630,6 +638,7 @@ async def main():
             step_count=step_count_bridge,
             cadence_spm=cadence_spm_bridge,
             hrv_ms=hrv_rmssd_ms,
+            sleep_stages=sleep_stages_bridge,
         )
 
         bridge_path = write_local_bridge_file(bridge_data, repo_root)
