@@ -214,21 +214,29 @@ Track B is considered complete when all of the following are true:
    morning pull discipline is established and the pipeline is reliable as
    a standalone data source.
 
-   Current status: 2 of 14 — streak is 2026-07-06/07 → 2026-07-07/08.
-   Reset by the missed 2026-07-05/06 morning pull (buffer rolled, ring out
-   of BLE range). Reset counter on any ACTIVE WINDOW classification or
-   missed pull; only SLEEP WINDOW mornings with decoded Gen3 vectors count.
+   Current status: 4 of 14 — streak 2026-07-15 → 2026-07-18.
+   Last break: 2026-07-14 (MIXED morning pull, no overnight daemon that night).
+
+   Counting rule (implemented in pipeline/tools/track_b_streak_counter.py):
+   - SLEEP_WINDOW pull (non-_MIXED, sleep_lines >= 4) → counts
+   - DAEMON log started overnight (hour >= 18 or < 8) → credits the next
+     calendar date and counts; daemon capture supersedes morning pull
+   - MIXED or no pull → breaks streak
+
+   With the daemon running nightly, each successive overnight session adds
+   one night to the streak automatically. No manual morning pull required
+   as long as daemon ran the night before.
 
 When all five conditions are met, Track B is closed and v2 parser work
 begins. This definition can be revised -- but only in a dedicated session
 with an explicit reason for changing the bar.
 
-**Current status (2026-07-08):**
-1. sleep_state (0x6A) — not yet confirmed across full night
-2. HRV (0x5D) fires in 3 evening activity pulls — 1/3 confirmed (redefined 2026-07-07)
+**Current status (2026-07-18):**
+1. sleep_state (0x6A) — full-night timeline confirmed (248 samples, real oscillations). 0x6A is 2-state only (0/1). Full REM/Light/Deep requires 0x5A cluster overlay on a daemon night. PARTIAL.
+2. HRV (0x5D) fires in 3 evening activity pulls — 1/3 confirmed (redefined 2026-07-07). Needs 2 more: owner must run evening pull after physical activity.
 3. SpO2 (0x6F) cross-validation — **CLOSED** (3/3 nights passed 2026-07-08)
-4. Five blocked decoders — 0x6B DONE, 0x6E DONE; 0x77/0x7E/0x7F IN PROGRESS
-5. Comparison dataset — **REDEFINED** (Gen3-only, 14 consecutive SLEEP WINDOW nights) — 2/14, streak reset 2026-07-05/06
+4. Sleep cluster decoders (0x49/0x4C/0x4F/0x58/0x5A) — 0x4C CONFIRMED (cross-validated vs 0x5A), plumbed to bridge JSON + App.js. 0x5A 0xFF ambiguity documented. 0x49/0x4F/0x58 decoded but field meanings unconfirmed (n=1). PARTIAL.
+5. Comparison dataset — **REDEFINED** (Gen3-only, 14 consecutive SLEEP WINDOW nights) — 4/14, streak 2026-07-15→2026-07-18, broke at 2026-07-14 (MIXED)
 
 ---
 
