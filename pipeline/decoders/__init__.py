@@ -24,6 +24,10 @@ def _load(filename, alias):
     spec.loader.exec_module(mod)
     return mod.decode
 
+decode_sleep_summary_1          = _load("0x49.py",    "decoder_0x49")
+decode_sleep_summary_2          = _load("0x4c.py",    "decoder_0x4c")
+decode_sleep_summary_3          = _load("0x4f.py",    "decoder_0x4f")
+decode_sleep_summary_4          = _load("0x58.py",    "decoder_0x58")
 decode_sleep_period_info_2      = _load("0x6a.py",    "decoder_0x6a")
 decode_hrv_event                = _load("0x5d.py",    "decoder_0x5d")
 decode_debug_data_sleep_statistics = _load("0x61_09.py", "decoder_0x61_09")

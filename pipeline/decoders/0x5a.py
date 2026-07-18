@@ -10,13 +10,19 @@ Stage mapping (single-night dataset, 2026-07-12; only stage 1 confirmed):
   0 (0x00 bytes) — UNCERTAIN (WAKE candidate; 109 epochs ≈ 54 min)
   1 (0x55 bytes) — LIGHT SLEEP — HIGH CONFIDENCE (53.2% matches Gen4 53% exactly)
   2 (0xAA bytes) — REM candidate (295 epochs ≈ 147 min vs Gen4 142 min, ~3.7% off)
-  3 non-0xFF    — UNCERTAIN (DEEP or second WAKE category; 68 real epochs ≈ 34 min)
-  0xFF byte     — NO DATA sentinel (empty circular buffer slot, not a stage)
+  3              — UNCERTAIN (DEEP or second WAKE; see 0xFF note below)
+  0xFF byte      — AMBIGUOUS: can be NO DATA (empty buffer slot) OR stage-3 data
+                   (0xFF = 4× bit-pair 11 = four stage-3 epochs in 2-bit encoding).
+                   The decoder conservatively excludes all 0xFF bytes as NO_DATA.
 
-Cross-validation (2026-07-11/12 overnight, Gen4 ground truth):
-  Sleep Summary (2) u16 pairs at offsets 2,4,6 = {295, 636, 109} = exact stage counts
-  for stages 2, 1, 0 respectively — confirms encoding and stage counts.
-  0xFF bytes excluded from summary counts (firmware treats as unscored).
+Cross-validation (2026-07-11/12 overnight, via 0x4C Sleep Summary (2)):
+  0x4C stage counts {stage0:109, stage1:636, stage2:295, stage3:68} vs
+  0x5A decoded counts {stage0:109, stage1:636, stage2:295, stage3:60}.
+  Stages 0/1/2: EXACT MATCH (3 for 3) — confirms encoding beyond doubt.
+  Stage 3: 0x4C=68 vs 0x5A=60 — gap of 8 epochs (2 bytes).
+  Implication: firmware counts 2 of the excluded 0xFF bytes as real stage-3
+  epochs, not NO_DATA. The 0xFF ambiguity is real — this decoder undercounts
+  stage 3 by exactly 8 epochs (2 bytes × 4 epochs/byte) on this one night.
 
 Fires as a cluster: 0x76, 0x49, 0x4C, 0x4F, 0x58, 0x5A together within ~143 ticks.
 Only observed once (2026-07-12 21:20 evening pull). Hypothesis: requires a fully

@@ -20,6 +20,10 @@ from decoders import (
     decode_spo2_event,
     decode_sleep_temp_event,
     decode_motion_event,
+    decode_sleep_summary_1,
+    decode_sleep_summary_2,
+    decode_sleep_summary_3,
+    decode_sleep_summary_4,
     decode_bedtime_period,
     decode_spo2_ibi_amplitude,
     decode_spo2_dc_event,
@@ -314,6 +318,42 @@ async def main():
                     print(f"  boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
         if not bedtime_found:
             print("  No 0x76 bedtime period events found in this pull.")
+
+        print(f"\n=== SLEEP SUMMARY DECODE (0x49 / 0x4C / 0x4F / 0x58) ===")
+        print("  Fire alongside 0x76/0x5A only when a completed sleep session is in the buffer.")
+        ss_tags = {0x49: decode_sleep_summary_1, 0x4C: decode_sleep_summary_2,
+                   0x4F: decode_sleep_summary_3, 0x58: decode_sleep_summary_4}
+        ss_found = False
+        for p in parsed:
+            if p["tag"] in ss_tags:
+                ss_found = True
+                tag_hex = f"0x{p['tag']:02X}"
+                try:
+                    d = ss_tags[p["tag"]](p["payload"])
+                    if p["tag"] == 0x49:
+                        print(f"  [{tag_hex}] boot_ts={p['boot_ts']:>10}  "
+                              f"score_candidate={d['score_candidate']}  "
+                              f"b1={d['b1']} b2={d['b2']} b3={d['b3']}")
+                    elif p["tag"] == 0x4C:
+                        durs = d["stage_durations_min"]
+                        print(f"  [{tag_hex}] boot_ts={p['boot_ts']:>10}  "
+                              f"STAGE COUNTS: "
+                              f"s0(WAKE?)={d['stage0_epochs']}ep/{durs[0]}min  "
+                              f"s1(LIGHT)={d['stage1_epochs']}ep/{durs[1]}min  "
+                              f"s2(REM?)={d['stage2_epochs']}ep/{durs[2]}min  "
+                              f"s3(DEEP?)={d['stage3_epochs']}ep/{durs[3]}min  "
+                              f"u16_4={d['u16_4']} u16_5={d['u16_5']} u16_6={d['u16_6']}")
+                    elif p["tag"] == 0x4F:
+                        print(f"  [{tag_hex}] boot_ts={p['boot_ts']:>10}  "
+                              f"u16=[{d['u16_0']},{d['u16_1']},{d['u16_2']},{d['u16_3']},{d['u16_4']}]  "
+                              f"b10={d['b10']}  (field meanings UNKNOWN n=1)")
+                    elif p["tag"] == 0x58:
+                        print(f"  [{tag_hex}] boot_ts={p['boot_ts']:>10}  "
+                              f"scores(field order UNCONFIRMED)={d['scores_u8']}")
+                except ValueError as e:
+                    print(f"  [{tag_hex}] boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
+        if not ss_found:
+            print("  No sleep summary events found in this pull.")
 
         print(f"\n=== SLEEP PHASE DATA DECODE (0x5A) — 2-bit per epoch, stage 1=LIGHT confirmed ===")
         phase_packets = {}
