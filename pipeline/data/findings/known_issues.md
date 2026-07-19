@@ -4522,3 +4522,117 @@ Sleep metrics from daemon log (state=1 samples only):
 - Sleep state: 73% state=1, 27% state=0
 
 *Logged 2026-07-18.*
+
+## 2026-07-18/19 — First full Gen3-only overnight test: reconnect fix validated; two new findings
+
+**Source:** `pipeline/data/raw_pulls/gen3_daemon/gen3_daemon_20260718_222458.txt` (daemon
+started 22:24:58, ran until ~05:44, 446,910 raw event lines, 30MB). Automatic post-daemon
+morning pull: `pipeline/data/raw_pulls/gen3_morning/gen3_pull_20260719_054422.txt`.
+
+### Reconnect fix: validated (no changes made — out of scope this session)
+
+Scan-based reconnect logic (`gen3_ble_connection.py`, `oura_gen3_ble_daemon.py`) survived
+the daemon's first full overnight run under real disconnect conditions. Note: the daemon's
+own console output (cycle/DIGEST/reconnect-reason prints) was not captured to any file
+tonight — `pipeline/logs/daemon_launchd.log` has only the startup header line, because
+launchd itself failed with a permission error (see `daemon_launchd_err.log`: "can't open
+file ... Operation not permitted"), meaning tonight's run was almost certainly started
+manually in a terminal rather than by the `ca.methuselah.gen3daemon` launchd job, and the
+terminal's stdout was not redirected to a file. This means the specific RANGE-DROP/
+WEAR-EVENT disconnect count and recovery detail could not be independently re-derived
+from disk artifacts this session — it is carried over from live observation during the
+run itself, not re-verified here. Worth fixing the launchd permission issue before relying
+on `daemon_launchd.log` for future post-hoc audits.
+
+### Finding 1 — 0x4C fired 24 times overnight; sleep_duration_hrs was never actually
+### computed from it during the live session, and the firings are not cumulative
+
+The "Sleep summary (1)/(2)/(3)/(4)" lines are four **different tags** (0x49, 0x4C, 0x4F,
+0x58) that fire together as one cluster, not a firing counter — a cluster fired 24 times
+overnight (confirmed: `grep -c "\[Sleep summary (2)\]"` on the daemon log → 24), not 4.
+
+Tracing the three places `sleep_duration_hrs` can be set:
+1. **`oura_gen3_ble_daemon.py` live per-cycle push** (lines 324–342): computes it from
+   accumulated **0x6A** asleep-state counts × 60s — not 0x4C at all. The epoch-based
+   `(stage1+stage2+stage3)_epochs × 30s ÷ 3600` fix is wired **only** into
+   `oura_gen3_morning_pull.py` (lines 339–345); it was never wired into the live daemon
+   loop, so 0x4C firing 24 times during the night triggered zero epoch-based computations.
+2. **`recompute_bridge_from_daemon.py`** (POST-RUN step): decodes 0x4C for `sleep_stages`
+   but hardcodes `sleep_duration_hrs = None` **by design** (comment: "populated by morning
+   pull via 0x4C, not here") — intentionally deferring to the morning pull rather than
+   using 0x6A. Correct per existing constraint; not touched this session.
+3. **Automatic post-daemon morning pull** (`gen3_pull_20260719_054422.txt`, ~42min buffer,
+   258 lines, tags: SPO2/IBI/temp/0x6A only): confirmed **zero** 0x49/0x4C/0x4F/0x58 tags
+   present (`grep -n "Sleep summary"` → no match). So `sleep_duration_bridge` stayed `None`
+   here too.
+
+**Net result: sleep_duration_hrs was null in every persisted bridge snapshot from tonight
+— not because of a computation bug, but because the epoch-based fix was never exercised
+against live 0x4C data end-to-end.** This is a gap distinct from Finding 2 below.
+
+**Independent reconstruction (real data, not assumed):** decoding all 24 raw 0x4C payloads
+directly from the log with the existing (already-validated) `decode_sleep_summary_2`
+arithmetic shows the per-firing sleep total is **not monotonic** across the night —
+it swings between ~0h and 6–9h repeatedly (e.g. boot_ts=70071643 → 0.03h sleep, then
+boot_ts=70372116 → 5.55h sleep, then boot_ts=70895252 → 0.0h again). Ring boot_ts was
+confirmed monotonic all night (no backward jumps found scanning 425,708 clean-tag lines,
+so this isn't ring reboots). The most consistent explanation: 0x4C's epoch counters reset
+per accumulation bout — plausibly tied to the same WEAR-EVENT/RANGE-DROP disruptions this
+session's reconnect fix was recovering from — rather than accumulating for the whole
+night. The last cluster of 6 firings before the log ends shows smooth monotonic growth
+(1.52h → 5.81h total), consistent with one clean final bout.
+
+**Plausibility conclusion:** the epoch→hours arithmetic itself (30s/epoch, stage1+2+3
+excluding wake) is unit-correct and consistent with the 2026-07-12 cross-validation against
+0x5A — that part is sound. What's newly discovered and *not yet resolved* is that 0x4C
+cannot be treated as a single whole-night cumulative counter when multiple disruptions
+occur — the final firing (sleep=4.39h, wake=1.42h, total=5.81h) is plausible in isolation
+(under the ~7.3h elapsed, not near-zero) but almost certainly **understates** true total
+night sleep, since it likely reflects only the final bout since the last disruption, not
+the whole night. Do not sum across firings naively — the bout-boundary question is now a
+prerequisite for trusting a multi-disruption night's 0x4C total, separate from the
+already-confirmed per-epoch arithmetic. Flagging as open, not re-closing the 0x4C
+validation question this session (one hypothesis at a time, per project discipline).
+
+### Finding 2 — bridge overwrite bug: narrow-window pulls nulled out fields they had no
+### data for (fixed this session)
+
+`oura_gen3_morning_pull.py`'s automatic post-daemon pull (`gen3_pull_20260719_054422.txt`)
+saw only ~42 minutes of buffer and found no 0x4C/sleep-stage data, then called
+`build_bridge_data()` and pushed a **complete** bridge JSON — nulling
+`sleep_duration_hrs`, `sleep_stages`, `deep_sleep_pct` even though the daemon's own
+7+ hour session (via `recompute_bridge_from_daemon.py`, which does correctly decode
+`sleep_stages` from 0x4C) had already found real values for `sleep_stages` and would
+have found `sleep_duration_hrs` once Finding 1 above is resolved.
+
+Root cause: the existing SLEEP/ACTIVE downgrade guard added 2026-07-18
+(`oura_gen3_morning_pull.py` lines 638–658) only triggers when `pull_class ==
+"ACTIVE WINDOW"`. Tonight's narrow pull had 0x6A/0x75/0x6F tags present, so it classified
+as **SLEEP WINDOW** — the guard never fires for this case, because it's a class-level
+guard (SLEEP vs ACTIVE), not a field-level one. Confirmed by inspecting
+`pipeline/data/bridge/gen3_latest.json` (timestamp `2026-07-19T05:44:22`, `pull_file`:
+the narrow pull, `sleep_duration_hrs`/`sleep_stages`: null).
+
+**Fix:** added `merge_with_existing_bridge()` to `gen3_bridge.py` (the shared module used
+by all three tools, per its own docstring, precisely to avoid this class of drift). It
+backfills any vector field that is `None` in a fresh push from the existing local bridge
+file, bounded to 18h age (matching the existing downgrade guard's threshold, so a broken
+pipeline can't silently repeat a stale value forever). A field the fresh pull actually has
+data for always wins — never suppressed. Wired into:
+- `oura_gen3_morning_pull.py` (covers both the manual run and the daemon's automatic
+  post-run invocation — same script, same code path, so both call paths from Task 2c are
+  fixed by the one change)
+- `oura_gen3_ble_daemon.py`'s live per-cycle push
+- **Deliberately NOT** `recompute_bridge_from_daemon.py` — its `sleep_duration_hrs = None`
+  is an intentional design choice (avoiding 0x6A), not a "no data" gap, and merging there
+  would silently resurrect the 0x6A-derived value the project already rejected as a
+  source. Out of scope per this session's constraints.
+
+**Verified** (not just code review): simulated a bridge with real
+`sleep_duration_hrs=6.31`/`sleep_stages`/`deep_sleep_pct`, then ran `build_bridge_data()`
+with those fields null (narrow-pull style) plus some genuinely fresh fields (`hrv_ms`,
+`rhr_bpm`), and confirmed after `merge_with_existing_bridge()`: the real values survived,
+and the fresh fields still won over the old ones. Also verified a 20h-old existing bridge
+is correctly *not* used to backfill (age guard works).
+
+*Logged 2026-07-19.*
