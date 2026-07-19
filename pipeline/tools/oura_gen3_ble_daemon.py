@@ -55,7 +55,7 @@ _sys.path.insert(0, _os.path.dirname(__file__))
 _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..'))
 
 from gen3_ble_connection import open_connection, request_history, scan_for_ring, ConnectError
-from gen3_bridge import build_bridge_data, write_local_bridge_file, push_bridge_json
+from gen3_bridge import build_bridge_data, merge_with_existing_bridge, write_local_bridge_file, push_bridge_json
 from decoders import (
     decode_sleep_period_info_2,
     decode_spo2_event,
@@ -354,6 +354,7 @@ async def main():
                         hrv_ms=hrv_for_bridge,
                         sleep_duration_hrs=sleep_hrs_for_bridge,
                     )
+                    bridge_data = merge_with_existing_bridge(bridge_data, repo_root)
                     write_local_bridge_file(bridge_data, repo_root)
                     push_result = push_bridge_json(bridge_data)
                     print(f"[{time.strftime('%H:%M:%S')}] [BRIDGE PUSH] {push_result}")

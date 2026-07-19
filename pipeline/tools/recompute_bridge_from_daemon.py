@@ -191,6 +191,9 @@ def main(log_path, do_push=False):
         sleep_stages=sleep_stages_bridge,
     )
 
+    # Not merge-protected: sleep_duration_hrs is intentionally None here (see
+    # above) pending the more authoritative morning-pull 0x4C read, and must
+    # not be silently resurrected from a prior 0x6A-derived value.
     bridge_path = write_local_bridge_file(bridge_data, REPO_ROOT)
     print(f"[BRIDGE] Written → {bridge_path}")
 

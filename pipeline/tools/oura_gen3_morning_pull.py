@@ -631,7 +631,7 @@ async def main():
         # ── BRIDGE WRITER — feeds Gen3 data to the web app ───────────────────
         # Shared with oura_gen3_ble_daemon.py via gen3_bridge.py so the
         # vectors-dict shape can't drift out of sync between the two tools.
-        from gen3_bridge import build_bridge_data, write_local_bridge_file, push_bridge_json
+        from gen3_bridge import build_bridge_data, merge_with_existing_bridge, write_local_bridge_file, push_bridge_json
         import json as _json
         from datetime import datetime as _dt, timezone as _tz
 
@@ -672,6 +672,13 @@ async def main():
             sleep_duration_hrs=sleep_duration_bridge,
             sleep_stages=sleep_stages_bridge,
         )
+
+        # Backfill any field this narrow pull found no data for (e.g. no 0x4C
+        # in a ~42min post-daemon buffer) from the existing bridge, rather
+        # than nulling out a value the daemon's own multi-hour session already
+        # found. This covers SLEEP WINDOW-classified narrow pulls, which the
+        # ACTIVE WINDOW downgrade guard above does not.
+        bridge_data = merge_with_existing_bridge(bridge_data, repo_root)
 
         if _should_push:
             bridge_path = write_local_bridge_file(bridge_data, repo_root)

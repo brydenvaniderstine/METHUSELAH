@@ -13,6 +13,12 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 
+# How stale the existing bridge is allowed to be before we stop backfilling
+# from it -- keeps a broken pipeline from silently repeating an old value
+# under a fresh timestamp forever. Matches the existing SLEEP/ACTIVE
+# downgrade guard's threshold in oura_gen3_morning_pull.py.
+MERGE_MAX_AGE_HOURS = 18
+
 
 def build_bridge_data(pull_class, pull_file, priority_event_count,
                        hr_avgs=None, ibi_hr_bpm=None, temps=None,
@@ -48,6 +54,37 @@ def build_bridge_data(pull_class, pull_file, priority_event_count,
         },
         "raw_sample_count": priority_event_count,
     }
+
+
+def merge_with_existing_bridge(bridge_data, repo_root):
+    """Backfill null vector fields from the existing local bridge file.
+
+    A fresh pull that only sees a narrow buffer window (e.g. the automatic
+    post-daemon morning pull catching ~42 minutes while the daemon's own
+    multi-hour session already found real sleep_duration_hrs/sleep_stages)
+    must not blank out fields it simply didn't see data for this round.
+    Only backfills a field that is None in the new push -- a field the
+    fresh pull actually has data for always wins. Bounded by
+    MERGE_MAX_AGE_HOURS so this can't repeat a stale value indefinitely.
+    """
+    existing_path = os.path.join(repo_root, "pipeline", "data", "bridge", "gen3_latest.json")
+    if not os.path.exists(existing_path):
+        return bridge_data
+    try:
+        with open(existing_path) as f:
+            existing = json.load(f)
+        existing_ts = datetime.fromisoformat(existing["timestamp"])
+        age_h = (datetime.now() - existing_ts).total_seconds() / 3600
+        if age_h > MERGE_MAX_AGE_HOURS:
+            return bridge_data
+        existing_vectors = existing.get("vectors", {})
+    except Exception:
+        return bridge_data
+
+    for key, value in bridge_data["vectors"].items():
+        if value is None and existing_vectors.get(key) is not None:
+            bridge_data["vectors"][key] = existing_vectors[key]
+    return bridge_data
 
 
 def write_local_bridge_file(bridge_data, repo_root):
