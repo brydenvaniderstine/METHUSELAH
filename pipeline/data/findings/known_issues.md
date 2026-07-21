@@ -4870,3 +4870,119 @@ was made this session per the task's own low-priority framing.
 
 *Logged 2026-07-20. Raw source:
 `pipeline/data/raw_pulls/gen3_daemon/gen3_daemon_20260719_212709.txt`.*
+
+---
+
+## 2026-07-20 (session 2) — `sleep_duration_estimate_hrs` built: final-bout +
+## uncovered-tail provisional estimate, decline logic built and tested first
+
+**Trigger:** direct follow-up to Finding 4 above ("best available single-bout
+estimate... reported not implemented... flagging as the most defensible next
+step for a future session to design and test"). This session designed and
+implemented it, in `pipeline/tools/sleep_duration_estimate.py`, wired into
+`recompute_bridge_from_daemon.py` alongside (not replacing) the existing
+`sleep_duration_hrs = None` safeguard.
+
+### Design: decline logic first, happy path second
+
+Per the task's own build order, the four decline conditions were built and
+tested before the arithmetic:
+1. Final bout has fewer than `MIN_BOUT_SAMPLES=3` 0x4C samples → decline.
+2. Final bout's stage-total sequence is not non-decreasing → decline.
+3. Uncovered tail exceeds `TAIL_CAP_MINUTES=90` (tunable constant) → decline.
+4. No sustained post-bout wake/activity signal found at all → decline.
+
+Conditions are evaluated in the order 1, 2, 4, 3 in code (not 1-2-3-4) since
+3 requires a signal to measure the tail against, which is what 4 finds.
+
+### "Clear wake/activity signal" had to be more than "first event after the
+### bout" — both candidate tags fire as background telemetry all night
+
+Checked `Motion event` (0x47) and `Real step feature (1)` (0x7E) event rates
+across the whole log before picking a definition: ~13/min even in the
+middle of the night's densest confirmed-sleep bout — a single occurrence of
+either tag is not a usable wake marker on its own. What tonight's real tail
+region actually showed: a long quiet gap (33,048 ticks, ~50 real min, from
+the last pre-wake burst) followed by a tight, regular ~270-300-tick-spaced
+run continuing straight to the log's end. Defined "clear signal" as the
+start of a run of `SUSTAINED_MIN_EVENTS=5`+ consecutive events each within
+`SUSTAINED_MAX_GAP_TICKS=400` ticks of the previous one — calibrated
+directly against that real burst, comfortably tighter than the variable
+(hundreds-to-thousands-of-ticks) gaps seen during isolated overnight
+movement elsewhere in the same log.
+
+### Tick-rate constant: reused the prior session's ~650-660/min figure,
+### did NOT re-derive from a naive whole-log span — and re-deriving it
+### anyway surfaced a real, unresolved 22x discrepancy
+
+Per the task's instruction to double-check the calibrated tick rate against
+this session's own data: computed ticks/min from the log's literal first
+real entry to its literal last real entry (`69380216` → `76410967`,
+excluding `[UNKNOWN (0x11)]` lines, which were confirmed via direct
+grep to carry garbage boot_ts values — e.g. `boot_ts=61145343` and
+`boot_ts=79495423` both trace to that tag, not to any real device clock)
+against the header's `duration=8.0h` (cross-checked against the file's own
+mtime: header start `21:27:09` + file mtime `05:27:06` = within seconds of
+exactly 8h, so the 8h premise is solid). That gives `7,030,751 ticks /
+28800s ≈ 244 ticks/sec ≈ 14,650 ticks/min` — about **22x faster** than the
+630-660 ticks/min figure the prior session calibrated locally within
+individual bouts via the Bedtime period tag.
+
+Both figures are reproducible from real data; they cannot both be "the"
+constant tick rate. Direct check on the final bout itself: `bout_start
+(a) = 76149641`, last sample `boot_ts = 76383271`, elapsed = 233,630 ticks.
+At ~244/sec that's only ~16 real minutes — physically impossible for a
+bout that self-reports 359.5 minutes of accumulated sleep-stage epochs
+(independently validated arithmetic, matches 0x5A). At ~650/min it's a
+consistent ~359 minutes, matching the bout's own report. **The bout-local
+~650-660/min figure is therefore the one used here** — physically
+consistent with the epoch counts, and the one independently cross-validated
+against a second tag. The whole-log ~244/sec figure is most likely
+inflated by large tick jumps at BLE reconnects (Finding 3 above found most
+0x4C firings correlate with reconnects, and 19 bout resets happened in one
+night) rather than representing a uniform real-time rate — **not
+confirmed, flagged as an open question, out of scope for this feature**
+since the tail calculation only ever spans a short post-bout window, the
+same local-rate regime the 650-660/min figure was calibrated against.
+`TICK_RATE_PER_MIN = 655` (documented midpoint) is what's used; re-deriving
+it directly from tonight's final bout alone gives 649.6/min, consistent.
+
+### Verification
+
+**Real data:** ran `recompute_bridge_from_daemon.py` against
+`gen3_daemon_20260719_212709.txt` end-to-end (through the actual wired
+pipeline, not just the module in isolation) →
+`sleep_duration_estimate_hrs: 6.6` (`final bout total 359.5min + uncovered
+tail 36.3min`), `sleep_duration_hrs` still correctly `None`. 6.6h is in the
+same range as the prior session's manual "~42-44min tail" estimate (that
+one anchored on the log's literal last line; this implementation anchors on
+the start of the first *sustained* run, which lands somewhat earlier — a
+more principled definition of "first clear signal," not a contradiction).
+
+**Synthetic + real edge cases (Task 4's own instruction not to skip this):**
+6 synthetic constructed cases (one per decline condition + a clean control)
+all passed. Additionally built two edited copies of tonight's real log to
+exercise the actual parser, not just hand-built dicts: (1) truncated right
+after the final bout's 2nd sample (`head -n 436617`) → correctly declined,
+"Final bout has only 2 sample(s)"; (2) truncated right after the final
+bout's last real sample with zero trailing activity (`head -n 443762`) →
+correctly declined, "No clear wake/activity signal... found." Both
+real-log truncation tests and all 6 synthetic tests are reproducible; not
+committed as permanent fixtures (this project has no pytest suite — ad hoc
+verification scripts under `pipeline/tools/` are the existing pattern).
+
+### Not done this session (explicitly out of scope per the task)
+
+- No UI/dashboard change — `sleep_duration_estimate_hrs` is bridge-JSON-only.
+- `sleep_duration_hrs` itself untouched — still `None`, still the
+  authoritative (currently unpopulated) field.
+- The 22x whole-log-vs-bout-local tick rate discrepancy is unresolved.
+- Only wired into `recompute_bridge_from_daemon.py` (the script that
+  currently hardcodes `sleep_duration_hrs = None`) — `oura_gen3_morning_pull.py`
+  and `oura_gen3_ble_daemon.py` compute their own non-None
+  `sleep_duration_hrs` from different, narrower data views and were not
+  touched; wiring the new estimate into those would need separate review
+  of what entry data they actually have available.
+
+*Logged 2026-07-20. Raw source (real + two edited truncated copies):
+`pipeline/data/raw_pulls/gen3_daemon/gen3_daemon_20260719_212709.txt`.*

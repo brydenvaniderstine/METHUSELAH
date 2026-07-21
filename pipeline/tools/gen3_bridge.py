@@ -25,7 +25,9 @@ def build_bridge_data(pull_class, pull_file, priority_event_count,
                        spo2_avgs=None, fuel_gauge_pct=None,
                        step_count=None, cadence_spm=None,
                        deep_sleep_pct=None, hrv_ms=None,
-                       sleep_duration_hrs=None, sleep_stages=None):
+                       sleep_duration_hrs=None, sleep_stages=None,
+                       sleep_duration_estimate_hrs=None,
+                       sleep_duration_estimate_info=None):
     """Build the bridge JSON dict in the exact shape api/gen3-bridge.js
     and App.js expect. All vector args are optional accumulator lists
     (averaged here) or precomputed scalars -- caller decides what it has.
@@ -33,6 +35,17 @@ def build_bridge_data(pull_class, pull_file, priority_event_count,
     sleep_stages: dict from 0x4C decode, shape:
       { wake_min, light_min, rem_min, deep_min, source_tag }
     Populated only when the 0x76/0x5A cluster fires. None otherwise.
+
+    sleep_duration_estimate_hrs / sleep_duration_estimate_info: PROVISIONAL
+    companion to sleep_duration_hrs, from pipeline/tools/
+    sleep_duration_estimate.py (final 0x4C bout + uncovered tail). This is
+    NOT a replacement for sleep_duration_hrs, which stays None until this
+    estimate is validated across several more real nights -- do not read
+    one as backfilling the other. sleep_duration_estimate_info carries the
+    decline reason (when the estimate is None) or the confidence/inputs
+    behind the number (when it isn't), so it's inspectable rather than a
+    black box. Backend/bridge-only for now -- not surfaced on the
+    dashboard.
     """
     return {
         "source": "gen3_ble",
@@ -44,6 +57,8 @@ def build_bridge_data(pull_class, pull_file, priority_event_count,
             "rhr_bpm": round(sum(hr_avgs) / len(hr_avgs), 1) if hr_avgs else None,
             "ibi_hr_bpm": ibi_hr_bpm,
             "sleep_duration_hrs": sleep_duration_hrs,
+            "sleep_duration_estimate_hrs": sleep_duration_estimate_hrs,
+            "sleep_duration_estimate_info": sleep_duration_estimate_info,
             "deep_sleep_pct": deep_sleep_pct,
             "sleep_stages": sleep_stages,
             "sleep_temp_c": round(sum(temps) / len(temps), 2) if temps else None,

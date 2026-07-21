@@ -25,6 +25,7 @@ from decoders import (
 )
 from decoders.hrv_rmssd import calculate_rmssd
 from gen3_bridge import build_bridge_data, write_local_bridge_file, push_bridge_json
+from sleep_duration_estimate import estimate_sleep_duration
 
 DAEMON_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'raw_pulls', 'gen3_daemon')
 REPO_ROOT  = os.path.join(os.path.dirname(__file__), '..', '..')
@@ -156,6 +157,16 @@ def main(log_path, do_push=False):
     # daemon ends; recompute_bridge is called before that pull completes.
     sleep_duration_hrs = None  # populated by morning pull via 0x4C, not here
 
+    # PROVISIONAL, separate from sleep_duration_hrs above -- does not touch
+    # or backfill it. See pipeline/tools/sleep_duration_estimate.py for the
+    # decline conditions and the final-bout + uncovered-tail calculation.
+    sleep_estimate_result = estimate_sleep_duration(entries)
+    sleep_duration_estimate_hrs = sleep_estimate_result["sleep_duration_estimate_hrs"]
+    sleep_duration_estimate_info = {
+        "reason": sleep_estimate_result["reason"],
+        "confidence": sleep_estimate_result["confidence"],
+    }
+
     # HRV from all night's IBI
     hrv_ms = calculate_rmssd(ibi_packets_all) if ibi_packets_all else None
 
@@ -169,6 +180,7 @@ def main(log_path, do_push=False):
 
     print(f"Results:")
     print(f"  sleep_duration_hrs: {sleep_duration_hrs}  (from 0x4C only — not derived from 0x6A)")
+    print(f"  sleep_duration_estimate_hrs: {sleep_duration_estimate_hrs}  (PROVISIONAL — {sleep_estimate_result['reason']})")
     print(f"  hrv_ms (RMSSD):     {hrv_ms}  (from {sum(len(p) for p in ibi_packets_all)} IBI values)")
     print(f"  rhr_bpm:            {rhr_bpm}")
     print(f"  spo2_avg_pct:       {spo2}")
@@ -189,6 +201,8 @@ def main(log_path, do_push=False):
         hrv_ms=hrv_ms,
         sleep_duration_hrs=sleep_duration_hrs,
         sleep_stages=sleep_stages_bridge,
+        sleep_duration_estimate_hrs=sleep_duration_estimate_hrs,
+        sleep_duration_estimate_info=sleep_duration_estimate_info,
     )
 
     # Not merge-protected: sleep_duration_hrs is intentionally None here (see
