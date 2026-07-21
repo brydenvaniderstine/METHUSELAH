@@ -5126,3 +5126,169 @@ recompute, which never calls `classify()`.
 `..._20260720_213320.txt` (overnight regression check), all 45 files
 under `pipeline/data/raw_pulls/gen3_morning/` + `gen3_evening/`
 (historical scope check).*
+
+---
+
+## Investigation: the 22x whole-log-vs-bout-local tick-rate discrepancy — leading hypothesis (reconnect jumps) FALSIFIED, root cause still open
+
+**Trigger:** the 2026-07-20 `sleep_duration_estimate_hrs` entry above flagged
+an unresolved ~22x gap between a bout-local tick-rate calibration (~650-660
+ticks/min, used as `TICK_RATE_PER_MIN=655`) and a naive whole-log
+first-to-last-boot_ts calculation (~14,650 ticks/min), and speculated
+(unconfirmed) that "large tick jumps at BLE reconnects" were the cause.
+This session re-derives both figures directly from
+`gen3_daemon_20260719_212709.txt` and tests that speculation against real
+data. **Investigation only — `sleep_duration_estimate.py` is unchanged.**
+
+### Both original figures reproduce exactly
+
+- **Whole-log:** first real entry (excluding `[UNKNOWN (0x11)]`, confirmed
+  elsewhere to carry garbage boot_ts) `boot_ts=69380216`, last real entry
+  `boot_ts=76410967` → span `7,030,751` ticks. Header
+  (`Daemon started 2026-07-19 21:27:09`) to file mtime
+  (`2026-07-20 05:27:06`) = 7h59m57s ≈ the declared 8.0h, confirmed via
+  `stat`. `7,030,751 / 28,800s = 244.123 ticks/sec = 14,647.4 ticks/min`
+  — matches the "~14,650" figure exactly.
+- **Bout-local (final bout, re-derived using the actual
+  `_group_bouts`/`_decode_bedtime`/`_decode_stage_total_min` functions
+  imported directly from `sleep_duration_estimate.py`, not
+  reimplemented):** `bout_start=76149641`, last sample
+  `boot_ts=76383271`, `stage_total_min=359.5` → `233,630 / 359.5 =
+  649.9 ticks/min` — matches the documented "649.6" (rounding aside).
+
+### Finding 1 — the "large tick jumps at reconnects" hypothesis is FALSE
+
+Computed every consecutive-entry boot_ts delta across the entire log
+(425,748 gaps over 425,749 real entries): **zero negative deltas
+(no regressions), zero zero-deltas, and a maximum delta of 600 ticks
+anywhere in the whole 8-hour session.** Only 410 of 425,748 deltas exceed
+300 ticks; none exceed 600. There is no discontinuity, jump, or gap
+anywhere in the tick stream — it increases smoothly and strictly
+monotonically for the entire log. **This directly falsifies the
+previous session's leading (self-described "not confirmed") suspect.**
+Reconnects cannot be inflating the whole-log average via discontinuous
+clock jumps, because no such jumps exist in this log at all.
+
+### Finding 2 — entry density is uniform between the final sleep bout and an equally-wide early-night window (rules out a sleep-state clock-domain switch)
+
+Compared the final bout's boot_ts window (`[76149641, 76383271]`, span
+233,630 ticks) against an identically-wide window at the start of the log
+(`[69380216, 69613846]`): **24,625 entries in the bout window vs 24,702 in
+the early window (9.49 vs 9.46 ticks/entry) — statistically
+indistinguishable, with near-identical tag composition** (SPO2
+IBI+amplitude, SPO2 DC event, IBI+amplitude, SPO2 event, CVA raw PPG data,
+Debug data, PPG amplitude, Sleep ACM period, in the same rank order and
+similar proportions in both). If boot_ts genuinely ticked at a different
+rate during confirmed sleep vs. general/pre-sleep operation (e.g. a
+low-power RTC domain during sleep vs. a faster HFOSC domain otherwise),
+raw-sensor tick-spacing should differ between the two windows. It doesn't.
+**Rules out a sleep-state-dependent clock-rate change as the explanation.**
+
+### Finding 3 — a confirmed pre-session backlog exists, but is far too small (~1% of the gap) to explain 22x on its own
+
+The already-documented "carryover" bout (`bout_start=69295880`, total
+576.5 min, previously flagged as predating this session's own sleep)
+starts only 84,336 ticks before the log's own first real entry
+(`69380216`) — real, confirmed evidence that the daemon's first cycle
+(which requests `since_boot_ts=0`, i.e. full history, exactly once per
+session — confirmed in code: `since = last_boot_ts + 1 if last_boot_ts
+else 0`) can and does surface pre-session backlog. But 84,336 ticks is
+only ~1.2% of the total 7,030,751-tick span — nowhere near enough to
+account for a 22x/~95% gap even if entirely attributed to backlog
+inflation. Also confirmed: zero negative (regressed) deltas occur
+anywhere in the file, meaning no mid-session "boot_ts regressed, ring
+likely rebooted" checkpoint reset (which would re-arm a fresh
+`since=0` request) ever fired this session — so only the very first
+cycle could have delivered backlog, not any of the ~59 later
+reconnects. This factor is real but insufficient in scale.
+
+### Finding 4 — re-deriving all 19 bouts' own internal ratios shows the "18 tightly-clustered 630.2-722.9" figure understates the real spread (correction, not a new discrepancy)
+
+Recomputed `(boot_ts - bout_start) / cumulative_stage_total_min` for every
+individual sample in all 19 bouts (not just the final sample per bout).
+Most large-total bouts do cluster near 640-700 ticks/min as documented,
+but several do not: `bout_start=71791223` (total 451.5min) → **974.3**;
+`bout_start=73311579` (total 41.0min, just over the bout-level "≥40min is
+reliable" line) → **3,075.9**; `bout_start=75298385` (total 91.5min) →
+**1,004.3**; and the last sample of the densely-sampled 7-sample bout
+`75298085` (total 623.5min) → **953.2**, even though that same bout's
+first 6 samples are tight (694.4, 685.4, 662.8, 660.9, 653.2, 698.3).
+Checked whether this last point was a pairing bug (a stale Bedtime-period
+mismatched to the wrong bout via `CLUSTER_PAIR_MAX_TICKS`): it is not —
+the raw payload's first 4 bytes (`25f57c04`, the bout_start field) are
+byte-for-byte identical across all 7 of this bout's Bedtime-period
+packets, confirmed by direct hex inspection, and the gap to its paired
+Sleep summary (165 ticks) is well inside the 500-tick pairing threshold.
+The likely explanation: 350,971 ticks elapsed between the 6th and 7th
+sample but stage_total only grew by 275.0 min — consistent with a
+real multi-hour gap of *uncounted* (non-sleep-classified) time sitting
+inside a single bout that never formally reset, the same
+already-documented mechanism (Finding 2 of the 2026-07-19/20 entry) by
+which near-zero-total bouts show inflated ratios, just occurring later
+in an otherwise well-behaved bout instead of at its start. **Not a new
+bug — a real, physically-plausible instance of the same known effect,
+but it means the true bout-local ratio spread is wider than the
+"630.2-722.9, tightly clustered" description suggests**, and any future
+night whose *final* bout happens to contain a mid-bout gap like this one
+could see `TICK_RATE_PER_MIN=655` applied to an atypically-fast local
+region, understating that night's tail conversion. Flagged for whoever
+next touches `sleep_duration_estimate.py`'s tail-conversion step — not
+fixed here.
+
+### Finding 5 — no clean match to any known structural constant
+
+Checked whether the ratio (14,647.4 ÷ any individual bout's local rate,
+ranging ~19.5x-22.9x depending which bout is used as the denominator)
+lines up with `poll_seconds=5`, the ~59 BLE-reconnect clusters this
+session (237 `[BLE connection]` sub-events, median 3-tick spacing within
+a cluster), the 255-event circular-buffer size documented elsewhere, the
+19 (or 18, excluding carryover) bout count, or the 29 total 0x4C firing
+count. None divide or multiply cleanly into any of these. The ratio
+itself isn't even a single fixed number across bouts (19.5x-22.9x
+depending which bout's own noisy local rate is used) — more consistent
+with two independently-measured, individually-noisy quantities than a
+single fixed conversion-factor bug.
+
+### What this leaves open
+
+The physically-forced argument from the 2026-07-20 entry still stands and
+is, if anything, strengthened: a bout that self-reports hundreds of
+minutes of 30-second-epoch sleep-stage classifications **cannot**
+physically fit inside a real-time span shorter than that many minutes,
+so whichever of the two rates is "real" for duration purposes, it must be
+the slower (~650-660/min) one, not the whole-log's ~14,650/min — a
+16-minute bout containing 6 hours of classified sleep is not physically
+possible regardless of any clock-domain explanation. That conclusion is
+unchanged and this session adds two rulings-out (Findings 1 and 2)
+in its support: it is not explained by reconnect-induced clock jumps
+(none exist) or by the sleep state itself running the clock at a
+different rate (density is identical in and out of the bout). What
+remains genuinely unresolved: **why the raw, externally-verified
+whole-log average (7,030,751 ticks over a confirmed real 7h59m57s) is
+~22x the bout-local rate, if not jumps and not a state-dependent clock.**
+The leading remaining candidate, not confirmed: the 30-second-epoch
+assumption baked into `_decode_stage_total_min` (`(f[0]+f[1]+f[2]+f[3]) *
+30 / 60`) may not correspond to true 30-real-second epochs at the ring's
+actual native tick rate — this session could not test that independently,
+since no per-entry wall-clock anchor exists in this log
+(`pipeline/logs/daemon_launchd.log` is empty for this run, due to the
+already-documented launchd permission bug, so there is no console
+timestamp trail to cross-check against). **This is flagged as a
+potential real issue affecting the correctness of
+`sleep_duration_estimate_hrs`'s underlying assumptions — not fixed, per
+the task's explicit instruction — since if the epoch-duration assumption
+is wrong, the "final bout total" component (not just the tail
+conversion) could also be miscalibrated.** Resolving it fully would need
+either a firmware-documented tick rate/epoch duration, or a future night
+with an independently, externally verified real sleep duration to
+calibrate against (the existing "~6h20m real night" reference in
+`sleep_duration_estimate.py`'s own docstring has no traceable source in
+`known_issues.md` or `SESSION_HANDOFF.md` — it reads as an internal
+plausibility check by the prior session, not verified external ground
+truth, so it corroborates but does not prove the bout-local figure).
+
+*Logged 2026-07-21. Raw source:
+`pipeline/data/raw_pulls/gen3_daemon/gen3_daemon_20260719_212709.txt`
+(re-derived directly via the real `_group_bouts`/`_decode_bedtime`/
+`_decode_stage_total_min` functions imported from
+`pipeline/tools/sleep_duration_estimate.py`, not reimplemented).*
