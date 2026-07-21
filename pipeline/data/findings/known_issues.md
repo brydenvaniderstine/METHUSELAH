@@ -4986,3 +4986,143 @@ verification scripts under `pipeline/tools/` are the existing pattern).
 
 *Logged 2026-07-20. Raw source (real + two edited truncated copies):
 `pipeline/data/raw_pulls/gen3_daemon/gen3_daemon_20260719_212709.txt`.*
+
+---
+
+## SLEEP WINDOW classifier false positive on daytime stillness — root cause + fix, 2026-07-21
+
+**Trigger:** 2026-07-19, ~2:30-4:30pm, owner did dishes while repeatedly
+taking the ring on and off (wet hands). A manual `oura_gen3_morning_pull.py`
+spot-check at 16:33:25 that afternoon classified the pull as **SLEEP
+WINDOW**, despite being a fully awake, active period.
+
+### Root cause (confirmed against real data, not assumed)
+
+`classify()` (duplicated in `oura_gen3_ble_daemon.py` and
+`oura_gen3_morning_pull.py`) treated *presence* of any tag in
+`SLEEP_TAGS = {0x6A, 0x5D, 0x6F, 0x75}` as proof of sleep. Decoding the
+actual 16:33:25 payloads (`gen3_pull_20260719_163325.txt`) shows this is
+wrong on two counts:
+
+1. **0x6A/0x5D/0x6F/0x75 are continuous background-sensor tags, not
+   sleep-exclusive ones.** They fire whenever the ring has skin contact,
+   day or night — 0x6F is SpO2 sampling, 0x75 is skin temp, 0x5D is HRV,
+   all general-purpose. The dishes-episode pull has the identical tag
+   composition (SPO2 IBI+amplitude, SPO2 DC event, IBI+amplitude, SPO2
+   event, Sleep period info (2), Sleep ACM period, PPG amplitude, Temp
+   event) as a genuine 05:44 morning sleep-check pull
+   (`gen3_pull_20260719_054422.txt`) — same tags, same structure.
+2. **Even the ring's own onboard sleep-state algorithm was fooled.**
+   Decoding the 0x6A payloads directly: the dishes pull shows
+   `sleep_state=1` (asleep) and `motion_count=0` in all 9 packets, at
+   HR≈64 bpm — indistinguishable from the real sleep pull's
+   `sleep_state=1`, `motion_count=0`, HR≈57.5-58.5 bpm. A ring sitting
+   motionless on a counter between wears produces the same
+   physiological/motion signature the firmware uses for "asleep." No
+   per-packet motion or firmware sleep-state field can tell these apart.
+
+### 0x53 (wear event) investigated and partially falsified as the fix mechanism
+
+The task hypothesis was that wear-continuity via 0x53 was simply missing
+from the classifier and adding it would fix this. Real data confirms 0x53
+is real (decoder now added, `pipeline/decoders/0x53.py`, format
+`state:u8 + text:ascii`) but shows it **cannot gate classification the
+way originally proposed**:
+
+- **0x53 essentially never survives into a single `morning_pull.py` BLE
+  session.** Replayed all 45 historical raw pull files
+  (`gen3_morning/` + `gen3_evening/`): 0/29 `gen3_morning` pulls ever
+  captured a single Wear event, including both the false-positive dishes
+  pull *and every legitimately-classified real sleep-check pull to
+  date*. `gen3_evening` pulls caught exactly 1 each in 3/16 files. Cause:
+  `oura_gen3_auto_loop.py`'s own docstring confirms the ring's flash
+  buffer is storage-size-limited, not time-limited, and is dominated by
+  high-frequency tags (SPO2/IBI fire every ~10-30s); a `boot_ts=0`
+  "full history" request only returns whatever's left in that buffer by
+  the time a manual pull happens, typically under an hour of history —
+  the low-frequency 0x53 tag gets evicted first. This is a hardware/
+  firmware constraint, not something fixable in `classify()`.
+- **Where 0x53 does survive (the daemon's continuous 8h sessions), it
+  doesn't cleanly track physical wear either.** Checked all 3 full
+  overnight daemon logs (2026-07-18/19, 19/20, 20/21): `STATE_NOT_IN_
+  FINGER` (1) and `STATE_FINGER_USER_ACTIVE` (3) alternate 33-44 times
+  *per night*, even during confirmed real sleep (roughly every 10-15
+  min) — a wear-confidence oscillation in the optical sensor during
+  stillness, not literal ring removal. Gating "no SLEEP WINDOW without a
+  recent state=3 confirmation" on this data would misclassify every real
+  night, which the task explicitly said must not happen.
+- **The one 0x53 state that IS unambiguous:** `STATE_CHARGING_PHASE` (8).
+  Confirmed via 3 identical real payloads (`08` + literal ASCII
+  `"chg. detected"`, not a numeric duration like other states) and
+  cross-checked against `~/Desktop/open_ring/driver/enums.py`'s
+  `STATE_CHANGE` enum (`8: STATE_CHARGING_PHASE`). The ring cannot be worn
+  while reporting itself on the charging dock, so this is wired in as a
+  hard veto against SLEEP WINDOW when present.
+
+### Actual fix implemented
+
+`classify()` in both `oura_gen3_ble_daemon.py` and
+`oura_gen3_morning_pull.py` now takes `charging_seen` (from decoding any
+0x53 payloads present — rare, but free when available) and `local_hour`:
+
+1. If sleep tags + activity tags both present → `MIXED WINDOW` (unchanged).
+2. If sleep tags present + 0x53 reports `CHARGING_PHASE` → `UNCLEAR`
+   (new, real, unambiguous).
+3. If sleep tags present + pull hour is outside `PLAUSIBLE_SLEEP_HOURS`
+   (20:00-08:59 local, chosen from the real daemon schedule: launchd
+   fires the daemon at 22:00 for 8h, and morning safety-net pulls
+   historically cluster 05:27-08:34) → `UNCLEAR` (new).
+4. Otherwise, sleep tags present → `SLEEP WINDOW` (unchanged).
+5. Activity tags only → `ACTIVE WINDOW` (unchanged). Neither → `UNCLEAR`
+   (unchanged).
+
+This uses the pull's own already-recorded wall-clock time — real,
+always-present data, no new decoding required — as the primary defense,
+since 0x53 can't reliably serve that role in the code path that actually
+produced this bug. 0x53 is still wired in and used wherever it happens to
+be available (the daemon's long sessions, and the rare evening pull that
+caught one), just not relied on as the sole gate.
+
+### Verification (real data only)
+
+- **False positive, `gen3_pull_20260719_163325.txt` (16:33, dishes
+  episode):** old classifier → `SLEEP WINDOW`. New classifier → `UNCLEAR`
+  ("sleep tags present but pull hour (16:00) is outside plausible sleep
+  hours"). Fixed.
+- **Real sleep, `gen3_pull_20260719_054422.txt` (05:44 morning
+  check):** new classifier → `SLEEP WINDOW`, unchanged. Confirmed no
+  regression.
+- **Real overnight daemon runs** (`gen3_daemon_20260718_222458.txt`,
+  `..._20260719_212709.txt`, `..._20260720_213320.txt` — the three most
+  recent full nights): checked every wall-clock hour spanned by each
+  8-hour run against `PLAUSIBLE_SLEEP_HOURS`; all three stay entirely
+  inside it (`{21,22,23,0,1,2,3,4,5,6}` range depending on start time,
+  zero hours outside the window). The new hour-based gate therefore never
+  fires during a real overnight run — `recompute_bridge_from_daemon.py`
+  (which hardcodes `pull_class='SLEEP WINDOW'` and doesn't call
+  `classify()` at all) is unaffected regardless, so final nightly bridge
+  output for real sleep is untouched either way.
+- **Historical scope check:** replayed old vs. new classifier across all
+  45 raw pull files in `gen3_morning/` + `gen3_evening/`. 14 of 45 change
+  from `SLEEP WINDOW` to `UNCLEAR` — all 14 are daytime pulls between
+  09:12 and 18:53 (including the known dishes pull), consistent with this
+  being a recurring bug, not a one-off. All 22:xx-08:xx `SLEEP WINDOW` /
+  `MIXED WINDOW` pulls are unchanged.
+
+### Not touched (per task constraint)
+
+`sleep_duration_hrs` and `sleep_duration_estimate_hrs` computation logic
+is untouched. The daemon's live per-cycle `sleep_secs_accumulated` gate
+(`if pull_class == "SLEEP WINDOW"`) is affected only insofar as
+`pull_class` itself changes — this is the intended effect, not a change to
+the accumulation formula, and real overnight runs never hit the new
+branches (see verification above). The final authoritative bridge value
+always comes from `recompute_bridge_from_daemon.py`'s post-run 0x4C-based
+recompute, which never calls `classify()`.
+
+*Logged 2026-07-21. Raw sources: `gen3_pull_20260719_163325.txt`
+(false positive), `gen3_pull_20260719_054422.txt` (real sleep control),
+`gen3_daemon_20260718_222458.txt` / `..._20260719_212709.txt` /
+`..._20260720_213320.txt` (overnight regression check), all 45 files
+under `pipeline/data/raw_pulls/gen3_morning/` + `gen3_evening/`
+(historical scope check).*

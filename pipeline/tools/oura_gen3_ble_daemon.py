@@ -63,6 +63,7 @@ from decoders import (
     decode_sleep_temp_event,
     decode_debug_data_fuel_gauge,
     decode_motion_period,
+    decode_wear_event,
     calculate_rmssd,
 )
 
@@ -92,6 +93,39 @@ EVENT_TAGS = {
 SLEEP_TAGS = {0x6A, 0x5D, 0x6F, 0x75}
 ACTIVITY_TAGS = {0x7E, 0x7F}
 
+# 0x6A/0x5D/0x6F/0x75 are continuous background-sensor tags -- they fire
+# whenever the ring has skin contact, not only during sleep (confirmed
+# 2026-07-21: an afternoon dishes episode where the ring sat motionless on a
+# counter between wears produced an identical SLEEP_TAGS/motion signature to
+# a real overnight sleep pull). Real 0x53 (wear event) data across 3 full
+# overnight logs shows NOT_IN_FINGER/FINGER_USER_ACTIVE alternate 33-44x per
+# night even during confirmed sleep, so that pair can't gate SLEEP WINDOW
+# without misclassifying real sleep too -- see known_issues.md. The one
+# unambiguous real signal is CHARGING_PHASE (state 8): the ring cannot be
+# worn while charging. Combined with a wide local-hour plausibility band
+# (grounded in the actual daemon schedule: 22:00 start, ~06:00 end, plus
+# safety-net morning pulls through ~08:30) as the practical defense against
+# daytime stillness being read as sleep.
+PLAUSIBLE_SLEEP_HOURS = set(range(20, 24)) | set(range(0, 9))  # 20:00-08:59 local
+
+
+def classify(tags_seen, motion_count, charging_seen=False, local_hour=None):
+    has_sleep = bool(tags_seen & SLEEP_TAGS)
+    has_activity = bool((tags_seen & ACTIVITY_TAGS) or motion_count >= 3)
+    if has_sleep and has_activity:
+        return "MIXED WINDOW"
+    if has_sleep and charging_seen:
+        # Ring reported itself on the charging dock during this window --
+        # cannot be worn/asleep regardless of stillness-derived sleep tags.
+        return "UNCLEAR"
+    if has_sleep:
+        if local_hour is not None and local_hour not in PLAUSIBLE_SLEEP_HOURS:
+            return "UNCLEAR"
+        return "SLEEP WINDOW"
+    if has_activity:
+        return "ACTIVE WINDOW"
+    return "UNCLEAR"
+
 
 def parse_event(data: bytes):
     if len(data) < 6:
@@ -101,18 +135,6 @@ def parse_event(data: bytes):
     payload = data[6:]
     return {"tag": tag, "tag_name": EVENT_TAGS.get(tag, f"UNKNOWN (0x{tag:02x})"),
             "boot_ts": boot_ts, "payload": payload}
-
-
-def classify(tags_seen, motion_count):
-    has_sleep = bool(tags_seen & SLEEP_TAGS)
-    has_activity = bool((tags_seen & ACTIVITY_TAGS) or motion_count >= 3)
-    if has_sleep and has_activity:
-        return "MIXED WINDOW"
-    if has_sleep:
-        return "SLEEP WINDOW"
-    if has_activity:
-        return "ACTIVE WINDOW"
-    return "UNCLEAR"
 
 
 def decode_cycle_events(events):
@@ -127,6 +149,7 @@ def decode_cycle_events(events):
     cadence_samples = []
     tags_seen = set()
     motion_event_count = 0
+    charging_seen = False
     fails = 0
 
     asleep_6a_count = 0  # 0x6A packets with sleep_state != 0 — used for duration accumulation
@@ -160,6 +183,10 @@ def decode_cycle_events(events):
             elif ev["tag"] == 0x61 and len(ev["payload"]) > 0 and ev["payload"][0] == 0x14:
                 d = decode_debug_data_fuel_gauge(ev["payload"])
                 fuel_gauge_pct = round(d["battery_percentage"], 1)
+            elif ev["tag"] == 0x53:
+                d = decode_wear_event(ev["payload"])
+                if d["state"] == 8:  # STATE_CHARGING_PHASE
+                    charging_seen = True
         except ValueError:
             fails += 1
 
@@ -177,7 +204,8 @@ def decode_cycle_events(events):
         "asleep_6a_count": asleep_6a_count,  # asleep-state packets this cycle, ~60s each
         "ibi_packets": ibi_packets,  # raw IBI packet lists this cycle, for nightly accumulation
     }
-    pull_class = classify(tags_seen, motion_event_count)
+    pull_class = classify(tags_seen, motion_event_count, charging_seen=charging_seen,
+                          local_hour=time.localtime().tm_hour)
     return accum, pull_class, fails
 
 

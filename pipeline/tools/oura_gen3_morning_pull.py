@@ -38,6 +38,7 @@ from decoders import (
     decode_debug_data_afe_statistics,
     decode_debug_data_acm_configuration,
     decode_debug_data_ppg_settings,
+    decode_wear_event,
     calculate_rmssd,
 )
 
@@ -72,6 +73,23 @@ EVENT_TAGS = {
 }
 
 PRIORITY_TAGS = {0x44, 0x47, 0x49, 0x4B, 0x4C, 0x4E, 0x4F, 0x53, 0x55, 0x58, 0x5A, 0x5D, 0x60, 0x69, 0x6A, 0x6B, 0x6E, 0x6F, 0x71, 0x72, 0x75, 0x76, 0x77, 0x7E, 0x7F}
+
+# 0x6A/0x5D/0x6F/0x75 are continuous background-sensor tags -- they fire
+# whenever the ring has skin contact, not only during sleep (confirmed
+# 2026-07-21: an afternoon dishes episode where the ring sat motionless on a
+# counter between wears produced an identical SLEEP_TAGS/motion signature to
+# a real overnight sleep pull -- see known_issues.md). Real 0x53 (wear event)
+# data shows NOT_IN_FINGER/FINGER_USER_ACTIVE alternate 33-44x per night even
+# during confirmed sleep, so that pair can't gate SLEEP WINDOW without
+# misclassifying real sleep too. The one unambiguous real signal is
+# CHARGING_PHASE (state 8): the ring cannot be worn while charging. Combined
+# with a wide local-hour plausibility band (grounded in the actual daemon
+# schedule: 22:00 start, ~06:00 end, plus safety-net morning pulls through
+# ~08:30) as the practical defense against daytime stillness being read as
+# sleep by a single short manual pull, where 0x53 essentially never survives
+# the ring's flash-buffer eviction (0/29 real historical morning pulls ever
+# captured one).
+PLAUSIBLE_SLEEP_HOURS = set(range(20, 24)) | set(range(0, 9))  # 20:00-08:59 local
 
 def encrypt_nonce(nonce):
     return AES.new(AUTH_KEY, AES.MODE_ECB).encrypt(pad(nonce, 16))
@@ -172,8 +190,21 @@ async def main():
         tag_counts_all = Counter(p["tag"] for p in parsed)
         has_sleep = bool(tag_set & SLEEP_TAGS)
         has_activity = bool((tag_set & ACTIVITY_TAGS) or tag_counts_all.get(0x47, 0) >= 3)
+        charging_seen = False
+        for p in parsed:
+            if p["tag"] == 0x53:
+                try:
+                    if decode_wear_event(p["payload"])["state"] == 8:  # STATE_CHARGING_PHASE
+                        charging_seen = True
+                except ValueError:
+                    pass
+        local_hour = time.localtime().tm_hour
         if has_sleep and has_activity:
             pull_class, pull_note = "MIXED WINDOW", "sleep and activity tags both present"
+        elif has_sleep and charging_seen:
+            pull_class, pull_note = "UNCLEAR", "sleep tags present but ring reported charging (0x53 state 8)"
+        elif has_sleep and local_hour not in PLAUSIBLE_SLEEP_HOURS:
+            pull_class, pull_note = "UNCLEAR", f"sleep tags present but pull hour ({local_hour}:00) is outside plausible sleep hours"
         elif has_sleep:
             pull_class, pull_note = "SLEEP WINDOW", "sleep tags present"
         elif has_activity:
