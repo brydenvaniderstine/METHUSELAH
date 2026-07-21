@@ -4636,3 +4636,237 @@ and the fresh fields still won over the old ones. Also verified a 20h-old existi
 is correctly *not* used to backfill (age guard works).
 
 *Logged 2026-07-19.*
+
+---
+
+## 2026-07-19 — 0x7E/0x7F absent again (two more attempts): code regression ruled out, ring-side buffer window confirmed as the cause
+
+**Trigger:** 0x7E/0x7F fired during the 2026-07-07 walk experiment but hasn't
+fired since, including two attempts tonight
+(`gen3_pull_20260719_163325.txt`, `gen3_pull_20260719_185308_MIXED.txt`,
+both via `oura_gen3_morning_pull.py`). Investigated the code side first
+since it's cheaper to rule out than another physical walk test.
+
+**Code check — no regression found:**
+- `pipeline/decoders/0x7e.py` / `0x7f.py`: zero diff between the commit
+  that created them (`8cf301c`, 2026-07-09) and HEAD. Byte-for-byte
+  unchanged.
+- `oura_gen3_morning_pull.py`: `PRIORITY_TAGS` has included `0x7E`/`0x7F`
+  since before the walk experiment and still does (only `0x5A` was added
+  to the set since `8cf301c` — unrelated). The dedicated `REAL STEP
+  FEATURE DECODE (0x7E/0x7F)` print block (lines ~403-426) is unchanged
+  and iterates unconditionally over all `parsed` events — there is no
+  filter stage between the BLE receive buffer and this decode loop that
+  could drop 0x7E/0x7F before decode. The full-history request payload
+  (`\x10\x09` + boot_ts=0 + 0xffffffffff) is also byte-for-byte unchanged.
+  **No code path exists that would filter 0x7E/0x7F out before decode.**
+
+**Raw-level check — ring did not emit the packets tonight:**
+- Grepped the saved raw pull files directly (the script writes every
+  parsed event, tagged by name, to the `.txt` file — this is the raw
+  breakdown, just not pre-aggregated into counts). `"Real step feature"`
+  appears **zero times** in both of tonight's files
+  (`gen3_pull_20260719_163325.txt`, `gen3_pull_20260719_185308_MIXED.txt`)
+  and also zero times in **any** of the four "formal" auto-saved pulls
+  from 2026-07-07 itself (`_102642`, `_121053`, `_122211`, `_221238`).
+- Correction to task framing: the 2026-07-07 walk's raw pull file was
+  never actually saved by the script — per the original finding, it was
+  **lost to buffer roll**; the only surviving record is the
+  hand-transcribed `walk_experiment_20260707_decoded.txt` (terminal
+  output copy-paste, confirmed present, contains 16 `0x7E`/`0x7F`
+  references). None of July 7th's other same-day auto-saved pulls
+  captured 0x7E/0x7F either — the "working" capture was a one-off, not
+  the norm even on the day it worked.
+- Tonight's two files show a live ring (78-98 SPO2 IBI+amplitude
+  packets, motion events present in the MIXED file, etc.) but the
+  addressable buffer window each pull actually read was short: ~9.7 min
+  (`185308_MIXED`, boot_ts span 2152 ticks) and ~12.5 min (`163325`,
+  span 2771 ticks) once the bogus `UNKNOWN (0x11)` sentinel timestamp is
+  excluded. `0x6B` (motion period / step count) is also absent from
+  both files — not just 0x7E/0x7F.
+- This exactly matches the mechanism already logged for the
+  **2026-07-09 second walk** (see entry above, "Second FFT walk
+  experiment (slow pace) — capture failure"): a short (~7-12 min)
+  readable buffer window that appears to roll past the activity window
+  by the time the BLE connection is established, surfacing
+  sleep/rest-context content instead. Tonight is a third occurrence of
+  the same pattern, not a new phenomenon.
+
+**Conclusion: not a code regression.** Both the decoder files and the
+pull script's filtering/decode path for 0x7E/0x7F are provably unchanged
+since they last worked, and PRIORITY_TAGS never excluded them. The tag
+is absent at the raw BLE level in every pull since 07-07 (including
+same-day pulls), which the code cannot manufacture data for. This is a
+ring-side buffer/timing behavior question — already open since
+2026-07-09 — not something further code investigation can resolve.
+
+**Recommendation:** no further code changes to the 0x7E/0x7F path are
+warranted from this session's evidence. Per session constraints, no new
+walk test is being proposed here; that remains a decision for the next
+session once/if a way to shrink the gap between activity and BLE
+connection is worth trying (see the 07-09 entry's "what would unblock a
+real comparison" note — untested).
+
+*Logged 2026-07-19.*
+
+---
+
+## 2026-07-19/20 — 0x4C characterized as per-bout accumulation, NOT a single
+## nightly total; "Bedtime period" (fires in the same cluster) decoded as
+## [bout_start_boot_ts, current_boot_ts] and confirms it
+
+**Trigger:** overnight daemon run `gen3_daemon_20260719_212709.txt`
+(447,111 entries, ~21:27→05:27). Post-run recompute found 29 separate
+0x4C clusters (not 30 — `grep -c "\[Sleep summary (2)\]"` → 29; the
+session brief's "30" does not match the real file, noted per real-
+data-only discipline rather than silently corrected) with wildly
+inconsistent, non-monotonic stage totals across the night. This
+continues directly from the 2026-07-18/19 entry above ("0x4C fired 24
+times... likely resetting per accumulation bout... flagging as open").
+Tonight's data resolves that open question.
+
+### Finding 1 — `[Bedtime period]` (fires 1:1 alongside every 0x4C, same
+### cluster) decodes as `[bout_start_boot_ts:u32 LE][current_boot_ts:u32 LE]`
+
+All 29 `[Bedtime period]` payloads (8 bytes, previously undecoded)
+were parsed as two little-endian u32 fields `a` and `b`. Real data
+confirms:
+
+- **`b` always lands within 0-5 ticks of the cluster's own boot_ts**
+  (e.g. `b=75395607` vs the cluster's `boot_ts=75395649` — 42 ticks,
+  smallest observed gap 4 ticks) — `b` is effectively "now."
+- **`a` is held constant across every 0x4C firing that belongs to the
+  same accumulation bout**, and only changes when the bout resets.
+  Directly observed in the two densely-sampled bouts tonight: `a` held
+  at `75298085` (later `75298385`, see caveat below) across 7
+  consecutive firings while the stage total climbed smoothly
+  91.5→140.5→160.5→229.0→244.0→302.5→348.5→623.5 min; `a` held at
+  `76149641` across the final 4 firings (227.0→262.0→347.5→359.5 min).
+- **`(b - a) / stage_total_minutes` is a near-constant ratio for every
+  bout with a total ≥ ~40 min**: 637.5, 637.3, 630.2, 656.5, 638.9,
+  633.2, 685.3, 694.1, 685.1, 662.5, 660.6, 652.9, 648.1, 722.9, 665.0,
+  656.7, 644.1, 649.6 — clustered tightly around **~650-660
+  ticks/minute (~11 ticks/sec)**, across 18 independent bout
+  observations spanning the whole night. This is not circular — `a`/`b`
+  come from a completely different tag (`0x76` cluster's Bedtime
+  period) than the stage-epoch counts in 0x4C itself, and the two
+  agree.
+- **Near-zero-total firings show wildly inflated ratios** (5802, 7804,
+  29408, 33008, 3826, 3172 ticks/min) — expected and consistent, not
+  contradictory: `a` (bout timer) starts the instant a bout begins, but
+  0x4C's stage-epoch accumulation only starts once several minutes of
+  confirmed sleep have passed (sleep-onset latency). Small total in the
+  denominator inflates the ratio; this is the signature of "bout just
+  started, stage classifier hasn't kicked in yet," not noise.
+- **Caveat, not fully resolved:** one bout's `a` shifted by exactly 300
+  ticks between its first two observations (`75298385`→`75298085`,
+  91.5min→140.5min sample) with no total reset in between — treated as
+  the same bout (a minor refinement/rounding of the bout-start value,
+  not a real boundary), but the mechanism for why `a` itself moves
+  slightly is not explained by this session's data.
+
+**Conclusion: 0x4C is a per-bout accumulator, not a whole-night
+counter — confirmed via a second, independent tag (Bedtime period),
+not just inferred from the epoch counts' own non-monotonicity.** This
+resolves the "not yet resolved" flag from the 2026-07-18/19 entry:
+resets are real, internally consistent, ring-side bout boundaries —
+not corruption, not a decoder bug.
+
+### Finding 2 — 19 distinct bouts identified overnight; summing their
+### maxima is NOT a valid whole-night total (produces an impossible 64.5h)
+
+Grouping the 29 firings by unique `a` (bout-start) value gives 19
+distinct bouts (18 excluding the very first firing, `a=69295880`,
+which predates the daemon's own log start at `boot_ts=69380216` by
+~371,128 ticks — this bout is a **carryover from a previous,
+already-completed sleep session still sitting in the ring's summary
+register**, not tonight's sleep; its 576.5-min total must be excluded
+from any tonight-specific analysis).
+
+Taking the max observed total per remaining bout and summing:
+1.5+437.0+1.0+38.5+434.0+451.5+0.0+473.0+41.0+428.5+30.5+0.5+543.0+4.0+
+623.5+0.5+359.5 = **3867.5 minutes ≈ 64.5 hours** — across a ~7-8h
+session. The 18 bout windows `[a,b]` are confirmed **non-overlapping
+and strictly sequential** in boot_ts order (each bout's `b` < the next
+bout's `a`), so this isn't double-counted overlapping windows; the
+bouts' own self-reported durations simply cannot all be real
+same-night sleep. Most of the mid-range bouts (428-473 min ≈ 7-8h
+*each*) cannot individually be genuine distinct sleep periods within
+one ~8h night — there isn't room for six-plus 7-hour bouts in an 8-hour
+session. **This means the register resets more often than real
+wake/re-sleep events would justify** — the reset trigger is very
+likely tied to ring-side firmware/flash bookkeeping (plausibly related
+to the same 255-event circular buffer behavior documented elsewhere in
+this file), not literal "the person woke up." Do not read bout count
+(19) as a proxy for number of real awakenings.
+
+**No arithmetic combination of tonight's 29 snapshots is safe to use
+as sleep_duration_hrs.** Consistent with the existing safeguard
+(`recompute_bridge_from_daemon.py` hardcodes `None`) — that refusal
+stayed correct and unmodified this session, per the task's own
+constraint.
+
+### Finding 3 — timing correlation with BLE reconnects: real but not causal
+
+23 of 29 0x4C firings (79%) land within ~20-220 ticks of a preceding
+`[BLE connection]` event (all four connection-handshake sub-payloads,
+boot_ts-matched directly from the raw log) — far tighter and more
+consistent than coincidence. The remaining 6 fire with no reconnect
+within hundreds of thousands of ticks. Checked `[Wear event]` proximity
+for those 6 "orphans" too — no tight correlation there either (nearest
+wear event 18k-700k+ ticks away).
+
+Given Finding 1's `b≈now` confirmation, the honest read is: **0x4C/
+Bedtime-period firings correlate in time with BLE reconnects for most
+(not all) occurrences; which direction is causal is not established
+this session.** Two plausible mechanisms, neither confirmed: (a) the
+ring's periodic summary computation is flash/CPU-intensive enough to
+transiently disrupt the BLE link, causing the daemon's reconnect logic
+to fire shortly after — summary computation causes reconnect, not the
+reverse; or (b) the daemon's post-reconnect catch-up read simply
+surfaces whatever 0x4C data is sitting in the buffer at that moment,
+independent of causation. The 6 orphan firings (no nearby reconnect)
+show 0x4C can and does fire without any connection disruption, which
+argues against a simple "reconnect resets/triggers 0x4C" framing — the
+earlier 2026-07-18/19 entry's phrasing ("resetting... tied to the same
+disruptions the reconnect fix was recovering from") should be read as
+partially right (correlated) but not fully right (not the reset
+trigger, and not universal).
+
+### Finding 4 — best available single-bout estimate for tonight, reported
+### not implemented
+
+The final bout (`a=76149641`) is the most complete: 4 samples, smooth
+monotonic growth, ends at the last-observed total of 359.5 min (6.0h).
+The daemon log's true last entry (`Real step feature`, `boot_ts=76410967`
+— clear wake/activity signal) is 27,696 ticks after the last 0x4C
+sample of that bout (`boot_ts=76383271`) — at the ~650-660 ticks/min
+ratio calibrated above, that's a further ~42-44 min of likely-still-
+asleep-or-waking time with no 0x4C snapshot covering it. **The last
+cluster almost certainly still understates true total sleep for this
+final bout by something in that range**, consistent with the prior
+session's same conclusion about last-firing-as-floor. No formula
+change made — flagging as the most defensible next step (weight toward
+last-bout total + acknowledge the uncovered tail) for a future session
+to design and test, not something implemented here.
+
+### Task 3 (minor) — 10s CoreBluetooth release buffer insufficient after
+### tonight's ~7h continuous connection
+
+The automatic post-daemon morning pull failed with `asyncio.TimeoutError`
+tonight, after the existing 10s fixed buffer (`oura_gen3_ble_daemon.py`
+line ~403, comment already notes "5s has been seen to be insufficient").
+No data was lost — the recompute step (which needs the daemon's own log,
+not a fresh pull) already completed and pushed before this buffer/pull
+step ran. `daemon_launchd_err.log` shows the same stale launchd
+permission error as 2026-07-19 (unrelated, already logged, not
+re-investigated) — tonight's run almost certainly happened manually
+again, not via the `ca.methuselah.gen3daemon` job. Worth considering
+whether the release buffer should scale with session duration rather
+than stay fixed at 10s, since tonight's ~7h continuous connection is
+the longest real session this constant has been tested against — but
+this is one data point, not a confirmed correlation, and no code change
+was made this session per the task's own low-priority framing.
+
+*Logged 2026-07-20. Raw source:
+`pipeline/data/raw_pulls/gen3_daemon/gen3_daemon_20260719_212709.txt`.*
