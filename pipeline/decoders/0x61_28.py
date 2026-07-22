@@ -48,6 +48,23 @@ u16 slots represents, and what unit the counts are in -- samples? ADC
 reads? something else?) is still unknown without a MAX86171 register
 map. The structure and its state-dependence are now solid; the physical
 meaning is not. Not promoted to DONE.
+
+TESTED 2026-07-21 against pipeline/data/findings/max86171_register_reference.md
+on the grown corpus (26,774 records: 13,387 continuation + 13,387
+header). Checked the doc's plausible-range context (ADC full-scale
+4/8/16/32 uA, dark-current noise 75-212 pA RMS, FIFO_DATA_COUNT[8:0]
+saturating at 511, OVF_COUNTER[6:0] saturating at 127). Only the
+FIFO/OVF saturation check is concretely falsifiable against a raw u16
+field -- and it's FALSIFIED: continuation-record field values range
+1-35,097 across the full corpus and never once equal exactly 127 or
+511. A real saturating counter would be expected to hit and hold at its
+ceiling repeatedly under sustained load; smooth climbs into the tens of
+thousands with zero saturation events rules this identity out. The
+ADC-uA and dark-current-pA figures aren't independently checkable
+without a known scale factor (the reference doc itself flags this
+section as firmware-computed aggregates, not raw register dumps, so
+this negative result is expected, not surprising). Field identity
+remains unresolved. See known_issues.md 2026-07-21 (session 3).
 """
 
 import struct

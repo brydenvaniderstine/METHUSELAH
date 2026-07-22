@@ -152,6 +152,14 @@ sub-types. This supersedes the earlier partial roadmap.
       consistency sub-test inconclusive (12/16), not a falsification — see
       known_issues.md for why. f2/f4 remain the real ceiling; not attempted
       this session. deep_sleep% extraction still blocked.
+      CHECKED 2026-07-21: no action taken beyond confirming the Gen4
+      correlation sample (n=5 nights, r=0.17/0.44) cannot grow further —
+      Gen4 API access closed permanently 2026-07-13/15 (known_issues.md
+      2026-07-15). This angle is now formally closed, not just stalled;
+      per the methuselah skill's data-trust guidance, deep_sleep%
+      extraction via f2/f4 stays a discarded/AWAITING-DATA line, and this
+      finding confirms rather than contradicts that ceiling. No further
+      session should re-attempt Gen4 cross-reference for this decoder.
 - [~] 0x7E/0x7F real_steps_features — PARTIAL (promoted 2026-07-09 from IN PROGRESS).
       Decoders written: `pipeline/decoders/0x7e.py`, `pipeline/decoders/0x7f.py`
       (one file per tag per the decoders/ naming convention). Both return all 14 raw
@@ -394,13 +402,26 @@ decoded, and moved to DONE above. 0x28/0x33 had real data and are PARTIAL
 here. The remaining 19 are CONFIRMED zero packets across all 29 files, not
 just unattempted — see known_issues.md 2026-07-11 for the full survey.
 
-- [~] 0x61/0x28 _dd_afe_statistics_values — PARTIAL, n=140 (grew from 114).
+- [~] 0x61/0x28 _dd_afe_statistics_values — PARTIAL, n=26,774 (13,387
+      continuation + 13,387 header, grown hugely from the 2026-07-12
+      count of 140 via continuous daemon polling).
       2026-07-12: `stats_hex` confirmed to be exactly 6x u16 LE fields;
       continuation-record field-shape correlates strongly with
       `pfsm_state` (97%/89%/92% match across three distinct shapes), and
       header-record field[0] confirmed as a genuine per-channel drift
       flag via exact cross-record arithmetic. Field count/shape now
       understood; field IDENTITY (physical channel/quantity) still
+      needs firmware.
+      2026-07-21: cross-checked field ranges against
+      `max86171_register_reference.md`'s plausible-range context — no
+      match. The one concretely testable prediction (`FIFO_DATA_COUNT`
+      saturating at 511 or `OVF_COUNTER` saturating at 127) is falsified:
+      across all 13,387 continuation records, field values range 1 to
+      35,097 and never once hit exactly 127 or 511. Rules out
+      FIFO/overflow-counter identity for these fields. ADC-full-scale-µA
+      and dark-current-noise-pA figures aren't independently checkable
+      without a known scale factor — reference doc itself already flagged
+      this section as "not a direct register match." Field IDENTITY still
       needs firmware. Decoder: `pipeline/decoders/0x61_28.py`.
 - [~] 0x61/0x33 _dd_open_afe_ppg_settings_data — PARTIAL, n=9,456 full-length
       raw / 63 unique settings blobs across 35 files (grew hugely from the

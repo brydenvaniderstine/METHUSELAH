@@ -5558,3 +5558,53 @@ bouts (>1000 ticks = new bout), reassembling contiguous chunk-index
 runs, and comparing `pipeline/decoders/0x5a.py`'s `decode()` output
 against the time-nearest `[Sleep summary (2)]` record via
 `pipeline/decoders/0x4c.py`.*
+
+## 2026-07-21 (session 3) — 0x61/0x09 f2/f4 Gen4 angle formally closed;
+0x61/0x28 field ranges checked against MAX86171 datasheet — no match
+
+**0x61/0x09:** per this session's task list, checked whether the f2/f4
+Gen4-correlation sample (n=5 nights, r=0.17/0.44, "inconclusive" as of
+2026-07-10) has grown. It cannot — Gen4 API access closed permanently
+2026-07-13/15 (known_issues.md 2026-07-15 entry). No new data exists to
+add. This closes the Gen4-correlation angle formally rather than leaving
+it as an open "needs more nights" item; consistent with the methuselah
+skill's existing Discard/AWAITING-DATA stance on deep_sleep% (which cites
+this exact finding as one of its two structural-ceiling precedents). No
+decoder change. `open_ring_roadmap.md` updated with a short closing note.
+
+**0x61/0x28:** cross-checked the 6×u16 `stats_hex` fields against the
+plausible-range context in `max86171_register_reference.md` (ADC
+full-scale 4/8/16/32 µA, dark-current noise 75-212 pA RMS, and — the one
+concretely falsifiable check — `FIFO_DATA_COUNT[8:0]` saturating at 511
+or `OVF_COUNTER[6:0]` saturating at 127). Pulled the full real corpus:
+**26,774 raw records (13,387 continuation + 13,387 header, up hugely
+from the 2026-07-12 count of 140)**.
+
+Result: **no match, on the one testable prediction.** Across all 13,387
+continuation records, field values range from 1 to 35,097 — none of the
+6 fields ever hits exactly 127 or exactly 511, at any point in the full
+corpus. A real `OVF_COUNTER`/`FIFO_DATA_COUNT` field would be expected
+to saturate and hold at its ceiling repeatedly under sustained load
+(that's the whole point of a saturating counter); seeing values climb
+smoothly past 511 into the tens of thousands with zero saturation events
+rules this identity out cleanly. The ADC-full-scale-µA and dark-current-
+noise-pA figures aren't independently checkable against a raw u16 count
+without a known scale factor, and the reference doc itself already
+flagged this section as "not a direct register match... firmware-
+computed aggregates, not raw register dumps" — this session's negative
+result is consistent with that caveat, not a surprise, but is now
+directly confirmed rather than assumed. Field IDENTITY remains
+unresolved; the already-established pfsm_state-correlated shape finding
+(2026-07-12) is unaffected. `pipeline/decoders/0x61_28.py` docstring
+updated with this negative result. Stays PARTIAL, not promoted to DONE.
+
+Per the task's bucket-2 instructions, **0x77 and 0x73 (band/channel
+identity) were explicitly NOT re-attempted this session** — the
+reference doc already confirms that ceiling needs Oura firmware, not
+the generic chip datasheet, and further corpus analysis wouldn't move
+it. No time spent there, per instruction.
+
+*Logged 2026-07-21. 0x61/0x28 corpus pulled via
+`grep -h "Debug data" pipeline/data/raw_pulls/*/*.txt | grep "payload=28"`,
+decoded via the existing `struct.unpack("<6H", payload[2:14])` logic in
+`pipeline/decoders/0x61_28.py` (unchanged).*
