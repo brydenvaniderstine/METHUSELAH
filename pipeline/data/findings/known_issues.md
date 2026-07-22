@@ -5744,3 +5744,672 @@ own investigation.
 `https://methuselah.ca/api/gen3-bridge`, `pipeline/data/bridge/gen3_latest.json`,
 `git log`/`git show` for `web/src/App.js` and `engine/thresholds.js`
 history, `npm run build` output.*
+
+---
+
+## Sleep confidence instrumentation pass — classifier source confirmed, off-wrist gate investigated, first weighted-signal replay against a real night, 2026-07-22
+
+**Scope:** design + build a parallel, non-live-wired instrumentation script
+(`pipeline/tools/sleep_confidence_analysis.py`) that scores overnight sleep
+confidence from a weighted multi-signal replay of a real daemon log, gated
+by a wear/on-skin hard-veto check. `oura_gen3_ble_daemon.py`,
+`oura_gen3_morning_pull.py`, `sleep_duration_estimate.py`, and bridge output
+are all untouched — this is analysis-only, run against
+`gen3_daemon_20260721_213131.txt` (last night, 2026-07-21/22).
+
+### 1. Which classifier produced last night's ACTIVE/MIXED/SLEEP split
+
+**Confirmed: the same `classify()` fixed 2026-07-21 (commit `99a502c`,
+10:57:54), not a separate untouched tagger.** There is only one
+`classify()` in the daemon (`oura_gen3_ble_daemon.py:112`) — the fix was
+applied in place to the same function, not split into a new one. The
+commit landed at 10:57:54 on 2026-07-21; last night's daemon run started
+at 21:31:31 the same day, ~10.5h later — the fixed version (with
+`charging_seen` + `local_hour` gates) was already active for the entire
+run. `oura_gen3_morning_pull.py` carries an independent but logically
+identical copy of the same fixed logic (both were fixed together per the
+2026-07-21 entry above) — not a stale duplicate.
+
+**Important gap found in how last night's 288/199/67 split was quoted:**
+the raw log file itself contains **zero** classification labels — the
+daemon only ever `print()`s `pull_class` to stdout per cycle, and
+`logf.write()` only logs raw decoded events. `pipeline/logs/daemon_launchd.log`
+is empty and `daemon_launchd_err.log` shows the launchd job actually
+failed 4x with `Operation not permitted` (Xcode's python3 lacks
+Bluetooth/file permissions) — so last night's run was almost certainly
+launched manually in a foreground terminal, and that terminal's stdout
+was never captured to any file on disk. Per this project's own rule that
+a past session's chat output is not ground truth, the 288/199/67 figure
+could not be taken on faith. It was independently reproduced instead:
+the raw log's `UNKNOWN (0x11)` lines are real per-cycle end-of-transfer
+boundary markers the daemon's own BLE protocol emits once per successful
+`request_history()` call (confirmed: splitting on them yields exactly 554
+groups). Replaying the real, imported `classify()` over those 554 groups
+gives **287 SLEEP WINDOW / 198 ACTIVE WINDOW / 67 MIXED WINDOW / 2
+UNCLEAR** — a 552/554 exact match to the quoted 288/199/67 (which has no
+UNCLEAR bucket). The 2-cycle residual is two genuinely ambiguous cycles
+(only `State change` + `Debug data`, no sleep or activity tags at all)
+that the real `classify()` correctly falls through to `UNCLEAR` on;
+whatever produced the original count either merged those into
+neighboring windows or used a slightly different boundary — not
+reproducible from the persisted file alone, flagged rather than papered
+over.
+
+### 2. Wear/on-skin hard gate — investigated, one real veto found, one candidate signal explicitly NOT validated
+
+**0x53 `STATE_CHARGING_PHASE` (state=8): real, unambiguous, wired as the
+hard veto.** Zero occurrences in last night's 40 real wear events (only
+states 1/`NOT_IN_FINGER` and 3/`FINGER_USER_ACTIVE` appear, alternating
+20x each) — the ring was worn continuously, never on the charger, so the
+gate had no positive case to fire on tonight. This does not validate the
+gate against a false negative, only confirms it stayed silent when it
+correctly should have.
+
+**0x5D HR/HRV validity (candidate signal): investigated, explicitly NOT
+wired as a veto — no real data validates it either way.** The hypothesis
+(PPG requires real skin contact, so a flat/zero reading is real off-wrist
+evidence) is physiologically reasonable but untested:
+- Last night's log: every one of the 54 real 0x5D packets that fired had
+  at least one physiologically valid pair (50-83bpm range throughout);
+  0 consecutive fully-invalid packets. No off-wrist episode occurred
+  tonight to check the hypothesis against.
+- The one real off-wrist episode on record — the 2026-07-19 dishes
+  episode (`gen3_pull_20260719_163325.txt`, see the SLEEP WINDOW
+  classifier entry above) — captured **zero** 0x5D packets at all.
+  That's absence, not proof of invalidity: 0x5D is a low-frequency tag
+  (~1 packet/7.5min in the continuous daemon log) and the dishes episode
+  was a short manual pull, subject to the same buffer-eviction mechanism
+  already documented for 0x53 (low-frequency tags get evicted first from
+  the ring's size-limited flash buffer).
+
+Per the explicit instruction not to assume an unvalidated signal works:
+`sleep_confidence_analysis.py` logs 0x5D full-packet invalidity as an
+informational `ppg_flag`/streak-counter only. It does not gate anything.
+**What would actually validate or falsify this candidate:** a deliberate
+continuous-daemon capture with the ring physically off-wrist and sitting
+on a counter for 30-60min (proposed below, not run this session).
+
+### 3. Personal baseline (first 60min, pre-sleep awake window)
+
+Derived from real boot_ts, not a fixed constant. Tick rate for this log
+(104.357 ticks/sec) was itself derived fresh from real data (header start
+time vs. file mtime, ticks spanning only tags in `EVENT_TAGS`) rather than
+reused from `sleep_duration_estimate.TICK_RATE_PER_MIN` (655/min) — that
+constant is bout-local and already documented elsewhere in this file as
+~22x slower than whole-log rates, not reconcilable with them.
+
+Baseline: **HR 55.8bpm** (n=73 valid 0x5D pairs), **HRV(RMSSD) 30.5ms**,
+**skin temp 34.54°C** (n=737 0x75 samples). Split-checked across 0-30min
+vs. 30-60min sub-windows — stable in both (HR 55.3-58.0, temp 34.4-34.6),
+not an artifact of one noisy sub-window.
+
+Caveat worth flagging: these numbers are already fairly settled/resting
+values, not clearly "awake and active" — the subject was likely already
+lying down calm before sleep onset, so this baseline may understate the
+true wake/sleep HR contrast. Using it as specified anyway (most
+defensible real option available), but noting the limitation rather than
+overclaiming precision.
+
+### 4. Weighted 5-signal confidence score vs. real classify() labels
+
+Built exactly as scoped: steps (0x6B, highest weight, 0=sleep-leaning),
+sustained-only motion (0x47, lowest weight — reuses
+`SUSTAINED_MIN_EVENTS=5`/`SUSTAINED_MAX_GAP_TICKS=400` imported directly
+from `sleep_duration_estimate.py`, not redefined), HR/HRV/temp vs. the
+baseline above. Off-wrist-gated cycles get `confidence=None` (N/A)
+outright, skipping the vote computation entirely — a veto, not a
+downweight, per spec.
+
+Two real implementation bugs were caught by actually running this against
+real data before trusting the output (both fixed, not just noted):
+- Tick-rate derivation initially used a magnitude-only garbage filter
+  (`boot_ts < 100_000_000`), which missed `UNKNOWN (0x11)` acks with
+  garbage boot_ts bytes landing *below* the real range (8 such outliers,
+  e.g. `5112063`), not just above it — produced a ~35x-wrong tick rate
+  until fixed to exclude by tag membership in `EVENT_TAGS` instead
+  (mirrors the daemon's own checkpoint-exclusion logic).
+- A variable-shadowing bug (`for _, bts, _ in cyc`) silently broke the
+  sustained-motion-per-cycle lookup before being caught and fixed.
+
+**Result over all 554 real cycles:**
+
+| classify() label | n | mean confidence | min | max |
+|---|---|---|---|---|
+| SLEEP WINDOW | 287 | 0.87 | 0.00 | 1.00 |
+| ACTIVE WINDOW | 198 | 0.01 | 0.00 | 1.00 |
+| MIXED WINDOW | 67 | 0.42 | 0.00 | 1.00 |
+| UNCLEAR | 2 | 1.00 | 1.00 | 1.00 |
+
+Strong overall agreement (SLEEP WINDOW and ACTIVE WINDOW sit at opposite
+ends as expected; MIXED WINDOW sits in between, consistent with its own
+definition). **48/554 cycles (8.7%) diverge** (`classify()`=SLEEP WINDOW
+with confidence <0.5, or ACTIVE WINDOW with confidence >0.5) — full list
+in the script's own output, not reproduced here. One concrete, real
+pattern in the divergent set: **39 of the 48 are SLEEP WINDOW cycles
+where 0x6B reported a nonzero step count that same cycle** — a real gap
+in `classify()`, which only checks `ACTIVITY_TAGS={0x7E,0x7F}` and raw
+(non-sustained) 0x47 count ≥3, and never looks at 0x6B step counts at
+all. This is a legitimate, real blind spot, not scoring-script noise —
+flagged as a candidate future classify() improvement, not fixed here per
+the explicit instruction not to touch the live classifier this session.
+
+**RESOLVED 2026-07-22 (later session) — with a correction to the premise
+above.** `classify()` now checks 0x6B, closing the blind spot. But real
+data shows these specific 39 cycles' step counts (48-63) are NOT real
+steps — they sit entirely inside 0x6B's confirmed rest-state noise floor,
+nowhere near the confirmed real-walking range. "Nonzero step count" was
+the wrong test; see the full writeup below for the real threshold and why
+these 39 cycles correctly remain `SLEEP WINDOW` after the fix.
+
+### Not done this session (proposed, not implemented)
+
+1. A deliberate real off-wrist validation capture (ring off-wrist on a
+   counter, continuous daemon connection, 30-60min) to actually test the
+   0x5D-invalidity candidate gate against a true positive case — the one
+   piece of real data missing to either validate or discard it.
+2. Feeding the 39 real step-count/SLEEP-WINDOW divergent cycles into a
+   proposed `classify()` change (checking 0x6B alongside `ACTIVITY_TAGS`)
+   — a real, data-backed fix, not proposed speculatively.
+3. Deciding whether `sleep_confidence_analysis.py`'s per-cycle score
+   should ever be surfaced anywhere near the dashboard — per project
+   design rules (`CLAUDE`/methuselah skill: never build a composite
+   readiness score, primary grid stays at 4 tiles), the answer is very
+   likely "log-stream only, if anything, never a tile" — flagged for the
+   owner to decide, not assumed here.
+
+*Logged 2026-07-22. Sources: `pipeline/data/raw_pulls/gen3_daemon/gen3_daemon_20260721_213131.txt`
+(real corpus, 554 real per-cycle boundaries, 142,292 real parsed event
+lines), `pipeline/data/raw_pulls/gen3_morning/gen3_pull_20260719_163325.txt`
+(dishes episode, re-checked for 0x5D content), `git log -p` on
+`oura_gen3_ble_daemon.py` for the `classify()` fix timestamp,
+`pipeline/logs/daemon_launchd.log` + `daemon_launchd_err.log`, direct
+execution of `pipeline/tools/sleep_confidence_analysis.py` (new script,
+this session) against the real log.*
+
+---
+
+## Whole-session reconciliation for sleep-duration estimate — DESIGNED, NOT IMPLEMENTED. Real finding: 0x4C bouts are a multi-night backlog buffer, not one-bout-per-night; full multi-bout merge recommended DISCARD-for-now, ceiling+dedup recommended as the actual next build, 2026-07-22
+
+**Scope:** investigate whether `sleep_duration_estimate.py`'s final-bout-only
+approach should be replaced with "whole-session reconciliation" using the
+daemon's own start/stop times as ground-truth bounds. Design only — no
+changes to `sleep_duration_estimate.py`, the daemon, or the bridge.
+Real logs analyzed: `gen3_daemon_20260719_212709.txt` (07-19/20),
+`gen3_daemon_20260720_213320.txt` (07-20/21), `gen3_daemon_20260721_213131.txt`
+(07-21/22, "last night"), cross-referenced against the immediately prior
+`gen3_daemon_20260718_222458.txt` (07-18/19) for dedup purposes only.
+
+### 1. Full real bout listing, all three nights (not just the final bout)
+
+Decoded every `Bedtime period`/`Sleep summary (2)` cluster via the real,
+imported `_group_bouts`/`_decode_bedtime`/`_decode_stage_total_min`
+functions from `sleep_duration_estimate.py` (not reimplemented). "NEW"
+= this `bout_start` value does not appear at all in the immediately
+prior night's log (see Finding A below for why that column exists).
+
+**07-19/20 (`gen3_daemon_20260719_212709.txt`, session 21:27:09→05:27:06,
+real 7h59m57s):** 19 distinct bouts.
+
+| # | bout_start | samples | total_min | status |
+|---|---|---|---|---|
+| 1 | 69295880 | 1 | 576.5 | carryover |
+| 2 | 69918886 | 1 | 1.5 | carryover |
+| 3 | 70081486 | 1 | 437.0 | carryover |
+| 4 | 70706986 | 1 | 1.0 | carryover |
+| 5 | 70737442 | 1 | 38.5 | carryover |
+| 6 | 70950442 | 1 | 434.0 | carryover |
+| 7 | 71791223 | 1 | 451.5 | carryover |
+| 8 | 72600623 | 1 | 0.0 | carryover |
+| 9 | 72649823 | 1 | 473.0 | carryover |
+| 10 | 73311579 | 1 | 41.0 | carryover |
+| 11 | 73543179 | 1 | 428.5 | carryover |
+| 12 | 74180679 | 1 | 30.5 | carryover |
+| 13 | 74350085 | 1 | 0.5 | carryover |
+| 14 | 74445485 | 2 | 543.0 | carryover |
+| 15 | 75049085 | 1 | 4.0 | carryover |
+| 16 | 75298385 | 1 | 91.5 | carryover |
+| 17 | 75298085 | 7 | 623.5 | carryover |
+| 18 | 75882041 | 1 | 0.5 | **NEW** |
+| 19 | 76149641 | 4 | 359.5 | **NEW** ← current script's "final bout" |
+
+**07-20/21 (`gen3_daemon_20260720_213320.txt`, session 21:33:20→05:22:11,
+real 7h48m51s):** 21 distinct bouts.
+
+| # | bout_start | samples | total_min | status |
+|---|---|---|---|---|
+| 1 | 70081486 | 1 | 437.0 | carryover |
+| 2 | 70706986 | 1 | 1.0 | carryover |
+| 3 | 70737442 | 1 | 38.5 | carryover |
+| 4 | 70950442 | 1 | 434.0 | carryover |
+| 5 | 71791223 | 1 | 451.5 | carryover |
+| 6 | 72600623 | 1 | 0.0 | carryover |
+| 7 | 72649823 | 1 | 473.0 | carryover |
+| 8 | 73311579 | 1 | 41.0 | carryover |
+| 9 | 73543179 | 1 | 428.5 | carryover |
+| 10 | 74180679 | 1 | 30.5 | carryover |
+| 11 | 74350085 | 1 | 0.5 | carryover |
+| 12 | 74445485 | 2 | 543.0 | carryover |
+| 13 | 75049085 | 1 | 4.0 | carryover |
+| 14 | 75298385 | 1 | 91.5 | carryover |
+| 15 | 75298085 | 7 | 623.5 | carryover |
+| 16 | 75882041 | 1 | 0.5 | carryover (was NEW last night) |
+| 17 | 76149641 | 5 | 399.0 | carryover, **grew** 359.5→399.0 since last night |
+| 18 | 76727073 | 1 | 47.5 | **NEW** |
+| 19 | 76813773 | 1 | 10.5 | **NEW** |
+| 20 | 76960473 | 1 | 6.0 | **NEW** |
+| 21 | 76992273 | 3 | 391.5 | **NEW** ← current script's "final bout" |
+
+**07-21/22 (`gen3_daemon_20260721_213131.txt`, "last night," session
+21:31:31→04:17:41, real 6h46m10s — ~1h14m short of the configured 8h,
+almost certainly a manual run stopped early, not a crash: the
+2026-07-22 sleep-confidence entry above already established this run's
+launchd job failed on permissions and it was launched manually):
+**only 5 distinct bouts, all 5 carryover, 0 new.**
+
+| # | bout_start | samples | total_min | status |
+|---|---|---|---|---|
+| 1 | 70950442 | 1 | 434.0 | carryover |
+| 2 | 71791223 | 1 | 451.5 | carryover |
+| 3 | 72600623 | 1 | 0.0 | carryover |
+| 4 | 72649823 | 1 | 473.0 | carryover |
+| 5 | 73311579 | 1 | 41.0 | carryover ← current script's "final bout" (declines: 1 sample) |
+
+### 2. Finding A — 0x4C is a multi-night backlog buffer, not one-bout-per-night. Root cause confirmed in code.
+
+The "carryover" column above isn't a guess — every carryover row's
+`bout_start` **and payload bytes are byte-for-byte identical** across
+different calendar nights (spot-checked directly: `boot_ts=70372116`
+in both the 07-19/20 and 07-20/21 logs decodes to the exact same
+`Sleep summary (2)` payload `3e008400d801d0000b02364e071f`). This is
+not a parsing artifact.
+
+**Root cause, confirmed in `oura_gen3_ble_daemon.py:225-290`:**
+`last_boot_ts = 0` is a local variable, re-initialized fresh on every
+daemon process start — there is no on-disk checkpoint persisted across
+nights. `since = last_boot_ts + 1 if last_boot_ts else 0` means every
+night's very first `request_history()` call requests `since_boot_ts=0`,
+i.e. the ring's **entire retained history buffer**, not just what's
+new since last night. The previously-documented "pre-session backlog"
+(2026-07-21 tick-rate entry, Finding 3) correctly identified this
+mechanism but measured its impact as "~1% of the tick span, too small
+to matter" — that measurement only looked at ticks-before-the-log's-first-entry.
+This session's finding is a materially larger version of the *same*
+mechanism: it's not 1% of one night's span, it's **17 of 19 (89%) and
+17 of 21 (81%) of the bouts in two full nights' logs being pure
+retransmitted history**, because the ring's flash buffer retains
+multiple prior nights' worth of 0x4C bouts (and, confirmed separately,
+`Wear event`/0x53 CHARGING occurrences too — see Finding B). This
+extends and sharpens the prior finding rather than contradicting it.
+
+One bout, `76149641`, demonstrates the backlog isn't even static: it
+was the "final bout" (**NEW**, 359.5min) in the 07-19/20 log, then
+reappears in 07-20/21's log with **5 samples and 399.0min** — it kept
+accumulating for ~40 more minutes sometime *after* the 07-19/20 session
+ended, before finally being retired. A bout is not scoped to one
+calendar night's sleep at the firmware level; the daemon's per-session
+log boundary is not the same thing as the ring's own bout boundary.
+
+**Direct implication for "sum the bouts in tonight's session":** naively
+summing every bout that appears in a night's log would be badly wrong
+— e.g. summing all 19 bouts in the 07-19/20 log gives **~5,536 minutes
+(92.3h)** of nominal stage-total, for a session that was connected
+7h59m57s. That is the exact same order of magnitude and exact same
+underlying category of bug as the already-fixed "92.0 HRS" production
+incident (2026-07-21 session 4 above) — different code path, same
+failure shape: treating repeated/backlog data as if it were all new.
+
+### 3. Finding B — bout resets do NOT reliably correspond to real wear/disconnect events; only CHARGING is a clean signal, and it explains a minority of resets
+
+No raw daemon log contains literal `RANGE-DROP`/`WEAR-EVENT` text —
+those are daemon **stdout**-only prints (confirmed:
+`oura_gen3_ble_daemon.py:302`), never written to the decoded-packet log
+files, and per the 2026-07-22 entry above, stdout was never captured
+for any of these three real sessions. So this was checked against the
+one real signal that *is* in the logs: 0x53 `Wear event`.
+
+- **boot_ts is monotonic within each log** (0 backward jumps >1000
+  ticks, 0 forward gaps >50000 ticks, in all three logs) — consistent
+  with the already-falsified "BLE reconnects cause tick jumps"
+  hypothesis (2026-07-21 tick-rate entry, Finding 1). Reconnects leave
+  no boot_ts-level fingerprint to key off of.
+- **CHARGING (0x53 state=8) is the one unambiguous real signal, and it
+  does correlate with bout resets** — in the 07-19/20 log, all 6
+  real CHARGING occurrences (`boot_ts` 70367209, 70369447, 70773874,
+  74144158, 76053268, 76109497) fall inside a gap between one bout's
+  last sample and the next bout's first sample, never inside a bout's
+  own active span. Same pattern holds in 07-20/21 (7 CHARGING events,
+  same 6 plus one new one, same containment property).
+- **But CHARGING only explains 6-7 of ~19-21 resets per night.** The
+  large majority of bout boundaries have no CHARGING event nearby at
+  all — most likely tied to the firmware's own internal sleep-state
+  machine (a real wake-threshold crossing), not to any BLE-level event
+  the daemon can observe. `NOT_IN_FINGER`/`FINGER_USER_ACTIVE` (states
+  1/3) were not re-checked as a reset correlate — already established
+  elsewhere (`pipeline/decoders/0x53.py` docstring) as a 33-44x/night
+  wear-confidence oscillation present even during confirmed sleep, not
+  a usable signal on its own; re-deriving that here would just
+  reproduce the existing finding.
+- 07-21/22 (last night) had **zero** CHARGING events and **zero** new
+  bouts — the ring's firmware never finalized a new sleep summary in
+  6h46m of connection. Given the session ended ~1h14m short of the
+  configured 8h, the simplest real explanation is that the daemon was
+  stopped (manually — permissions already prevented the launchd path)
+  while the person was plausibly still asleep and before the firmware
+  closed out a bout, not a decoder failure. This can't be confirmed
+  further from data on disk, and is flagged as a plausible explanation,
+  not a proven one.
+
+**Answer to "do bout resets line up with real wear/disconnect events":
+partially.** CHARGING resets do, cleanly. Most resets don't correlate
+with any observable BLE-level or wear-level signal at all.
+
+### 4. Finding C — daemon start/stop time is confirmed NOT a safe sleep-boundary proxy
+
+No evidence in any of the three logs ties daemon connect/disconnect
+timing to a real sleep onset/offset event — boot_ts continuity across
+the whole session (Finding B) shows the daemon's own connect/disconnect
+moments leave no signal in the ring's own event stream at all, and nothing
+in the 0x4C/0x53 data lines up with the "21:3x" / "0[4-5]:2x" wall-clock
+start/stop times specifically (those times are governed by when the
+owner physically starts/stops the daemon process, not by the ring).
+Using start/stop as "asleep the whole connected window" would be a pure
+assumption, not a data-backed one — confirms the concern in the task
+prompt. **Recommended role: outer ceiling only**, never a substitute
+sleep-onset/wake anchor. This directly matches an already-flagged, not
+yet built, gap from the 2026-07-21 "92.0 HRS" entry above: "nothing
+anywhere in the pipeline currently rejects a physically-implausible
+`sleep_duration_hrs` value... flagged as a real, demonstrated-not-hypothetical
+option... if the owner wants a plausibility ceiling at the bridge layer."
+A session-duration ceiling on `sleep_duration_estimate_hrs` is a direct,
+concrete implementation of that already-identified gap.
+
+### 5. Proposed design (v0 — NOT implemented)
+
+1. **Outer ceiling (build this):** cap = real wall-clock session span
+   (`header start` → log file `mtime`) × a small tolerance (e.g. 1.1x,
+   to allow for tick-rate uncertainty already flagged as unresolved
+   elsewhere). If `sleep_duration_estimate_hrs` (however computed)
+   would exceed the cap, decline instead of reporting — never clip or
+   silently rescale. Low risk, directly closes the already-flagged
+   bridge-layer gap.
+2. **Cross-session bout dedup (build this, as a diagnostic first):**
+   persist a small checkpoint (e.g.
+   `pipeline/data/bridge/bout_checkpoint.json`, `{bout_start:
+   last_seen_total_min}`) updated after each recompute run, instead of
+   diffing against yesterday's raw log file. Use it to label each
+   night's bouts NEW vs. carryover (as done by hand in Section 1) and
+   to compute each NEW bout's *delta* over its last-seen total, so a
+   bout that keeps growing across nights (like `76149641`) isn't
+   double-counted. Even before any summing logic changes, this alone
+   fixes today's misleading decline messages — 07-21/22 currently
+   reports "final bout has only 1 sample," which reads as "thin but
+   real" data; the true, more honest state is "0 new bouts this
+   session, ring never finalized a fresh sleep summary" — a materially
+   different and more actionable diagnostic.
+3. **Multi-bout merge (proposed, NOT recommended to build yet — see
+   Section 6):** sum the stage-total delta of all NEW-this-session
+   bouts (not just the final one) + the existing uncovered-tail
+   calculation, gated by a between-bout gap cap analogous to
+   `TAIL_CAP_MINUTES` but calibrated separately (see below — this is
+   the piece that doesn't work yet).
+4. All four existing per-bout decline conditions (min samples,
+   monotonic growth, tail cap, no wake signal) still apply to each NEW
+   bout before its delta is trusted. "Decline is better than guess" is
+   unchanged and non-negotiable in this design.
+
+### 6. Hand-test against the three real nights — the multi-bout merge changes nothing about any of the three real outcomes
+
+Current approach (real, run against the actual script, this session):
+
+| Night | Current result | Reason |
+|---|---|---|
+| 07-19/20 | **6.6h** | final bout 359.5min + tail 36.3min |
+| 07-20/21 | **None (decline)** | no sustained wake signal found after final bout |
+| 07-21/22 | **None (decline)** | final bout has only 1 sample |
+
+Proposed design, hand-computed from the real NEW-bout sets above (tail
+search unchanged — same anchor, same `_find_wake_signal` logic):
+
+| Night | NEW bouts summed | Reconciled total (pre-tail) | Ceiling (session span) | Result |
+|---|---|---|---|---|
+| 07-19/20 | 0.5 + 359.5 | 360.0min | 7h59m57s (479.95min) | **6.6h** (360.0+36.3min tail = 396.3min = 6.61h — 0.5min more than today, same headline number, well under ceiling) |
+| 07-20/21 | 47.5+10.5+6.0+391.5 | **455.5min = 7.59h** | 7h48m51s (468.85min) | **still None (decline)** — `_find_wake_signal(entries, 77247016)` returns `None` regardless of which bouts feed the sum; the log ends only ~38 real min after the last new bout's last sample with no sustained motion run. Under ceiling if it had resolved. |
+| 07-21/22 | (none — 0 new bouts) | — | 6h46m10s | **still None (decline)**, but for the honest reason ("0 new bouts," not "1 thin sample") |
+
+**The multi-bout merge does not flip any of the three real recorded
+outcomes.** It reveals a materially larger would-be number for
+07-20/21 (7.59h vs. today's decline) but doesn't resolve *why* that
+night declines (no wake-signal anchor), and it changes 07-19/20's
+result by 0.5 real minutes. The only concrete behavior change across
+all three real nights comes from the dedup diagnostic (better decline
+messages) and the ceiling (which never actually triggers on real data
+here, but would have caught the 92.0 HRS bug class if it recurred
+through this path).
+
+**Open problem, real and unresolved, found by hand-testing on
+07-20/21:** a between-bout gap cap is needed to decide which NEW bouts
+belong in the same "whole session" sum vs. represent distinct
+episodes. Reusing `TAIL_CAP_MINUTES=90` doesn't work: 07-20/21's real
+gaps between its 4 NEW bouts are ~71min, ~23min, and ~98min — the last
+one *exceeds* 90min, so a naive reuse of the tail cap would exclude
+bout `76992273` (391.5min, obviously the real continuation) from the
+merge while keeping three much smaller fragments. This constant needs
+its own real-data calibration, and there are not yet enough real
+fragmented-multi-new-bout nights on record to calibrate it safely (only
+one, 07-20/21, exists so far) — the same discipline already applied to
+`TICK_RATE_PER_MIN` and `TAIL_CAP_MINUTES` before either was trusted.
+
+### 7. Recommendation
+
+**Supplement, in two stages — do not build the full design as originally
+scoped.**
+
+- **Build now:** the outer-ceiling decline check (Section 5.1). Small,
+  well-justified by the already-flagged bridge-layer gap, doesn't touch
+  the harder unsolved problem, zero risk to the existing "decline over
+  guess" property.
+- **Build now, as diagnostics:** the cross-session bout checkpoint and
+  NEW/carryover labeling (Section 5.2). Independently valuable for
+  honest decline messages even if summing logic never changes.
+- **Discard, for now:** the multi-bout merge (Section 5.3). Real data
+  shows it would not have changed any of the three real recorded
+  outcomes, and the one real multi-new-bout night on record exposes an
+  unresolved, uncalibrated between-bout gap constant. Revisit only once
+  2-3 more real nights with multiple genuinely-new bouts exist to
+  calibrate that constant the same way other constants in this module
+  were calibrated — not before.
+- **Confirmed rejected, do not reintroduce:** using daemon start/stop
+  as a sleep-onset/wake substitute (vs. ceiling-only). No data supports
+  it and Finding C shows the connect/disconnect moments leave no trace
+  in the ring's own event stream.
+
+### Not done this session (explicitly out of scope, design-only per the task)
+
+- No code changes to `sleep_duration_estimate.py`, the daemon, or the
+  bridge.
+- The between-bout gap constant for a future multi-bout merge is
+  unresolved, not proposed as a number — flagged, not guessed.
+- Did not re-derive the already-falsified reconnect-jump hypothesis or
+  the wear-state-oscillation non-signal; both reused directly from
+  existing findings rather than re-run, per real-data-only discipline
+  (already confirmed, re-confirming would be redundant not additive).
+- Did not investigate why 07-21/22's session ended ~1h14m early beyond
+  the plausible manual-stop explanation already on record.
+
+*Logged 2026-07-22. Sources: `pipeline/data/raw_pulls/gen3_daemon/gen3_daemon_20260719_212709.txt`,
+`gen3_daemon_20260720_213320.txt`, `gen3_daemon_20260721_213131.txt` (the
+three real nights in scope), `gen3_daemon_20260718_222458.txt` (07-18/19,
+used only for cross-night dedup baseline), all decoded via the real
+`parse_daemon_log`/`_group_bouts`/`_decode_bedtime`/`_decode_stage_total_min`/
+`_find_wake_signal` functions imported directly from
+`recompute_bridge_from_daemon.py` and `sleep_duration_estimate.py` (not
+reimplemented), `oura_gen3_ble_daemon.py` source (checkpoint/`since_boot_ts`
+logic, stdout-only RANGE-DROP/WEAR-EVENT print), `pipeline/decoders/0x53.py`,
+direct execution of `estimate_sleep_duration()` and `_find_wake_signal()`
+against all three real logs, `stat` on all four log files for real
+wall-clock session spans.*
+
+---
+
+## RESOLVED: classify() 0x6B step-count blind spot — fixed, but the "39 divergent cycles" premise from the entry above was FALSIFIED by deeper real-data digging: 0x6B's step_count is not a literal step count at rest, 2026-07-22 (later session)
+
+**Scope:** fix the classify() gap flagged immediately above (never checks
+0x6B step counts). Real-data investigation before writing any code
+overturned the specific example that motivated the task — documented in
+full since it changes what "fixed" means here.
+
+### 1. The 39 cycles' real step-count values
+
+Re-derived fresh via `sleep_confidence_analysis.py`'s own real
+`score_cycles()` against `gen3_daemon_20260721_213131.txt`: exactly 39
+cycles where `classify()`=`SLEEP WINDOW` and that cycle's 0x6B sum was
+nonzero, matching the prior entry's count exactly. **Real values: every
+one of the 39 falls in the range 48-63.** Not "1 stray step" anywhere in
+the set — the lowest is 48.
+
+### 2. Why 48-63 turned out not to mean what it looked like — 0x6B's step_count is a wrapping idle counter at rest, not a literal per-window step count
+
+Decoded all 176 raw 0x6B packets in that log directly (not just the 39
+flagged cycles): **step_count is never 0, min 10, max exactly 63.**
+Re-checked the two other real overnight logs for the same field: same
+shape — 485 and 490 packets, **min 1, max exactly 63, zero 0-readings, in
+both.** Consecutive-packet deltas across all three nights (1,151 packets
+total) are dominated by **+1 (70-75% of all deltas)**, with the rest
+almost entirely exact multiples of 16 (-15, +17, -31, +33, -47, +49) —
+the signature of a counter that increments by 1 roughly every polling
+interval and wraps every 16 counts, not of noisy independent per-window
+step measurements. This holds identically across all three nights, not
+a one-log artifact.
+
+Checked against the one real controlled ground truth on record
+(`known_issues.md`, 2026-07-07 walk experiment, ~500 real steps): b[0]
+during that walk read **98, 101, 98, 98, 100** — real per-window values,
+no wrap pattern, matching the known step count. **There is a real,
+observed gap (64-97) with zero data on either side** across every real
+0x6B packet collected to date (3 full nights at rest + 1 controlled
+walk). The 39 cycles' 48-63 values sit entirely in the confirmed rest
+regime, nowhere near the confirmed walk floor.
+
+**This falsifies the specific claim in the entry above** ("39... a real
+gap in classify()... a legitimate real blind spot") **as evidence of a
+missed real-movement event** — it wasn't; it was the rest-state noise
+floor, misread as "nonzero = moving" by the confidence-analysis script's
+own `votes["steps"] = 1.0 if step_count == 0 else 0.0` logic (a
+pre-existing, separate, and still-unfixed assumption in that script — not
+touched here, out of scope, flagged in Section 5 below). The underlying
+`classify()` gap (0x6B never checked at all) was still real and worth
+closing for genuine future nighttime activity — just not evidenced by
+this particular set of 39 cycles.
+
+### 3. Threshold decided from the real gap, and why it must apply to the per-cycle MAX single-packet value, not the sum
+
+`MIN_REAL_STEP_COUNT = 80` — inside the real 64-97 gap (17 above the
+confirmed 3-night rest ceiling of 63, 18 below the confirmed walk floor
+of 98). A "1 stray step" or "2+ steps" threshold, as floated in the task,
+would not have worked: real data shows rest-state step_count is
+virtually never 0 or 1, so either threshold would have fired on almost
+every 0x6B-bearing cycle all night.
+
+**Real, concrete reason this must compare against the max single-packet
+value in a cycle, not `total_steps` (the existing cycle-level sum):**
+found 44 real cycles across the three nights (20+17+7) with 2-3 0x6B
+packets in one poll cycle. In every one, each individual packet is a
+confirmed rest-noise value (≤63), but the **sum** routinely lands at or
+above 80 purely from grouping — real examples on record: `[63, 32]` sums
+to 95, `[45, 14, 63]` sums to 122, `[55, 56]` sums to 111. Thresholding
+the sum would have misclassified real, confirmed-quiet cycles as active
+purely as a cycle-boundary artifact. `oura_gen3_ble_daemon.py` now tracks
+a separate `max_step_count` per cycle for this check, leaving the
+existing `total_steps` accumulator (which feeds the bridge-facing step
+count, untouched) exactly as it was.
+
+### 4. Fix
+
+`oura_gen3_ble_daemon.py`: `classify()` gained an optional `step_count`
+parameter; `has_activity` now also fires when
+`step_count >= MIN_REAL_STEP_COUNT`. Folded into the existing
+`has_activity` umbrella (same as `ACTIVITY_TAGS`/sustained motion), so
+existing precedence is unchanged — sleep+activity still resolves to
+`MIXED WINDOW`, not straight to `ACTIVE WINDOW`. `decode_cycle_events`
+now tracks `max_step_count` (max single 0x6B packet value this cycle)
+alongside the pre-existing `total_steps` sum, and passes it into the
+`classify()` call. `sleep_duration_estimate.py`, the bridge, and the
+hour-gate `PLAUSIBLE_SLEEP_HOURS`/`UNCLEAR` logic from the 2026-07-21 fix
+are all untouched — confirmed by diff, not just by intent.
+
+Also updated `sleep_confidence_analysis.py` (the diagnostic tool that
+surfaced the original 39-cycle claim) to track the same per-cycle
+`max_step_count` and pass it into its own `classify()` call, so it keeps
+replaying the real, current function rather than a stale signature —
+that script's docstring already claims to be "ground truth... the real
+function," so leaving its call site out of sync with the fixed signature
+would have made its own claim false.
+
+### 5. Regression check — real data, all three nights + the 45-file historical set, zero changes
+
+Ran the actual fixed `classify()` (imported, not reimplemented) against
+every real cycle in all three overnight logs:
+
+| Night | Cycles | Old split | New split | Changed |
+|---|---|---|---|---|
+| 07-19/20 | 2,167 | 1324 SLEEP / 479 ACTIVE / 284 MIXED / 80 UNCLEAR | identical | **0** |
+| 07-20/21 | 2,313 | 1506 SLEEP / 471 ACTIVE / 288 MIXED / 48 UNCLEAR | identical | **0** |
+| 07-21/22 | 554 | 287 SLEEP / 198 ACTIVE / 67 MIXED / 2 UNCLEAR | identical | **0** |
+
+Zero cycles change classification on any real night, including the 39
+originally flagged — the correct, expected outcome given Section 2, not
+a failure of the fix. The fix is real and will catch genuine future
+nighttime activity (verified directly: synthetic cycle with a sleep tag
++ `step_count=80` → `MIXED WINDOW`; `step_count=79` → unchanged
+`SLEEP WINDOW`; `step_count=98`, the real confirmed walk value →
+`MIXED WINDOW`) — it simply had nothing to catch in the three real nights
+on record, because none of them contain real nighttime ambulatory motion
+at the 0x6B level.
+
+Also replayed old vs. new `classify()` across all 45 historical files in
+`gen3_morning/` + `gen3_evening/` (the same dataset used to validate the
+2026-07-21 hour-gate fix): old split `8 MIXED / 15 UNCLEAR / 9 SLEEP / 13
+ACTIVE`, new split identical, **0 changed**. Only 9 of the 45 files
+contain any 0x6B reading at all; their max values (57, 53, 62, 61, 53,
+34, 56, 51, 4) are all comfortably inside the confirmed rest range.
+
+### 6. New, real, out-of-scope anomaly found while regression-testing (flagged, not fixed)
+
+While re-running `sleep_confidence_analysis.py` for the regression check,
+its own confidence-score output did not reproduce the 2026-07-22 entry's
+numbers, **independent of this session's `classify()` change** (confirmed
+by testing with the classify() call reverted to its pre-fix signature —
+identical result either way): mean confidence for `SLEEP WINDOW` cycles
+is now 0.43 (documented: 0.87), `MIXED WINDOW` 0.30 (documented: 0.42),
+and total score/classify() divergences are 215/554 (documented: 48/554).
+`classify()`'s own labels are unaffected (Section 5) and this doesn't
+touch anything in scope for this task (the weighted confidence score is
+a separate, parallel diagnostic, not `classify()`) — flagged per
+real-data-only discipline rather than silently left unreconciled, not
+investigated further here.
+
+### Not done this session (explicitly out of scope per the task)
+
+- `sleep_duration_estimate.py`, the bridge, and the hour-gate `UNCLEAR`
+  logic: untouched, confirmed by diff.
+- `oura_gen3_morning_pull.py` has its own independent, inline
+  classification logic (not a shared `classify()` import) — task scoped
+  this fix to `oura_gen3_ble_daemon.py:112` specifically; the morning-pull
+  copy was not touched.
+- The confidence-score discrepancy in Section 6 is flagged, not
+  diagnosed or fixed.
+- `sleep_confidence_analysis.py`'s own `votes["steps"]` logic (the thing
+  that actually produced the original "39 divergent" framing) is
+  unchanged — still `1.0 if step_count == 0 else 0.0` on the cycle-level
+  sum, which Section 2 shows is not a meaningful test at rest. Out of
+  scope for a `classify()`-only fix; flagged as a candidate follow-up for
+  whoever next touches that script.
+
+*Logged 2026-07-22. Sources: `gen3_daemon_20260719_212709.txt`,
+`gen3_daemon_20260720_213320.txt`, `gen3_daemon_20260721_213131.txt` (all
+1,151 real 0x6B packets decoded directly via `pipeline/decoders/0x6b.py`),
+all 45 files under `gen3_morning/`/`gen3_evening/`, the 2026-07-07 walk
+experiment figures already on record above, direct execution of the real,
+imported `classify()` (both pre- and post-fix) against every real cycle
+in all three nights and all 45 historical files, `python3 -m py_compile`
+on both modified files.*

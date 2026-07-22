@@ -108,10 +108,33 @@ ACTIVITY_TAGS = {0x7E, 0x7F}
 # daytime stillness being read as sleep.
 PLAUSIBLE_SLEEP_HOURS = set(range(20, 24)) | set(range(0, 9))  # 20:00-08:59 local
 
+# 0x6B (Motion period) b[0] ("step_count") is NOT a reliable literal step
+# count at rest: confirmed 2026-07-22 against all 1,151 real 0x6B packets
+# across 3 full overnight logs (gen3_daemon_20260719/20/21) that at rest it
+# behaves as a wrapping idle counter -- 70-75% of consecutive packets step by
+# exactly +1, wrapping every ~16 counts -- and NEVER once reads 0 (real
+# range 1-63 across all three nights). It only becomes a genuine per-window
+# step signal during real ambulatory motion: the one controlled ground-truth
+# walk experiment on record (2026-07-07, ~500 real steps) measured b[0] at
+# 98-101 per window. There is a clean, real gap (64-97) with zero
+# observations on either side across all real data collected so far.
+# MIN_REAL_STEP_COUNT sits inside that gap (17 above the confirmed rest
+# ceiling, 18 below the confirmed walk floor) -- comfortably clear of a
+# "1 stray step" or "2+" threshold, which real data shows would fire on
+# almost every cycle (rest-state b[0] is virtually never 0) and would have
+# misclassified real, confirmed sleep as active. Must be compared against
+# the MAX single-packet value in a cycle, not a cycle-level sum -- summing
+# multiple rest-noise packets in one poll cycle can itself exceed 80 (real
+# examples on record: [63, 32] sums to 95, [45, 14, 63] sums to 122) purely
+# from cycle-grouping, with no real packet in the pair anywhere near the
+# real walk floor.
+MIN_REAL_STEP_COUNT = 80
 
-def classify(tags_seen, motion_count, charging_seen=False, local_hour=None):
+
+def classify(tags_seen, motion_count, charging_seen=False, local_hour=None, step_count=None):
     has_sleep = bool(tags_seen & SLEEP_TAGS)
-    has_activity = bool((tags_seen & ACTIVITY_TAGS) or motion_count >= 3)
+    has_real_steps = step_count is not None and step_count >= MIN_REAL_STEP_COUNT
+    has_activity = bool((tags_seen & ACTIVITY_TAGS) or motion_count >= 3 or has_real_steps)
     if has_sleep and has_activity:
         return "MIXED WINDOW"
     if has_sleep and charging_seen:
@@ -146,6 +169,11 @@ def decode_cycle_events(events):
     ibi_packets = []  # per-packet IBI lists, for HRV RMSSD (needs packet boundaries preserved)
     fuel_gauge_pct = None
     total_steps, motion_period_found = 0, False
+    max_step_count = None  # max single 0x6B packet value this cycle -- classify()'s real-movement
+                            # check, kept separate from total_steps (a cycle-level sum across
+                            # possibly multiple 0x6B packets, which is the right thing for the
+                            # bridge-facing step count but the wrong thing to threshold against
+                            # for real-vs-rest detection -- see MIN_REAL_STEP_COUNT above).
     cadence_samples = []
     tags_seen = set()
     motion_event_count = 0
@@ -178,6 +206,7 @@ def decode_cycle_events(events):
                 d = decode_motion_period(ev["payload"])
                 motion_period_found = True
                 total_steps += d["step_count"]
+                max_step_count = d["step_count"] if max_step_count is None else max(max_step_count, d["step_count"])
                 if d["cadence_spm"] and d["cadence_spm"] > 0:
                     cadence_samples.append(d["cadence_spm"])
             elif ev["tag"] == 0x61 and len(ev["payload"]) > 0 and ev["payload"][0] == 0x14:
@@ -205,7 +234,7 @@ def decode_cycle_events(events):
         "ibi_packets": ibi_packets,  # raw IBI packet lists this cycle, for nightly accumulation
     }
     pull_class = classify(tags_seen, motion_event_count, charging_seen=charging_seen,
-                          local_hour=time.localtime().tm_hour)
+                          local_hour=time.localtime().tm_hour, step_count=max_step_count)
     return accum, pull_class, fails
 
 
