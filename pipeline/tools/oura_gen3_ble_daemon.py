@@ -224,7 +224,6 @@ async def main():
     tag_tally_since_digest = Counter()
     last_boot_ts = 0
     total_events_logged = 0
-    sleep_secs_accumulated = 0  # rolling overnight total; each asleep 0x6A packet ≈ 60s
     ibi_packets_all: list = []  # all IBI packet lists across all cycles, for nightly RMSSD
     recent_tags: set = set()    # tags seen in the last two cycles; used to classify disconnects
     disconnected = asyncio.Event()
@@ -349,10 +348,7 @@ async def main():
                 print(f"[{time.strftime('%H:%M:%S')}] cycle {cycle}: {len(parsed)} new events "
                       f"({pull_class}), {fails} decode fails")
 
-                # Accumulate sleep duration: each asleep-state 0x6A packet ≈ 60s of real sleep.
-                # Only count during SLEEP WINDOW so activity-session packets don't inflate the total.
                 if pull_class == "SLEEP WINDOW":
-                    sleep_secs_accumulated += accum["asleep_6a_count"] * 60
                     # Accumulate IBI across all sleep cycles for nightly RMSSD.
                     # Per-cycle window (~5s) has too few pairs for calculate_rmssd's min_pairs=10.
                     ibi_packets_all.extend(accum["ibi_packets"])
@@ -367,7 +363,6 @@ async def main():
                     # successive-difference pairs. Only push in sleep context.
                     nightly_hrv = calculate_rmssd(ibi_packets_all) if ibi_packets_all else None
                     hrv_for_bridge = nightly_hrv if pull_class == "SLEEP WINDOW" else None
-                    sleep_hrs_for_bridge = round(sleep_secs_accumulated / 3600, 2) if sleep_secs_accumulated > 0 else None
                     bridge_data = build_bridge_data(
                         pull_class=pull_class,
                         pull_file=_os.path.basename(log_path),
@@ -380,7 +375,17 @@ async def main():
                         step_count=accum["step_count"],
                         cadence_spm=accum["cadence_spm"],
                         hrv_ms=hrv_for_bridge,
-                        sleep_duration_hrs=sleep_hrs_for_bridge,
+                        sleep_duration_hrs=None,  # 0x6A-derived duration is unreliable (undercounts --
+                        # ring stops emitting 0x6A before sleep ends -- AND the live per-cycle packet-count
+                        # x60s-per-packet assumption previously here was also wrong by roughly an order of
+                        # magnitude: real 0x6A packets fire far more often than once per 60s, confirmed
+                        # 2026-07-21 against gen3_daemon_20260720_213320.txt, 9,617 packets across a real
+                        # 7h49m session = ~1 every 2.9s, not 60s -- this produced a live 92.03h "last
+                        # night" push. recompute_bridge_from_daemon.py already made 0x6A unreliable for
+                        # this field and hardcodes None for the same reason (2026-07-18, commit 5983beb);
+                        # this live per-cycle path just never got the same fix (flagged open in
+                        # SESSION_HANDOFF.md 2026-07-19, Finding 1). 0x4C is authoritative going forward --
+                        # see sleep_duration_estimate_hrs for the provisional per-bout estimate.
                     )
                     bridge_data = merge_with_existing_bridge(bridge_data, repo_root)
                     write_local_bridge_file(bridge_data, repo_root)

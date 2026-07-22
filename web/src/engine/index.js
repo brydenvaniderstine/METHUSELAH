@@ -43,11 +43,19 @@ export function evaluate(vectors) {
     };
   }
 
-  if (sleepDurationHrs !== null && sleepDurationHrs < THRESHOLDS.sleepDuration) {
+  if (sleepDurationHrs !== null && sleepDurationHrs < THRESHOLDS.sleepDurationCritical) {
     return {
-      ...COMMANDS.sleepDuration,
-      rat: COMMANDS.sleepDuration.rat(sleepDurationHrs),
-      briefing: COMMANDS.sleepDuration.briefing(sleepDurationHrs, THRESHOLDS.sleepDuration),
+      ...COMMANDS.sleepDurationCritical,
+      rat: COMMANDS.sleepDurationCritical.rat(sleepDurationHrs),
+      briefing: COMMANDS.sleepDurationCritical.briefing(sleepDurationHrs),
+    };
+  }
+
+  if (sleepDurationHrs !== null && sleepDurationHrs < THRESHOLDS.sleepDurationWarn) {
+    return {
+      ...COMMANDS.sleepDurationWarn,
+      rat: COMMANDS.sleepDurationWarn.rat(sleepDurationHrs),
+      briefing: COMMANDS.sleepDurationWarn.briefing(sleepDurationHrs),
     };
   }
 

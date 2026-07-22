@@ -5608,3 +5608,139 @@ it. No time spent there, per instruction.
 `grep -h "Debug data" pipeline/data/raw_pulls/*/*.txt | grep "payload=28"`,
 decoded via the existing `struct.unpack("<6H", payload[2:14])` logic in
 `pipeline/decoders/0x61_28.py` (unchanged).*
+
+## 2026-07-21 (session 4) — LIVE BUG: production showed "92.0 HRS" sleep
+duration. Root cause found and fixed: wrong per-packet duration constant
+in the daemon's live bridge push, not an accumulation-across-nights bug
+
+**Trigger:** live bug report, methuselah.ca screenshot 2026-07-21 8:05pm,
+tile showing "SLEEP DEBT — 92.0 HRS (optimal ≥ 7H · 7d avg 46.7H ·
+trending up)", sys-log "GEN3 SLEEP: 92.0H // LAST NIGHT" logged 19:22:25.
+
+**Confirmed live via direct curl against `https://methuselah.ca/api/gen3-bridge`
+(not assumed):** production is currently serving
+`"sleep_duration_hrs": 92.03`, `"timestamp": "2026-07-21T05:22:12.070592"`
+— this timestamp is the daemon's **last live per-cycle push** from last
+night's real session (`gen3_daemon_20260720_213320.txt`, ran
+21:33:20→05:22:11, log mtime 05:22:11), not the post-run recompute
+(`pipeline/data/bridge/gen3_latest.json` locally shows the SAME night
+correctly computed as `sleep_duration_hrs: null` at `05:28:20`). The
+correct value was computed locally 6 minutes later but never overwrote
+the bad one already live in the Vercel KV store — the daemon's
+post-run `recompute_bridge_from_daemon.py ... --push` step should have
+corrected this automatically but evidently didn't (last night's run was
+manual, not via the `ca.methuselah.gen3daemon` launchd job — confirmed
+via `daemon_launchd_err.log`'s already-known permission error — so
+stdout showing the push outcome was never captured anywhere to check
+retroactively; not investigated further, moot given the fix below).
+
+**Root cause, confirmed against real data, NOT assumed:** the daemon's
+live per-cycle bridge push (`oura_gen3_ble_daemon.py`, now-removed lines
+227/355/370/383) computed `sleep_duration_hrs` as
+`(count of 0x6A packets with sleep_state != 0) * 60 seconds` — i.e. it
+assumed each "asleep" 0x6A packet represents ~60 real seconds. Directly
+measured against last night's real log: **9,617 total 0x6A packets
+across a real session of 28,131 real seconds (7h48m51s, from the log's
+own "Daemon started" line to its mtime) = 1 packet every ~2.9 real
+seconds, not 60.** The `× 60` constant overcounts real elapsed time by
+roughly **20x**. Decoding sleep_state on all 9,617 real packets: 6,177
+have `sleep_state != 0`; naively assuming the whole session classified
+`SLEEP WINDOW` (a reasonable upper-bound approximation, not exact since
+per-cycle classification wasn't logged) gives `6,177 × 60s = 102.95h` —
+same order of magnitude as the live 92.03h value, confirming this is
+the mechanism, not coincidence. **This was NOT a cross-night
+accumulation bug** (the bug report's first hypothesis) — `sleep_secs_accumulated`
+was a plain Python local variable inside `main()`, correctly re-initialized
+to 0 every fresh daemon process, and the daemon's own per-night log
+files confirm it does restart fresh nightly (new file each night,
+21:xx→05:xx spans, no evidence of a multi-day-orphaned process). It was
+a **wrong-constant/unit bug** confined to a single (long) night, exactly
+because that single night's real packet cadence (~2.9s) was ~20x faster
+than the hardcoded assumption (60s) — the bug report's second hypothesis
+was the correct one.
+
+**Not a new bug, either — a known, previously-flagged gap finally
+manifesting.** `recompute_bridge_from_daemon.py` already hardcodes
+`sleep_duration_hrs=None` for exactly this reason (2026-07-18, commit
+`5983beb`: "0x6A tick spans are unreliable... 0x4C is authoritative").
+The **live per-cycle push path was never given the same fix** — this
+exact gap was explicitly flagged as **"Finding 1 (open, not fixed)"** in
+`SESSION_HANDOFF.md`'s 2026-07-19 entry. Tonight's 92.03h is the
+predicted failure mode of that open item, now closed.
+
+**Fix:** `pipeline/tools/oura_gen3_ble_daemon.py` — removed
+`sleep_secs_accumulated` tracking and the live per-cycle
+`sleep_hrs_for_bridge` computation entirely; the live push now always
+sends `sleep_duration_hrs=None`, matching `recompute_bridge_from_daemon.py`'s
+already-established policy. `sleep_duration_estimate_hrs` (the separate,
+provisional, not-dashboard-facing 0x4C-based field) is untouched. No
+other daemon logic changed. `python3 -m py_compile` clean.
+
+**Tile naming/threshold-direction — separately investigated, found
+ALREADY RESOLVED in source, not resolved in production.** Traced
+`web/src/App.js` (unmodified, HEAD) and found the label is already
+`"SLEEP DURATION"` (not `"SLEEP DEBT"`), with `THRESHOLDS.sleepDurationWarn=8`/
+`sleepDurationCritical=6` driving both the `optimal ≥ Xh` meta text and
+the red/amber/green color — all three (label, threshold, computation)
+already agree, via commit `c4d6e11` (2026-07-18: "SLEEP DEBT → SLEEP
+DURATION (neutral label; value+color communicate deficit)... Remove //
+LAST NIGHT redundancy"). **The bug report's screenshot text ("SLEEP
+DEBT", "optimal ≥ 7H", "// LAST NIGHT") matches NONE of the current
+source** — it matches the pre-2026-07-18 state. This means **production
+has not been redeployed since before 2026-07-18**, independent of
+today's value bug. Root `engine/thresholds.js` was updated by `5983beb`
+but the derived `web/src/engine/*.js` copies were left stale in that
+same commit (partial-file-set commit bug) — however this does **not**
+affect actual Vercel builds, since `web/package.json`'s `prebuild`/`prestart`
+scripts unconditionally `cp ../engine/*.js src/engine/` before every
+build — confirmed by running `npm run build` locally and diffing the
+result. The stale committed `web/src/engine/*.js` (pending, uncommitted
+before this session) was still worth finishing/committing for repo
+hygiene (a `git show`/read of the file should match what a build
+actually produces), but was never itself a live-site risk. **What
+actually needs to happen to fix the label/threshold text on
+methuselah.ca is a fresh deploy, not a code change** — flagging this
+explicitly since it's an operational step, not something achievable by
+editing files in this repo alone.
+
+**Verification — real, not just static review.** `npm run build` (web/)
+compiles clean; grepped the built bundle and confirmed `"SLEEP DEBT"` is
+absent, `"SLEEP DURATION"` is present. Directly executed the actual
+committed `web/src/engine/{thresholds,index}.js` against 5 representative
+`sleepDurationHrs` values via `node --input-type=module`: 92.03/8.4h →
+optimal/green (no false alarm, correct direction), 6.5h → WARN/amber
+("6.5H LAST NIGHT — TARGET 8H."), 4.2h → CRITICAL/red ("CRITICALLY
+LOW."), `null` → no vector, quiet — confirmed threshold direction,
+color, and command-banner text all agree post-fix. No browser
+automation tool was available in this environment, so a visual
+screenshot was not produced — noting this limitation explicitly rather
+than claiming full UI verification.
+
+**Residual gap, not fixed, flagged for a decision:** nothing anywhere in
+the pipeline currently rejects a physically-implausible `sleep_duration_hrs`
+value before it reaches the bridge/dashboard — confirmed directly: feeding
+92.03 through the (now-fixed) threshold logic still just renders it
+"optimal/green," not "clearly wrong." Today's specific mechanism is
+closed, but the tile has no defense against a *different* future bug
+producing another out-of-range number. Not implemented this session
+(wasn't asked for, and the project's own bias is against speculative
+validation) — flagged as a real, demonstrated-not-hypothetical option
+for a future session if the owner wants a plausibility ceiling at the
+bridge layer (the documented single point of failure between pipeline
+and dashboard).
+
+**Still open, not addressed this session:** why the post-run recompute's
+`--push` didn't overwrite the bad live-cycle value in production
+(unrecoverable without last night's terminal stdout, which was never
+captured). Moot for future nights since the live per-cycle path no
+longer computes a wrong value to push in the first place, but if a
+similar recompute/push-silent-failure pattern recurs, it deserves its
+own investigation.
+
+*Logged 2026-07-21. Sources:
+`pipeline/data/raw_pulls/gen3_daemon/gen3_daemon_20260720_213320.txt`
+(real corpus, 9,617 real 0x6A packets decoded directly via
+`pipeline/decoders/0x6a.py`), live `curl` against
+`https://methuselah.ca/api/gen3-bridge`, `pipeline/data/bridge/gen3_latest.json`,
+`git log`/`git show` for `web/src/App.js` and `engine/thresholds.js`
+history, `npm run build` output.*
