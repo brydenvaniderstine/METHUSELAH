@@ -5292,3 +5292,82 @@ truth, so it corroborates but does not prove the bout-local figure).
 (re-derived directly via the real `_group_bouts`/`_decode_bedtime`/
 `_decode_stage_total_min` functions imported from
 `pipeline/tools/sleep_duration_estimate.py`, not reimplemented).*
+
+---
+
+## Walk-test BLE keep-warm tool built — dry-run verified (connect/hold/log only, NOT 0x7E/0x7F verification)
+
+**Purpose:** route around the root cause already confirmed 2026-07-19
+("0x7E/0x7F absent again... ring-side buffer window confirmed as the
+cause") — the ring's readable buffer window for step-feature events is
+short (~7-12 min) and reliably rolls over before a fresh BLE
+connect-auth-setup handshake completes if the connection is only opened
+*after* a walk has already started. This matches the unresolved
+"what would unblock a real comparison" note from the 2026-07-09 entry
+("a future attempt should probably start the pull connection *before*
+the walk activity ages out of the buffer... though this is untested").
+
+**Built:** `pipeline/tools/walk_test_keepwarm.py`. Standalone manual tool,
+not wired into the daemon, classifier, or bridge. Reuses
+`scan_for_ring`/`open_connection`/`request_history` from
+`gen3_ble_connection.py` — the same event-driven scan-then-connect
+pattern already validated for overnight reconnects in
+`oura_gen3_ble_daemon.py` — rather than reimplementing connection
+handling. Design: connect, then loop polling every `poll_seconds`
+(default 5s, matching the daemon's real-hardware-validated default) and
+appending every raw event to a timestamped log file under
+`pipeline/data/raw_pulls/gen3_walk/`, in the same
+`[tag_name] boot_ts=... payload=...` format the daemon's log uses (so
+existing tools like `analyze_fft_walk.py` can read the output directly
+once real walk data exists). Reconnects automatically on a drop, the
+same way the daemon does. Runs until Ctrl+C (no duration cap, since this
+is meant to be started before leaving and stopped whenever the walk
+ends) — already-logged data is preserved on interrupt (log writes flush
+every cycle). No decode/classify logic at all; this tool only holds the
+connection and logs raw bytes, on purpose — decoding is a separate,
+later pass.
+
+**Dry-run verification (stationary, no walk — connection mechanics
+only):**
+
+- First attempt (~100s bounded window): scan found the ring
+  (`17:46:34`), but the connect handshake hit the existing 25s
+  `asyncio.wait_for` timeout (`17:46:59`, "Connect timed out (ring
+  likely stopped advertising) — will rescan.") before a second scan
+  could complete within the test window. Not a tool bug — this is the
+  same already-documented real-hardware timing behavior noted in
+  `oura_gen3_ble_daemon.py`'s own comments (ring can stop advertising
+  between the scan detecting it and the connect completing). The
+  reconnect loop handled it correctly: no crash, no hang past the 25s
+  bound, clean rescan.
+- Second attempt (~150s bounded window): connected and authenticated at
+  `17:48:36` (18s after scan start), held the connection continuously
+  for 12 poll cycles (~2 min) with **zero disconnects**, logged 3,073
+  real events across 23 distinct tag types, printed a correct 1-minute
+  digest, and shut down cleanly on Ctrl+C ("Already-logged data is
+  preserved"). Output log
+  (`pipeline/data/raw_pulls/gen3_walk/gen3_walk_keepwarm_20260721_174818.txt`,
+  217KB, 3,074 lines) inspected directly: well-formed header line,
+  one correctly-tagged line per event, consistent with every other raw
+  pull log in this corpus.
+- Notable but NOT a verification result: this stationary dry run
+  incidentally captured 13 `Real step feature (1)`/`(2)` (0x7E/0x7F)
+  pairs even with no walk happening — consistent with the
+  already-documented finding that these tags fire during general
+  activity, not exclusively walking. **This does not confirm the tool
+  fixes the walk-specific buffer-timing race** — it only confirms the
+  connection can capture 0x7E/0x7F when the ring happens to emit it,
+  which was never in question. Whether pre-connecting before a walk
+  specifically prevents the buffer from rolling past the walk window is
+  still completely untested.
+
+**Status: connection mechanics confirmed working (connects cleanly,
+holds without dropping, writes a sane log). 0x7E/0x7F walk verification
+is NOT done and NOT attempted this session** — too hot for a walk today,
+deferred to evening. Next step is an actual walk with this tool started
+beforehand and left running throughout.
+
+*Logged 2026-07-21. Dry-run logs:
+`pipeline/data/raw_pulls/gen3_walk/gen3_walk_keepwarm_20260721_174621.txt`
+(failed-connect attempt, harmless, kept for the record),
+`gen3_walk_keepwarm_20260721_174818.txt` (successful 2-min hold).*
