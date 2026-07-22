@@ -5450,3 +5450,111 @@ corpus (not checked in); byte-position statistics reproducible via
 followed by the standard payload[2:14] split already in
 `pipeline/decoders/0x61_33.py`.*
 
+## 2026-07-21 (session 2) — 0x5A sleep_phase_data: roadmap was stale
+(real decode already existed, uncredited); re-verified at scale across 3
+nights; "299-byte fixed structure" corrected to variable-length;
+stage 0/1/2 exact-match confirmation strengthened; stage 3 mystery deepened
+
+**Housekeeping note first:** `open_ring_roadmap.md`'s 0x5A entry still
+read "NOT solved. No decoder written yet." — stale since 2026-07-12.
+A real decoder (`pipeline/decoders/0x5a.py`) with a working
+stage0/1/2-vs-0x4C cross-validation was actually written and committed
+2026-07-18 (`b1f5fec`), and the project's own `methuselah` skill file
+already reflects the correct PARTIAL status — but no dated
+`known_issues.md` entry was ever written for that work, and the roadmap
+file itself was never synced. Logging this explicitly per the "session
+ending without touching this file when a finding occurred is an error"
+rule, and to prevent future sessions from re-doing 2026-07-18's work
+under the mistaken belief it hasn't started.
+
+**This session's real work:** re-ran the existing decoder against the
+grown daemon corpus (4 files: `gen3_daemon_20260712_153619.txt`,
+`gen3_daemon_20260718_222458.txt`, `gen3_daemon_20260719_212709.txt`,
+`gen3_daemon_20260720_213320.txt`, plus the original
+`gen3_pull_20260712_212119.txt`) rather than trusting the docstring's
+claims outright, per the "verify the actual code does what's claimed"
+rule.
+
+**Finding 1 — the "23 packets / 299-byte fixed structure" claim is
+WRONG; the real structure is variable-length.** Chunk index values up
+to **28** were observed in the corpus (not capped at 22) — full,
+contiguous, gap-free 0x5A cycles were found with **20, 22, 23, 24, and
+29 chunks** across 6 independent bouts. This makes complete sense once
+cross-referenced against the already-established 2026-07-19/20 finding
+that 0x4C (which fires in the same cluster as 0x5A) is a **per-bout
+accumulator, not a fixed-size nightly summary** — 0x5A is the same
+kind of accumulator, chunked into 14-byte packets (1 index byte + 13
+data bytes), and its total length simply grows with how many epochs
+have accumulated in the current bout. The existing `decode()` function
+in `0x5a.py` already handles this correctly (it reassembles
+`max(packets.keys())+1` chunks, not a hardcoded 23) — this was a
+documentation bug in the docstring, not a code bug. Fixed in the
+decoder's docstring this session.
+
+**Finding 2 — stage 0/1/2 exact-match cross-validation strengthened
+from n=1 to n=6 independent bouts across 3 separate nights (2026-07-12,
+2026-07-18/19, 2026-07-20).** Re-decoding each bout at its *actual*
+chunk count (not truncated to 23) and comparing against the
+time-nearest 0x4C record from the *same cluster firing*:
+
+| bout boot_ts | night | chunks | 5A stage0/1/2 | 4C stage0/1/2 | match |
+|---|---|---|---|---|---|
+| 63610354 | 07-12 | 23 | 109/636/295 | 109/636/295 | exact |
+| 72958131 | 07-20 | 20 | 150/516/253 | 150/516/253 | exact |
+| 74792521 | 07-20 | 22 | 159/539/286 | 159/539/286 | exact |
+| 75892380 | 07-20 | 29 | 183/570/436 | 183/570/436 | exact |
+| 68815528 | 07-18/19 | 23 | 132/550/225 | 132/550/225 | exact |
+| 69667118 | 07-18/19 | 24 | 231/549/280 | 231/549/280 | exact |
+
+6/6 bouts, exact match on all three stages, at three different chunk
+counts, on three different nights. This is a real, reproducible,
+byte-level decode confirmation — not a fluke of the original single
+night. **Important caveat, unchanged from the original finding and
+worth restating explicitly:** this confirms the *decode* (we are
+reading the right bits in the right order) — it is an internal
+Gen3-vs-Gen3 cross-check between two tags produced by the same
+firmware classifier, not external validation against ground truth. Per
+the project's own `methuselah` skill guidance, this does **not** move
+sleep-stage labeling (WAKE/LIGHT/REM/DEEP) out of the "Discard —
+AWAITING DATA is correct" tier for the dashboard; it only means we can
+now faithfully read whatever the ring's own (unvalidated) classifier
+decided. No dashboard change proposed or warranted by this finding.
+
+**Finding 3 — stage 3 / `0xFF` ambiguity is NOT resolved; new data
+shows it's worse than the original single-night gap suggested.** The
+2026-07-18 docstring hypothesized a small, near-fixed gap ("2 of the
+excluded 0xFF bytes are secretly stage-3 data, undercounts by exactly
+8 epochs"). Across the 6 bouts above, the gap between 0x5A's non-0xFF
+stage-3 count and 0x4C's stage3 count is **8, 2, 38, -5, 47, 57** —
+not small, not fixed, and in one case (`75892380`) 0x5A actually
+*over*-counts stage 3 relative to 0x4C by 5. The gap also does not
+scale cleanly with the number of `0xFF` bytes present in each cycle
+(24, 24, 24, 64, 60, 38 respectively — no consistent ratio to the
+gaps). **The original "reinterpret 2 of the 0xFF bytes" theory is
+falsified by this larger sample.** Whatever is happening with stage 3
+and the `0xFF` sentinel is more complex than a small fixed
+miscount — possibly a genuinely different encoding for stage 3 that
+this 2-bit-per-epoch model doesn't capture correctly, not just an
+edge-case ambiguity. This is the real open ceiling now, not the
+"basically solved, just 8 epochs off" framing from 2026-07-18.
+
+**Conclusion: 0x5A stays PARTIAL, not promoted to DONE.** Stages 0/1/2
+are now confirmed at a much higher confidence level (6 bouts / 3
+nights / exact match, up from 1 bout / 1 night) — this is the
+strongest structural confirmation this decoder has had. Stage 3 is
+newly confirmed to be a real, unresolved, non-trivial gap rather than
+a small rounding-style discrepancy. Decoder docstring in
+`pipeline/decoders/0x5a.py` updated to reflect both the corrected
+variable-length structure and the deepened stage-3 mystery; no decode
+logic changed (it was already correct). `open_ring_roadmap.md`'s 0x5A
+entry updated to match and to remove the stale "not solved / no
+decoder" text.
+
+*Logged 2026-07-21. Sources: the four `gen3_daemon_*.txt` files listed
+above plus `gen3_pull_20260712_212119.txt`, all in
+`pipeline/data/raw_pulls/`. Analysis run ad hoc (not checked in);
+reproducible by grouping `[Sleep phase data]` lines into boot_ts-gap
+bouts (>1000 ticks = new bout), reassembling contiguous chunk-index
+runs, and comparing `pipeline/decoders/0x5a.py`'s `decode()` output
+against the time-nearest `[Sleep summary (2)]` record via
+`pipeline/decoders/0x4c.py`.*

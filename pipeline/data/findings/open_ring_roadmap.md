@@ -243,18 +243,35 @@ tested and found inconclusive for the others, nothing confirmed yet.
       sleep — but exact wall-clock placement is uncertain (see the
       variable-tick-rate finding below). Decoder: `pipeline/decoders/0x76.py`
       (already existed, unchanged).
-- [ ] 0x5A sleep_phase_data — NEW, not previously tracked in this roadmap
-      at all. Confirmed real chunked-transmission structure: 23 packets,
-      each starting with a sequential index byte (0-22, zero gaps/dupes/
-      out-of-range values verified) plus a fixed 13-byte remainder,
-      reassembling cleanly into one 299-byte structure. Tested a
-      2-bit-per-epoch sleep-stage hypothesis (motivated by heavy
-      `0x55`/`0xAA` alternating-bit patterns) — inconclusive, the data
-      reads more like padding/filler (long uniform byte runs) than a
-      clean per-epoch classifier at this point. This is the strongest
-      current lead on the long-standing `sleep_state`-flatness open
-      question (2026-06-28 entry, top of known_issues.md) but is NOT
-      solved. No decoder written yet.
+- [~] 0x5A sleep_phase_data — PARTIAL. (Note: this entry was stale as of
+      2026-07-21 — it previously read "NOT solved, no decoder written
+      yet," but a real decoder was actually committed 2026-07-18
+      [`b1f5fec`] with no matching roadmap update; corrected this
+      session, see known_issues.md 2026-07-21 session 2.) Chunked
+      transmission, one 14-byte packet per chunk (1 index byte + 13 data
+      bytes), 2-bit-LE-per-epoch encoding (4 epochs/byte, ~30s/epoch).
+      **Correction: chunk count is variable, NOT a fixed 23/299 bytes**
+      — confirmed 20, 22, 23, 24, and 29-chunk complete cycles in the
+      corpus (chunk index observed up to 28). Scales with how many
+      epochs have accumulated in the current sleep bout, consistent
+      with 0x4C firing in the same cluster and already being confirmed
+      a per-bout accumulator (2026-07-19/20 entry below). Decoder:
+      `pipeline/decoders/0x5a.py` (decode logic already handled
+      variable length correctly; only the docstring was wrong).
+      **Stage 0/1/2 exact-match cross-validation against 0x4C now
+      confirmed across 6 independent bouts spanning 3 separate nights**
+      (2026-07-12, 2026-07-18/19, 2026-07-20) — up from the original
+      n=1 bout. Internal Gen3-vs-Gen3 consistency only, not external
+      ground truth; per the project's dashboard rules this does not
+      change deep-sleep%/stage-breakdown's Discard/AWAITING-DATA status.
+      **Stage 3 / `0xFF`-sentinel ambiguity is NOT resolved** — the
+      2026-07-18 "off by ~8 epochs, 2 misclassified 0xFF bytes" theory
+      is falsified by the larger sample: the gap across the 6 bouts is
+      8/2/38/-5/47/57 (once even negative — 0x5A overcounts), with no
+      consistent relationship to the number of 0xFF bytes present. This
+      is the strongest current lead on the long-standing `sleep_state`-
+      flatness open question (2026-06-28 entry, top of known_issues.md)
+      but stage 3 keeps it at PARTIAL, not DONE.
 - [ ] 0x49/0x4C/0x4F/0x58 sleep_summary (1)/(2)/(3)/(4) — all fired for
       the first time, directly contradicting this roadmap's prior "Gen3
       does NOT emit (0 packets across 27 pulls)" status for 0x49/0x4C/0x4F.
