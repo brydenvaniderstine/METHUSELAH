@@ -5371,3 +5371,82 @@ beforehand and left running throughout.
 `pipeline/data/raw_pulls/gen3_walk/gen3_walk_keepwarm_20260721_174621.txt`
 (failed-connect attempt, harmless, kept for the record),
 `gen3_walk_keepwarm_20260721_174818.txt` (successful 2-min hold).*
+
+## 2026-07-21 — 0x61/0x33 register-identity hypothesis tested against real MAX86171 datasheet; FALSIFIED
+
+Re-tested with `pipeline/data/findings/max86171_register_reference.md` (the
+ADI datasheet extract pulled earlier this session specifically to unblock
+this ceiling). Hypothesis: the 6-byte-per-channel-half structure maps to
+the MEASn Configuration 1/2/3 register fields (PDSEL/TINT/AVER,
+SINC3_SEL/FILT_SEL/LED_RGE/ADC_RGE, PD_SETLNG/LED_SETLNG/DACOFF).
+
+Corpus first: the real corpus has grown far past the roadmap's stated
+n=88 (45 full/43 truncated from 34 files, as of 2026-07-12) — the daemon's
+continuous polling since then has produced **9,456 full-length raw
+`0x61/0x33` lines across 35 files, collapsing to 63 unique 12-byte
+settings blobs** (up from 45 unique full-length observations). Truncated
+variant: 10,311 raw lines / 284 unique payloads. `chip_variant` stays
+`1` (MAX86171) across all 9,456 records — no change to that finding.
+
+**Both specific sub-hypotheses tested and falsified:**
+
+1. **"Constant register-address byte" (byte[3]/byte[9]) is NOT a real
+   MEASn register address.** Confirmed value is `0xCC` in the overwhelming
+   majority (8,421/9,456 = 89% chan-A, 9,456/9,456 = 100% chan-B) with a
+   `0xFC` variant in the remainder (1,035/9,456 chan-A only — new finding,
+   this byte is not the "100% constant" the 2026-07-12 note claimed once
+   the corpus grew). The reference doc documents real MEASn Config
+   register addresses in the `0x19`–`0x33` range (9 MEASn blocks × 3
+   config registers, starting at `0x19` for MEAS1). `0xCC` and `0xFC` are
+   both far outside that range. This byte is not a register address.
+2. **"Near-fixed calibration offset" (byte[0]/byte[6], `byte[6] =
+   byte[0] + 17` in most records) does NOT match `DACOFF[1:0]` or
+   `PPGx_ADC_RGE[1:0]`.** Both are documented as pure 2-bit fields (4
+   possible values, 0–3). Byte[0] alone spans **11 distinct raw values**
+   across the corpus (`0xa0, 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xc0, 0xc1,
+   0xc2, 0xe0, 0xe1`) and byte[6] spans 9 — a full-byte range
+   inconsistent with any bare 2-bit field. Whatever this byte encodes,
+   it is not simply DACOFF or ADC_RGE.
+
+**Broader 3-byte/half structural mapping also does not hold.** Testing
+byte[0]/[1]/[2] as Config1/2/3 (in that order) fails at byte[2]: with the
+full corpus, byte[2] (chan A) takes only `0x01`/`0x11` and byte[8] (chan
+B) only `0x10`/`0x11` — i.e. bit0 flags "this is channel A's half" and
+bit4 flags "this is channel B's half," with both bits set together in a
+minority of records (63/9,456 chan-A raw, matching the earlier-flagged
+"6 exceptions" pattern at the same ~1% rate). This is a channel-select
+bitmask, not a register value — it cannot be `PDSEL/TINT/AVER` (which
+would need far more than 2–3 observed states). Testing byte[3]/[4]/[5]
+as Config1/2/3 instead: byte[4] shows only 2 raw values (`0x00`/`0x30`
+chan A, `0x00`/`0x20` chan B) against a documented 8-bit field with up
+to 256 legal combinations, and byte[5]/byte[11] shows a 6-value stepped
+set (`1, 4, 8, 16, 24, 32`) that partially resembles but does not
+cleanly match an `AVER[2:0]` 2^N series (`1, 2, 4, 8, 16, 32, 64, 128`
+expected; `2, 64, 128` never observed, `24` is not a power of 2).
+Neither grouping produces a clean, internally-consistent field
+decomposition.
+
+**Conclusion: hypothesis NOT confirmed. Register-level field identity
+remains unresolved** — the datasheet gives plausible byte-width shapes
+but the actual observed value distributions don't line up with any of
+the three specific register layouts it documents, for either candidate
+byte grouping. Per the real-data-only discipline this is logged as a
+falsified hypothesis with equal weight to a positive finding, not
+discarded. `0x61/0x33` **stays PARTIAL**, not promoted to DONE. No
+decoder code changes made — the byte-split structure
+(`channel_a`/`channel_b`) already implemented was correct and unaffected
+by this result; only the docstring's characterization of the "next
+step" was updated to reflect that the datasheet cross-check happened and
+came back negative. Ceiling unchanged from 2026-07-12: individual
+register identity still needs actual Oura firmware, not just the generic
+chip datasheet — the datasheet resolves register *shape* (bit widths)
+but Oura's firmware picked its own byte arrangement that doesn't match
+the vendor's example MEASn layout, and there's no way to recover that
+arrangement from behavioral correlation alone.
+
+*Logged 2026-07-21. Analysis script run ad hoc against the full raw_pulls
+corpus (not checked in); byte-position statistics reproducible via
+`grep -h "Debug data" pipeline/data/raw_pulls/*/*.txt | grep "payload=33"`
+followed by the standard payload[2:14] split already in
+`pipeline/decoders/0x61_33.py`.*
+

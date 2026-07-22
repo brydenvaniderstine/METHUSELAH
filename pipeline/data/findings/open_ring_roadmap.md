@@ -385,15 +385,31 @@ just unattempted — see known_issues.md 2026-07-11 for the full survey.
       flag via exact cross-record arithmetic. Field count/shape now
       understood; field IDENTITY (physical channel/quantity) still
       needs firmware. Decoder: `pipeline/decoders/0x61_28.py`.
-- [~] 0x61/0x33 _dd_open_afe_ppg_settings_data — PARTIAL, n=88 (grew from
-      68). **Confirms the Gen3 ring's PPG sensor chip is a MAX86171**
+- [~] 0x61/0x33 _dd_open_afe_ppg_settings_data — PARTIAL, n=9,456 full-length
+      raw / 63 unique settings blobs across 35 files (grew hugely from the
+      2026-07-12 count of 88 total/45 unique via continuous daemon
+      polling). **Confirms the Gen3 ring's PPG sensor chip is a MAX86171**
       (chip_variant=1 in every sample) — real hardware ID, not inferred.
       2026-07-12: the 12-byte settings blob confirmed to split into two
       structurally-identical 6-byte per-channel (A/B) halves, with a
       channel-marker byte, a constant register-address byte, and a
-      near-fixed calibration offset all identified. Register-level
-      identity within each half still needs the MAX86171 datasheet.
-      Decoder: `pipeline/decoders/0x61_33.py`.
+      near-fixed calibration offset all identified.
+      2026-07-21: tested against the real MAX86171 datasheet
+      (`max86171_register_reference.md`) — **FALSIFIED**. The "constant
+      register-address byte" (`0xCC`, rare `0xFC` variant) falls outside
+      the documented MEASn config register range (`0x19`-`0x33`); the
+      "near-fixed calibration offset" byte spans 9-11 distinct raw values,
+      inconsistent with the 2-bit `DACOFF`/`ADC_RGE` fields it was
+      hypothesized to match. Neither candidate 3-byte grouping
+      (PDSEL/TINT/AVER + SINC3/FILT/LED_RGE/ADC_RGE + PD_SETLNG/
+      LED_SETLNG/DACOFF) decomposes cleanly against observed value
+      ranges. Full analysis in known_issues.md 2026-07-21. Register-level
+      identity within each half remains unresolved — needs actual Oura
+      firmware, not just the generic chip datasheet (datasheet gives
+      register *shape*, not Oura's specific byte arrangement). Still
+      PARTIAL, not promoted to DONE. Decoder: `pipeline/decoders/0x61_33.py`
+      (code unchanged — byte-split structure was already correct;
+      docstring updated to record the falsified hypothesis).
 - [~] 0x61/0x15 _dd_finger_detection — PROMOTED to PARTIAL 2026-07-12 (was
       RAW ONLY at n=4). The BLE daemon's continuous polling grew the corpus
       to 11 unique real samples (18 raw log lines, several are duplicate

@@ -36,12 +36,35 @@ SPO2 DC event both alternate channel A/B):
     settings that legitimately differ between the two PPG channels,
     rather than a decode gap.
 
-Ceiling: the two-halves structure is now solid, but individual byte
-IDENTITY within each half (which register: LED current? PD gain? ADC
-range?) is still unknown without the MAX86171 datasheet/register map --
-this really is a vendor-specific register dump, not fully
-reverse-engineerable from behavioral correlation alone. Not promoted to
-DONE.
+Ceiling (as of 2026-07-12): the two-halves structure is now solid, but
+individual byte IDENTITY within each half (which register: LED current?
+PD gain? ADC range?) is still unknown without the MAX86171
+datasheet/register map. Not promoted to DONE.
+
+TESTED 2026-07-21 against pipeline/data/findings/max86171_register_reference.md
+(real ADI MAX86171 datasheet extract) on the grown corpus (9,456
+full-length raw records / 63 unique settings blobs across 35 files).
+Hypothesis: the two 6-byte halves map to MEASn Configuration 1/2/3
+register fields (PDSEL/TINT/AVER, SINC3_SEL/FILT_SEL/LED_RGE/ADC_RGE,
+PD_SETLNG/LED_SETLNG/DACOFF). FALSIFIED:
+  - byte[3]/byte[9] ("constant register-address byte", 0xCC with a rare
+    0xFC variant -- not 100% constant as first thought) falls outside
+    the documented MEASn config register address range (0x19-0x33).
+    Not a real register address.
+  - byte[0]/byte[6] ("near-fixed calibration offset") spans 9-11
+    distinct raw values across the corpus -- inconsistent with
+    DACOFF[1:0] or ADC_RGE[1:0], both pure 2-bit (4-value) fields.
+  - Neither candidate 3-byte grouping within a half decomposes cleanly
+    into the documented field layout; byte[2]/byte[8] is demonstrably a
+    channel-select bitmask (bit0=chan A, bit4=chan B, both set in a
+    rare ~1% minority), not a register value, which rules out the
+    byte[0..2]=Config1/2/3 grouping outright.
+Full writeup: known_issues.md 2026-07-21. Register-level field identity
+remains unresolved -- needs actual Oura firmware, not just the generic
+chip datasheet (datasheet gives register shape, not Oura's specific
+byte arrangement). Still PARTIAL, not promoted to DONE. No decode logic
+changed by this test -- the channel_a/channel_b split below was already
+correct.
 """
 
 
