@@ -26,6 +26,7 @@ from decoders import (
 from decoders.hrv_rmssd import calculate_rmssd
 from gen3_bridge import build_bridge_data, write_local_bridge_file, push_bridge_json
 from sleep_duration_estimate import estimate_sleep_duration, bout_totals_snapshot
+from oura_gen3_ble_daemon import EVENT_TAGS
 
 DAEMON_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'raw_pulls', 'gen3_daemon')
 REPO_ROOT  = os.path.join(os.path.dirname(__file__), '..', '..')
@@ -67,6 +68,14 @@ def save_bout_checkpoint(prior, entries):
 # last meaningful boot_ts 67975382, daemon duration=8h=28800s → 14.28 ticks/sec).
 # This is an approximation; 0x4C sleep summary is authoritative when available.
 TICKS_PER_SEC = 14.279
+
+# UNKNOWN (0x11) end-of-transfer acks carry garbage boot_ts bytes that can land
+# on EITHER side of the real range (confirmed both here, 2026-07-23, and
+# independently in sleep_confidence_analysis.py's derive_tick_rate, which
+# established this same fix first) -- a magnitude-only filter is not
+# sufficient. Filtering by EVENT_TAGS membership mirrors that already-
+# validated approach instead of duplicating it with a weaker check.
+VALID_TAG_NAMES = set(EVENT_TAGS.values())
 
 
 def parse_daemon_log(path):
@@ -134,13 +143,21 @@ def main(log_path, do_push=False):
             print(f"Real connected-session span: {session_span_hrs:.2f}h "
                   f"(header start -> log file mtime)")
 
-    # Compute tick rate from first/last boot_ts and daemon duration
-    meaningful = [e['boot_ts'] for e in entries if e['boot_ts'] < 100_000_000]  # exclude glitch values
-    if meaningful and header.get('duration_h'):
+    # Compute tick rate from first/last boot_ts and the REAL session span
+    # (session_span_hrs, above) -- NOT the nominal header duration_h. Using
+    # the nominal --duration argument here reintroduced exactly the
+    # nominal-vs-real mismatch session_span_hrs exists to guard against: this
+    # block predates 238da35 (added 2026-07-18) and was silently dead code
+    # until that commit's header-regex fix accidentally activated it, on a
+    # real log where the session ended early -- confirmed 2026-07-23 against
+    # gen3_daemon_20260722_211651.txt (nominal 8.0h, real 5.41h session span),
+    # which is exactly what produced a 300x-wrong "3442.924 ticks/sec" print.
+    meaningful = [e['boot_ts'] for e in entries if e['tag_name'] in VALID_TAG_NAMES]
+    if meaningful and session_span_hrs:
         span_ticks = max(meaningful) - min(meaningful)
-        span_secs = header['duration_h'] * 3600
+        span_secs = session_span_hrs * 3600
         tick_rate = span_ticks / span_secs if span_secs > 0 else TICKS_PER_SEC
-        print(f"Tick rate: {tick_rate:.3f} ticks/sec (derived from log span + header duration)")
+        print(f"Tick rate: {tick_rate:.3f} ticks/sec (derived from log span + real session span)")
     else:
         tick_rate = TICKS_PER_SEC
         print(f"Tick rate: {tick_rate:.3f} ticks/sec (fallback constant)")

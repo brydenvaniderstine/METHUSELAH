@@ -6588,3 +6588,104 @@ The estimate was being computed correctly and then discarded at the last step.
 case, otherwise unchanged. No stage/confidence UI added. See SESSION_HANDOFF.md
 2026-07-22 session 4 for full detail and verification method (synthetic
 `resolveVectors()` tests + clean `react-scripts build`, not yet browser-verified).
+
+## Fixed: recompute_bridge_from_daemon.py's tick_rate print was 300x wrong (diagnostic-only, no bridge-output impact) — real finding underneath: a 2nd confirmed BLE connect() deadlock, 2026-07-23
+
+**Trigger:** last night's real run (`gen3_daemon_20260722_211651.txt`) printed
+"Real connected-session span: 5.41h" and "Tick rate: 3442.924 ticks/sec" —
+the latter ~300x off the ~10.9 ticks/sec (655/min) figure calibrated and
+trusted elsewhere in the pipeline.
+
+### Root cause 1 (confirmed, fixed): tick_rate used nominal duration, not real span
+
+`recompute_bridge_from_daemon.py`'s "Compute tick rate from first/last
+boot_ts and daemon duration" block predates 238da35 (added 2026-07-18,
+`d6cebc1`) and was silently dead code the whole time — the header regex
+was integer-only (`\d+`) and never matched real logs (`poll=5.0s`), so
+`header.get('duration_h')` was always falsy and this block always hit its
+`else` fallback. 238da35's regex fix (float-accepting) activated this
+block for the first time, on the first real log where the session ended
+early — reintroducing exactly the nominal-vs-real mismatch
+`session_span_hrs` (added in the same commit) exists to guard against, in
+a second, un-updated place. Compounded by a second real bug: the
+`< 100_000_000` glitch filter let one isolated `UNKNOWN (0x11)` outlier
+(`boot_ts=99156223`, sandwiched between real ~72.75M-tick entries) through,
+inflating the numerator ~23x on top of the nominal-duration denominator
+bug. `sleep_confidence_analysis.py`'s `derive_tick_rate` had already found
+and fixed this same class of bug independently (2026-07-22 entry above,
+"UNKNOWN (0x11) ... can land on EITHER side of the real range") — this
+session mirrored that established fix (filter by `EVENT_TAGS` membership,
+imported from `oura_gen3_ble_daemon`) instead of inventing a new one.
+
+**Fix:** `tick_rate = span_ticks / (session_span_hrs * 3600)` instead of
+`header['duration_h'] * 3600`; `meaningful` filtered by
+`e['tag_name'] in VALID_TAG_NAMES` (`EVENT_TAGS.values()`) instead of a
+magnitude threshold.
+
+**Verified against real data, not assumed:** ran the actual script (no
+`--push`) against all 5 real logs on disk (07-18/19 through 07-22/23)
+before and after, diffed full output — only the `Tick rate:` line changed
+in every case; bout stages, HRV, RHR, spo2, sleep_duration_estimate_hrs,
+and session_span_hrs were byte-identical before/after in all 5. Fixed
+tick rates (220–270 ticks/sec for the 4 full/near-full nights, 104 for the
+partial 07-21/22 night) land within 20–25x of the 655/min bout-local
+figure — matching, not contradicting, the already-documented
+"~22x whole-log-vs-bout-local" discrepancy (2026-07-21 investigation
+entry) rather than resolving it. This print remains a rough diagnostic,
+not a precision figure — same caveat as before, now at the right order of
+magnitude. `tick_rate` is not consumed anywhere downstream (confirmed by
+grep) — this was a console-only bug, never a bridge-output bug.
+
+**Outer-ceiling check re-verified, not assumed unaffected:** it only ever
+consumed `session_span_hrs` (untouched by this fix). Re-ran
+`estimate_sleep_duration()` directly against 07-19/20's real entries three
+ways: real ceiling (~8.0h) → unchanged 6.6h result; deliberately tight
+ceiling (1.0h, same method 238da35 used to verify the ceiling originally)
+→ correctly declines ("6.60h exceeds ... 1.10h ceiling"); no ceiling
+(`None`) → same 6.6h. 07-22/23's own result is byte-identical before/after
+this fix (declines for an unrelated reason — "final bout has only 1
+sample" — the ceiling was never the active decline path that night).
+
+### Root cause 2 (investigated, NOT a bug — a real incident): the 5.41h session span is correct
+
+The task that motivated this fix assumed `session_span_hrs=5.41h` was
+also wrong ("the daemon visibly ran ~8 hours ... to ~05:17"). Real-data
+investigation does not support that — it supports a 2nd confirmed
+occurrence of the already-documented `connect()` deadlock instead:
+
+- `pmset -g log` shows the Mac was continuously awake all night (one Wake
+  event at 21:15:47, no Sleep until 05:44:23 the next morning) — consistent
+  with the daemon *process* staying alive to ~05:17 as observed.
+- But the log file's own real captured data stops cold at `boot_ts=76192248`
+  (a normal SPO2 entry), immediately followed by a burst of `UNKNOWN (0x11)`
+  garbage and then total silence — file mtime frozen at 02:41:25 and never
+  touched again despite 3 more hours of Mac uptime.
+- The mtime-based `session_span_hrs` approach, applied to the already-
+  trusted `gen3_daemon_20260721_213131.txt` (documented "~6h46m real"),
+  reproduces that exact figure (6.77h) — an established, previously-
+  validated pattern, not a new hypothesis.
+- `oura_gen3_ble_daemon.py`'s own reconnect loop (`gen3_ble_connection.py`
+  line 106, `await client.connect()` inside `open_connection()`, wrapped in
+  `asyncio.wait_for(..., timeout=25)`) carries a comment citing an *identical*
+  prior incident: "confirmed 2026-07-17 overnight where connect() blocked
+  from 04:31 until manually killed at 05:27." Last night's symptom (process
+  alive, log frozen, required manual intervention hours later) matches that
+  exact signature — the 25s `wait_for` mitigation is documented there as
+  imperfect against macOS/CoreBluetooth's `connectPeripheral:` behavior.
+
+**Conclusion: `session_span_hrs` is doing its job correctly** — it detected
+a real early-terminated connected session (BLE lost ~02:41), which is
+exactly the category of gap 238da35 built it to catch. No fix applied here;
+not a bug. This is the 2nd confirmed occurrence of the `connect()` deadlock
+(1st: 2026-07-17) — worth a real fix (e.g. a hard watchdog that kills and
+restarts the daemon subprocess if the log file stops growing for N
+minutes) if it recurs a 3rd time. Flagged in SESSION_HANDOFF.md's next-
+session-priority list, not built this session (out of scope for a
+diagnostic-print bug fix).
+
+*Logged 2026-07-23. Sources: `gen3_daemon_20260718_222458.txt`,
+`gen3_daemon_20260719_212709.txt`, `gen3_daemon_20260720_213320.txt`,
+`gen3_daemon_20260721_213131.txt`, `gen3_daemon_20260722_211651.txt`
+(all 5 real logs on disk, before/after diff), `pmset -g log` (real system
+sleep/wake history), `gen3_ble_connection.py`/`oura_gen3_ble_daemon.py`
+(real reconnect-loop source), `python3 -m py_compile` on the modified file.*
