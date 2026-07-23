@@ -47,6 +47,7 @@ are preserved.
 """
 import asyncio
 import os as _os
+import re as _re
 import sys as _sys
 import time
 from collections import Counter
@@ -238,36 +239,97 @@ def decode_cycle_events(events):
     return accum, pull_class, fails
 
 
+_LOG_LINE_RE = _re.compile(r'^\[(.+?)\] boot_ts=(\d+) payload=([0-9a-f]+)$')
+
+
+def _last_real_boot_ts_in_log(log_path):
+    """Highest EVENT_TAGS-known boot_ts already present in an existing log
+    file, or 0 if the file doesn't exist / has none yet.
+
+    Used only when resuming a session at an already-existing log_path (see
+    main()'s is_resume check) -- lets a watchdog-restarted process's first
+    history request start from where the previous (dead) process left off,
+    instead of a since_boot_ts=0 full-history re-fetch that would re-log
+    everything already captured as duplicates in the same file. Mirrors
+    the live loop's own checkpoint filter (tag in EVENT_TAGS) exactly,
+    reading tag_name strings back out of the file instead of numeric tags.
+    """
+    if not _os.path.exists(log_path):
+        return 0
+    valid_names = set(EVENT_TAGS.values())
+    max_ts = 0
+    with open(log_path) as f:
+        for line in f:
+            m = _LOG_LINE_RE.match(line.strip())
+            if m and m.group(1) in valid_names:
+                ts = int(m.group(2))
+                if ts > max_ts:
+                    max_ts = ts
+    return max_ts
+
+
 async def main():
     poll_seconds = float(_sys.argv[1]) if len(_sys.argv) > 1 else 5
     duration_hr = float(_sys.argv[2]) if len(_sys.argv) > 2 else 8
+    # Optional 3rd/4th args: an explicit log_path + absolute end_epoch,
+    # supplied by gen3_daemon_watchdog.py so a restarted process resumes
+    # the SAME overnight session instead of starting a fresh one. If
+    # log_path already exists and is non-empty, this is a resume: skip the
+    # header line (recompute_bridge_from_daemon.py's parser keeps exactly
+    # one true header per file) and seed last_boot_ts from the file's own
+    # last real entry. A manual/normal launch (no args) behaves exactly as
+    # before -- this is purely additive.
+    explicit_log_path = _sys.argv[3] if len(_sys.argv) > 3 else None
+    explicit_end_epoch = float(_sys.argv[4]) if len(_sys.argv) > 4 else None
     morning_pull_threshold_hrs = 4  # fire safety-net morning pull if less than this captured
-    end_time = time.time() + duration_hr * 3600
 
     repo_root = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', '..')
     log_dir = _os.path.join(repo_root, 'pipeline', 'data', 'raw_pulls', 'gen3_daemon')
     _os.makedirs(log_dir, exist_ok=True)
-    log_path = _os.path.join(log_dir, f"gen3_daemon_{time.strftime('%Y%m%d_%H%M%S')}.txt")
+
+    if explicit_log_path:
+        log_path = explicit_log_path
+        end_time = explicit_end_epoch if explicit_end_epoch is not None else time.time() + duration_hr * 3600
+    else:
+        log_path = _os.path.join(log_dir, f"gen3_daemon_{time.strftime('%Y%m%d_%H%M%S')}.txt")
+        end_time = time.time() + duration_hr * 3600
+
+    is_resume = _os.path.exists(log_path) and _os.path.getsize(log_path) > 0
 
     digest_every = max(1, round(600 / poll_seconds))  # ~every 10 minutes
     tag_tally_since_digest = Counter()
-    last_boot_ts = 0
+    last_boot_ts = _last_real_boot_ts_in_log(log_path) if is_resume else 0
     total_events_logged = 0
-    ibi_packets_all: list = []  # all IBI packet lists across all cycles, for nightly RMSSD
+    # All IBI packet lists across all cycles, for nightly RMSSD. On a watchdog
+    # resume this starts empty like everywhere else in this function -- a
+    # fresh process has no memory of the pre-restart segment's IBI packets,
+    # so LIVE per-cycle HRV pushes during the resumed segment are based on
+    # only the new segment until enough cycles accumulate. Not fixed here:
+    # the authoritative source is always the post-run recompute
+    # (recompute_bridge_from_daemon.py), which re-parses the COMPLETE log
+    # file from scratch regardless of how many process restarts occurred,
+    # so this is a minor live-view-only gap, not a data-correctness issue.
+    ibi_packets_all: list = []
     recent_tags: set = set()    # tags seen in the last two cycles; used to classify disconnects
     disconnected = asyncio.Event()
 
     def on_disconnect(_client):
         disconnected.set()
 
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Starting Gen3 BLE daemon: "
-          f"poll every {poll_seconds}s, for up to {duration_hr}h. Ctrl+C to stop.")
+    if is_resume:
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] RESUMING existing session (watchdog "
+              f"restart or manual resume): {log_path}, seeded last_boot_ts={last_boot_ts}, "
+              f"original session end={time.strftime('%H:%M:%S', time.localtime(end_time))}")
+    else:
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Starting Gen3 BLE daemon: "
+              f"poll every {poll_seconds}s, for up to {duration_hr}h. Ctrl+C to stop.")
     print(f"Logging to: {log_path}")
 
     with open(log_path, "a") as logf:
-        logf.write(f"=== Daemon started {time.strftime('%Y-%m-%d %H:%M:%S')} "
-                    f"(poll={poll_seconds}s, duration={duration_hr}h) ===\n")
-        logf.flush()
+        if not is_resume:
+            logf.write(f"=== Daemon started {time.strftime('%Y-%m-%d %H:%M:%S')} "
+                        f"(poll={poll_seconds}s, duration={duration_hr}h) ===\n")
+            logf.flush()
 
         client = None
         cycle = 0

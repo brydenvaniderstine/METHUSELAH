@@ -6689,3 +6689,289 @@ diagnostic-print bug fix).
 (all 5 real logs on disk, before/after diff), `pmset -g log` (real system
 sleep/wake history), `gen3_ble_connection.py`/`oura_gen3_ble_daemon.py`
 (real reconnect-loop source), `python3 -m py_compile` on the modified file.*
+
+## Investigation: why 0x4C bouts fail to finalize fresh — connection-gap severity is now the primary explanation for 2 of 3 declines; 1 remains a separate, already-understood cause; 1 gap's specific mechanism stays unconfirmed, 2026-07-23
+
+**INVESTIGATION ONLY — no code changed.** Scope: now that 07-22/23's
+decline is explained by a confirmed `connect()` deadlock (entry above),
+determine whether the other 2 declined nights (07-20/21, 07-21/22) share
+that cause or have distinct causes, using the 4 real overnight logs on
+record (07-19/20 success, 07-20/21 decline, 07-21/22 decline, 07-22/23
+decline/deadlock).
+
+### Method
+
+No stdout/console capture exists for any of these 4 nights (confirmed by
+search — `pipeline/logs/` only has empty/irrelevant launchd logs, no
+`/tmp/daemon_tonight.txt` or equivalent survives from any of them). The
+daemon's own live disconnect classification (`RANGE-DROP` vs `WEAR-EVENT`,
+`Connected`/`Disconnected`/`Connect timed out` prints) only ever goes to
+`print()`, never to the log file itself (confirmed by reading
+`oura_gen3_ble_daemon.py` — `logf.write()` is called in exactly one place,
+only for real decoded events). So the literal daemon-reported disconnect
+classification the task asked to cross-reference **does not exist** for
+any of these 4 nights and cannot be retrieved — it was never persisted.
+Everything below is reconstructed from what the raw log content and real
+filesystem/system timestamps can actually support, and is explicit about
+that boundary.
+
+Four checks, all real-data, none assumed:
+1. **`session_span_hrs`** (header start → log file mtime, already-validated
+   method) for each night, and the exact gap between mtime and that
+   night's own nominal 8h end.
+2. **Tail signature** — last ~10-15 real entries in file order, checked for
+   the same corrupted `UNKNOWN (0x11)` zero/garbage-burst pattern
+   confirmed for 07-22/23, vs. a clean ending.
+3. **Mid-session tick-jump scan** — consecutive-entry boot_ts deltas across
+   the *whole* log (EVENT_TAGS-filtered, same method the 2026-07-21
+   22x-discrepancy investigation used for 07-19/20), to check for a large
+   jump anywhere that would indicate an earlier gap-and-reconnect within
+   the night, not just an end-of-session cutoff.
+4. **`pmset -g log`** for each night's window, to independently confirm or
+   rule out the Mac itself sleeping as the cause of an early stop.
+
+Plus, reconstructed **in-memory only** (no writes to the real
+`pipeline/data/bridge/bout_checkpoint.json`) the same new-vs-carryover
+bout-freshness chain `recompute_bridge_from_daemon.py` persists, run in
+real chronological order starting fresh at 07-19/20, to see whether the
+*final* bout used for each night's estimate was fresh or stale carryover.
+
+### Per-night findings
+
+**07-19/20 (success, baseline):** `session_span_hrs=8.00h`, gap to nominal
+end = 3 sec (i.e., none). Zero entries >600 ticks apart anywhere in
+425,748 consecutive deltas (matches the already-documented 2026-07-21
+finding exactly). Ends cleanly on real Motion/Real-step data plus the
+already-understood small-value `0x11` terminator artifact. Final bout
+(`bout_start=76149641`, 4 samples) is — trivially, as the seed night —
+the one already used for the real 6.6h estimate.
+
+**07-20/21 (declined: "no wake/activity signal"):**
+`session_span_hrs=7.81h`. Real gap: log's last write (`05:22:11`) to that
+night's own nominal end (`21:33:20 + 8h = 05:33:20`) = **11 min 09 sec** —
+not a multi-hour gap. `pmset` confirms the Mac stayed awake through
+`05:40:02` (18 min after mtime, only ~7 min after nominal end) before
+sleeping — consistent with the daemon reaching its own scheduled
+`end_time` and exiting cleanly (`while time.time() < end_time` simply
+becoming false), not a hang. Zero tick-jumps >600 anywhere (427,502
+deltas checked). Tail ends on ordinary real SPO2/IBI entries, no garbage
+burst. **In-memory freshness check: 4 NEW bouts this session
+(`bout_starts` 76727073/76813773/76960473/76992273), 17 carryover — and
+critically, the *final* bout used for the estimate (`bout_start=76992273`,
+3 samples) is itself one of the new ones, not stale.** The decline is
+exactly what the existing reason states: a real, fresh, valid final bout
+with no sustained wake/activity signal found after it in this log's own
+window — plausibly because the same ~11-minute late gap is what kept that
+signal from ever being captured, but not provably so (no way to know what
+the next 11 minutes would have shown). **Verdict: this night's connection
+was genuinely healthy for effectively the whole night (99.8% of nominal
+duration, fresh bout obtained); the decline is a real, separate,
+already-understood tail-timing issue — not a hidden deadlock.**
+
+**07-21/22 (declined: "final bout has only 1 sample"):**
+`session_span_hrs=6.77h`. Real gap: log's last write (`04:17:41`) to
+nominal end (`21:31:31 + 8h = 05:31:31`) = **1h 13m 50s** — a materially
+larger, more deadlock-shaped gap than 07-20/21's. `pmset` confirms the Mac
+stayed awake through `05:51:27` (over 1.5h after mtime, ~20 min past that
+night's own nominal end) before sleeping — same "Mac never slept, daemon
+went silent anyway" signature as both 07-20/21 and the confirmed 07-22/23
+deadlock. Zero tick-jumps >600 anywhere (135,533 deltas checked) — same as
+every other night; no detectable *mid-session* gap-and-recovery, only a
+terminal one. Tail ends on a diverse, non-corrupted mix of real tags
+(`UNKNOWN (0x80)`, Motion event, PPG amplitude, Debug event, State change,
+Debug data) — **no** `UNKNOWN (0x11)` garbage-burst signature (that
+remains unique to 07-22/23). **In-memory freshness check: 0 new bouts this
+session, all 5 bouts carryover — final bout (`bout_start=73311579`, 1
+sample) is stale, not fresh.** An informal look at the `State change`
+(0x45) tag's ASCII text right at the tail (`hr enable`/`fea off` pairs,
+not yet a validated decoder — flagged as exploratory only) shows a
+different local pattern than the other 3 nights' `motion det`/`timeout`
+tail pattern, but 0x45's full vocabulary across all 4 nights is
+identical and entirely about onboard sensor-feature state (HR sensor
+enable, motion-detect timeout, orientation, charging, HW self-test) —
+**it has nothing to do with BLE connectivity**, so this is a soft,
+inconclusive observation, not a signal. **Verdict: the connection was
+healthy for most of the night but suffered a real, substantial (~74 min),
+un-recovered late gap long enough to plausibly explain why no fresh bout
+ever finalized. Whether this specific gap was the same `connect()`
+deadlock as 07-22/23, or a distinct (e.g. genuine multi-hour range/
+off-body) cause, is NOT determined — unlike 07-22/23 there is no
+corroborating garbage-burst signature, and no stdout capture exists for
+this night to check the daemon's own disconnect classification. This is a
+real, standing unknown, not resolved by this investigation.**
+
+**07-22/23 (declined: "final bout has only 1 sample," confirmed
+deadlock — see entry above):** `session_span_hrs=5.41h`, gap to nominal
+end = **2h 35m 26s**, the largest of the 3. Same zero-tick-jump result
+(254,393 deltas checked — no mid-session gap, only the already-documented
+terminal one). Final bout (`bout_start=75882041`, 1 sample) also stale
+carryover (0 new bouts this session), same as 07-21/22.
+
+### Cross-referenced: connection-gap severity vs. bout freshness, all 4 real nights
+
+| Night | Gap to nominal end | New bouts this session | Final bout fresh? | Decline reason |
+|---|---|---|---|---|
+| 07-19/20 | ~0 | n/a (seed) | fresh | — (succeeded, 6.6h) |
+| 07-20/21 | 11 min | 4 | **fresh** | no wake signal (unrelated to freshness) |
+| 07-21/22 | 74 min | 0 | stale | final bout too thin (1 sample) |
+| 07-22/23 | 155 min | 0 | stale | final bout too thin (1 sample), confirmed deadlock |
+
+**This is a real, demonstrated correlation, not assumed:** both nights
+with a small/no terminal gap (07-19/20, 07-20/21) obtained a fresh final
+bout; both nights with a large terminal gap (07-21/22, 07-22/23) got
+nothing but stale carryover. The threshold isn't pinned down precisely
+with only 4 nights (11 min was fine, 74 min was not — the real cutoff is
+somewhere in between, unknown), but the direction and magnitude of the
+effect is consistent and unambiguous across all 4 real nights checked.
+
+### Honest overall assessment
+
+**Connection-gap severity is now the primary, unifying explanation for
+why fresh 0x4C bouts fail to finalize — replacing what looked like 3
+separate flaky-data problems with one coherent framework**, with two
+explicit caveats:
+
+1. **07-20/21's decline is a genuinely separate, second-order issue**
+   (missing wake-signal in the recorded window), not explained by
+   connection health directly — its connection was fine and it still got
+   a fresh, valid bout. It's *plausibly* downstream of that same night's
+   own small 11-minute gap (a few more minutes might have captured a wake
+   burst), but that's speculation, not a demonstrated cause-and-effect.
+2. **07-21/22's gap mechanism is still genuinely unconfirmed.** It shares
+   07-22/23's outcome (large terminal gap, all-stale bouts, Mac-stayed-
+   awake-but-daemon-silent signature) but not its corroborating evidence
+   (no garbage-burst tail, no stdout). Calling it "the same `connect()`
+   deadlock" would be going beyond what this session's real data supports
+   — it's consistent with that explanation, not confirmed by it. A 3rd
+   occurrence with an intact stdout capture (e.g. `nohup ... >
+   /tmp/daemon_tonight.txt` kept instead of discarded) would resolve this.
+
+**No evidence was found for, or needs to be invoked for, a separate
+firmware-side finalization quirk unrelated to connection quality.**
+Every declined night's symptom is adequately explained by either (a) an
+extended terminal connectivity gap (07-21/22, 07-22/23) or (b) a distinct,
+already-understood tail-timing gap in the wake-signal search window
+(07-20/21) — nothing in the 4-night corpus requires positing an
+independent ring-firmware cause.
+
+*Logged 2026-07-23. Sources: all 4 real logs
+(`gen3_daemon_20260719_212709.txt` through `gen3_daemon_20260722_211651.txt`),
+`pmset -g log` (real sleep/wake history for all 3 relevant windows),
+`oura_gen3_ble_daemon.py` (confirmed no wall-clock/disconnect data is
+ever written to the log file itself), direct calls to
+`recompute_bridge_from_daemon.parse_daemon_log` and
+`sleep_duration_estimate._group_bouts`/`estimate_sleep_duration`/
+`bout_totals_snapshot` (read-only — no persisted checkpoint or bridge
+file written by this investigation). No code modified.*
+
+## ADDRESSED (not yet "resolved" — awaiting a real overnight test): subprocess-level watchdog built for the recurring connect() deadlock, 2026-07-23
+
+**Status: ADDRESSED, not RESOLVED.** A watchdog is built, tested against a
+simulated hang, and committed — but has not yet survived a real overnight
+run. Mark this fully resolved only after a real night confirms it recovers
+from an actual deadlock (or confirms a full night with zero deadlocks and
+zero false-positive restarts).
+
+**Design, in scope strictly to the daemon's connection-health layer** —
+`classify()`, `sleep_duration_estimate.py`, `recompute_bridge_from_daemon.py`,
+and the bridge were not touched (confirmed by diff before committing).
+
+**Detection signal chosen: wall-clock time since the log file's last real
+write, not the packet-corruption ("garbage burst") tail signature.**
+Checked against real data first, per the task's own instruction: the
+2026-07-22/23 confirmed deadlock did show a garbage burst right before
+going silent, but the 2026-07-21/22 likely-deadlock (known_issues.md,
+prior entry above) shows the identical multi-hour-silence symptom with a
+perfectly clean tail — a burst-based detector would have missed that one
+entirely. Time-since-last-event catches both, independent of which
+failure mode (if any) happens to produce extra corruption on the way down.
+
+**Threshold: 20 minutes, justified against real recorded gaps, not
+picked arbitrarily** (see prior entry's cross-referenced table):
+- 07-20/21's confirmed-healthy end-of-night gap: 11 min → threshold
+  clears it with ~1.8x real margin.
+- 07-21/22 (likely deadlock): 74 min, 07-22/23 (confirmed deadlock):
+  155 min → both clear the threshold with 3.7x–7.75x margin.
+- Real tension found and documented, not glossed over:
+  `gen3_ble_connection.py`'s own `scan_for_ring()` can legitimately run
+  silent for up to 30 real minutes in a single call
+  (`timeout_seconds=min(1800, remaining)`) if the ring simply isn't
+  advertising — so a 20-minute threshold sits *below* that theoretical
+  single-cycle ceiling and could in principle fire during a fully
+  legitimate long scan. Accepted deliberately because restarting
+  mid-scan is cheap (see below) and no real night on record has ever
+  shown a legitimate gap anywhere near 20 minutes outside the two
+  deadlock-shaped nights.
+
+**Mechanism: full subprocess kill + relaunch, not in-process
+cancellation.** `oura_gen3_ble_daemon.py`'s own code comments already
+document that macOS/CoreBluetooth can keep a cancelled `connectPeripheral:`
+call busy at the OS level past a Python-side `asyncio.wait_for` timeout —
+so an in-process fix can't be trusted to actually free a stuck connection.
+`gen3_daemon_watchdog.py` instead: SIGTERM (10s grace) then SIGKILL (which
+the OS honors unconditionally, unlike SIGTERM, even against a process
+stuck in a blocking native call) — confirmed necessary by a real test
+(see below) against a fake process that ignores SIGTERM entirely.
+
+**Never loses data, no second reconnection mechanism.** Every restart
+relaunches the *same* `oura_gen3_ble_daemon.py` script against the *same*
+log_path. New code in that script (`_last_real_boot_ts_in_log`,
+`is_resume`) detects an existing non-empty file at that path and: skips
+re-writing the header line (so `recompute_bridge_from_daemon.py`'s
+single-header parsing, untouched, still sees one true start timestamp for
+the whole night), and seeds `last_boot_ts` from the file's own last real
+entry so the resumed process's first history request asks for only
+genuinely new data — not a `since_boot_ts=0` full re-fetch that would
+duplicate everything already logged. Confirmed the seeding correctly
+ignores `UNKNOWN (0x11)` garbage (mirroring the real 07-22/23 tail
+signature) by direct test. No new reconnection logic was written — a
+restart is just a normal fresh launch of the already-validated
+2026-07-21 scan-then-connect code in `gen3_ble_connection.py`; the
+watchdog only ever decides *when* to relaunch it.
+
+**Tested against a simulated hang, not a real overnight run (per the
+task's explicit instruction):**
+- Pure threshold-logic test: fed the real 11/74/155-minute gaps directly
+  into `is_stale()` — 11min correctly does not trigger, both larger gaps
+  correctly do, with the real `STALE_MINUTES=20` constant (no test-only
+  override), so this check exercises the exact value that will run
+  tonight.
+- End-to-end mechanism test: a throwaway fake daemon script (matching the
+  real CLI contract) run under the *real* watchdog `run()` loop with
+  scaled-down timing constants (seconds instead of minutes, to keep the
+  test fast) — confirmed (a) a continuously-healthy fake daemon triggers
+  zero restarts, (b) a fake daemon that stops writing after 2 events
+  triggers exactly one restart at the right moment, (c) the resumed log
+  file has exactly one header line and contains events from *both*
+  segments (no truncation, no data loss), (d) a fake daemon that ignores
+  SIGTERM still gets killed via SIGKILL escalation.
+- **A real bug was found and fixed by this testing, not just confirmed
+  clean:** the original version waited unconditionally
+  (`proc.wait()`, no timeout) for the *final* segment to finish its own
+  POST-RUN shutdown once nominal end time was reached. A test using a
+  SIGTERM-ignoring fake daemon caught this — the watchdog itself hung
+  waiting on that final wait with nothing left to catch it. Fixed with a
+  bounded `FINAL_SEGMENT_GRACE_SECONDS=600` wait that escalates to the
+  same kill mechanism if exceeded. Re-tested after the fix: confirmed
+  bounded (finite, not hung) against the same stubborn-process scenario.
+
+**Deployment change:** overnight runs should now launch
+`gen3_daemon_watchdog.py` instead of `oura_gen3_ble_daemon.py` directly —
+same CLI shape (`[poll_seconds] [duration_hours]`), same
+`nohup ... > /tmp/daemon_tonight.txt 2>&1 &` pattern. See
+SESSION_HANDOFF.md's next-session-priority list.
+
+**Genuinely still unknown:** whether this actually recovers a real
+overnight deadlock has NOT been tested against real hardware/real
+CoreBluetooth — only against a fake subprocess standing in for the
+daemon's CLI contract. Tonight's run is the first real test.
+
+*Logged 2026-07-23. Sources: `gen3_ble_connection.py`/
+`oura_gen3_ble_daemon.py` (real reconnect-loop source, real code comments
+citing the 2026-07-17 precedent), known_issues.md's own 2026-07-23
+entries (real gap durations: 11/74/155 min), direct test runs of
+`gen3_daemon_watchdog.is_stale()` against those real values, and a live
+subprocess test harness (throwaway fake daemon scripts, not committed)
+exercising the real `gen3_daemon_watchdog.run()` and
+`oura_gen3_ble_daemon._last_real_boot_ts_in_log()` functions.
+`python3 -m py_compile` on both modified/new files.*

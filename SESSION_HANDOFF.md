@@ -33,7 +33,59 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
-**Date:** 2026-07-23 (regression fix — tick_rate print was 300x wrong; investigation found a real 2nd BLE deadlock incident underneath, not a 2nd computation bug)
+**Date:** 2026-07-23 (session 3 — built a subprocess-level watchdog for the recurring connect() deadlock; ADDRESSED, not yet RESOLVED — tonight is the first real test)
+
+- **Built `pipeline/tools/gen3_daemon_watchdog.py`.** Detects the deadlock
+  via wall-clock time since the log file's last real write (chosen over
+  the 2026-07-22/23 incident's garbage-burst tail signature — that
+  signature is real but not reliable, since the 2026-07-21/22 likely-
+  deadlock shows the identical multi-hour-silence symptom with a
+  perfectly clean tail). Threshold `STALE_MINUTES=20`, justified against
+  the real 11/74/155-minute gaps already on record (11min = confirmed
+  healthy, clears with ~1.8x margin; 74/155min = deadlock-shaped, clear
+  with 3.7x–7.75x margin) — with the real tension (scan_for_ring() can
+  legitimately run silent up to 30 real minutes in one call) documented,
+  not glossed over. On trigger: SIGTERM (10s grace) then SIGKILL the
+  daemon subprocess, then relaunch it fresh against the *same* log_path.
+- **`oura_gen3_ble_daemon.py` gained resume support** (new
+  `_last_real_boot_ts_in_log` + `is_resume` check, both additive — no
+  existing behavior changed for a normal no-args launch, confirmed by
+  diff): a restarted process appends rather than overwrites, skips
+  re-writing the header line so `recompute_bridge_from_daemon.py`'s
+  single-header parsing (untouched) still sees one true start time for
+  the night, and seeds `last_boot_ts` from the file's own last real entry
+  so it doesn't re-fetch (and re-log as duplicates) the ring's whole
+  buffer. No second reconnection mechanism was built — every restart is
+  just a normal fresh launch of the already-validated 2026-07-21
+  scan-then-connect logic in `gen3_ble_connection.py`.
+- **Strictly scoped, confirmed by diff before committing:** `classify()`,
+  `sleep_duration_estimate.py`, `recompute_bridge_from_daemon.py`, and the
+  bridge were not touched.
+- **Tested against a simulated hang, not a real overnight run** (per
+  task instruction — real hardware wasn't available/appropriate for this):
+  pure threshold logic tested directly against the real 11/74/155-min
+  gaps; a fake daemon subprocess run under the real watchdog loop
+  confirmed zero false-positive restarts on a healthy run, exactly one
+  correctly-timed restart on a simulated hang, no data loss/duplication
+  across the restart boundary (one header, both segments' events present),
+  and SIGKILL escalation against a SIGTERM-ignoring process. **This
+  testing caught a real bug, not just confirmed the design clean:** the
+  first version waited unboundedly for the *final* segment's own shutdown
+  once nominal end time was reached — a SIGTERM-ignoring fake final
+  segment hung the watchdog itself with nothing left to catch it. Fixed
+  with a bounded `FINAL_SEGMENT_GRACE_SECONDS=600` wait that escalates to
+  the same kill path; re-tested and confirmed bounded.
+- Full design rationale + real-data threshold justification in
+  `known_issues.md`, 2026-07-23 "ADDRESSED" entry.
+- **Next session / tonight:** deploy — launch
+  `gen3_daemon_watchdog.py` instead of `oura_gen3_ble_daemon.py` directly
+  (see next-session-priority item below for the exact command). This is
+  the first real overnight test; do not mark the deadlock issue
+  "RESOLVED" in known_issues.md until a real night confirms either (a) a
+  real deadlock occurred and the watchdog recovered it, or (b) a full
+  healthy night completed with zero false-positive restarts.
+
+**Date:** 2026-07-23 (session 2 — regression fix: tick_rate print was 300x wrong; investigation found a real 2nd BLE deadlock incident underneath, not a 2nd computation bug)
 
 - **Fixed a real, reproduced bug in `recompute_bridge_from_daemon.py`: the `Tick rate: ...` diagnostic print (dead code since 2026-07-18, accidentally reactivated by 238da35's header-regex fix) divided the observed boot_ts span by the *nominal* `--duration 8.0h` argument instead of the real, already-computed `session_span_hrs`, compounded by a glitch filter (`<100_000_000`) that let one isolated `UNKNOWN (0x11)` outlier through.** Fixed to use `session_span_hrs` as the denominator and filter by `EVENT_TAGS` membership (mirrors the same fix `sleep_confidence_analysis.py`'s `derive_tick_rate` already made independently 2026-07-22). Confirmed `tick_rate` is never consumed downstream — console-only bug, zero bridge-output impact.
 - **The task's other assumption — that `session_span_hrs=5.41h` was also wrong — did NOT hold up under real-data investigation, and nothing was changed there.** `pmset -g log` confirms the Mac stayed awake all night (no sleep/wake events between 21:15:47 and 05:44:23), but the real log's own captured data stops cold at `boot_ts=76192248` followed by `UNKNOWN (0x11)` garbage and then total silence — file mtime frozen at 02:41:25. `oura_gen3_ble_daemon.py`'s own reconnect-loop comment cites an identical prior incident (2026-07-17: "connect() blocked from 04:31 until manually killed at 05:27"). This is very likely a **2nd confirmed occurrence of the known `bleak`/CoreBluetooth `connect()` deadlock**, not a session-span computation bug — `session_span_hrs` correctly detected the early termination, which is exactly what 238da35 built it to do.
@@ -260,7 +312,7 @@ conflict, this file takes precedence — it is version-controlled.
 
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
 
-0. **NEW 2026-07-23 — `connect()` deadlock has now recurred a 2nd time (1st: 2026-07-17, 2nd: overnight 2026-07-22/23) — worth a real fix if it happens again.** Both times: daemon process stays alive (Mac never sleeps, confirmed via `pmset -g log`) but the log file goes silent for hours after a BLE disconnect, requiring a manual kill the next morning. The existing `asyncio.wait_for(open_connection(), timeout=25)` mitigation (`oura_gen3_ble_daemon.py` ~L296) isn't fully closing this — macOS/CoreBluetooth can keep a cancelled `connectPeripheral:` busy at the OS level past the Python-side timeout. Not fixed this session (out of scope — this session was a diagnostic-print bug fix, not a daemon reliability fix). Candidate real fix: a watchdog (separate process or a timer inside the daemon loop) that force-restarts the daemon subprocess if the log file hasn't grown in N minutes, rather than relying on `wait_for` to unstick CoreBluetooth. See `known_issues.md` 2026-07-23 entry for full real-data evidence (both nights' symptoms compared, `pmset` log, code citation).
+0. **NEW 2026-07-23 — Tonight is the FIRST REAL TEST of the connect()-deadlock watchdog. Launch with the watchdog, not the daemon directly:** `cd ~/Desktop/METHUSELAH && nohup python3 pipeline/tools/gen3_daemon_watchdog.py > /tmp/daemon_tonight.txt 2>&1 &`. Same shape as before (`[poll_seconds] [duration_hours]` optional args, same log-checking habit: `tail -f /tmp/daemon_tonight.txt`). The watchdog kills and relaunches the daemon subprocess if the log file goes >20min without a new real event — built and tested against a simulated hang this session (`known_issues.md` 2026-07-23 "ADDRESSED" entry), but has never run against real hardware/a real deadlock. In the morning: check `/tmp/daemon_tonight.txt` for any `[WATCHDOG ...]` restart lines (if present, that's a real deadlock the watchdog caught — note the timestamps and how many restarts) and confirm the night's data looks complete/continuous either way. Only mark the known_issues.md entry "RESOLVED" (currently "ADDRESSED") after this confirms one of: (a) a real deadlock occurred and was recovered, or (b) a full clean night with zero false-positive restarts.
 0. **NEW 2026-07-21 — Run an evening walk test with `walk_test_keepwarm.py` active BEFORE starting the walk.** Tool is built and dry-run verified (connects, holds, logs cleanly — see today's summary above and `known_issues.md`), but 0x7E/0x7F walk verification itself has NOT been done — deferred today for heat. Start `python3 pipeline/tools/walk_test_keepwarm.py` while stationary, wait for "Connected and authenticated. Holding warm." in the output, THEN put the ring on / leave for the walk, and leave the tool running through the whole walk. Ctrl+C when done. Check the resulting log under `pipeline/data/raw_pulls/gen3_walk/` for `Real step feature (1)`/`(2)` entries with `analyze_fft_walk.py`. Do not claim 0x7E/0x7F is fixed until this actually produces walk data — the dry run only proved connection mechanics, nothing about the buffer-timing race itself.
 0. **NEW 2026-07-19 — Wire live 0x4C decoding into the daemon loop, or accept the morning-pull-only path and prioritize its buffer window.** Finding 1 above: 24 real 0x4C firings tonight, zero used for `sleep_duration_hrs` because only `oura_gen3_morning_pull.py` has the epoch formula, and it only runs once, post-daemon, with whatever buffer happens to still be there. Two paths: (a) decode 0x4C directly in the daemon's own per-cycle loop instead of relying on a single post-run pull, or (b) keep the morning-pull-only design but investigate why tonight's post-daemon pull's buffer held no 0x4C at all (~42min window, arrived right after 24 firings during the session — worth understanding the buffer/rollover timing before assuming another night will do better). Either way, resolve the **0x4C bout-boundary reset behavior** first (does it reset per-disruption, per-BLE-session, or something else) — summing across firings blindly will be wrong.
 0. **NEW 2026-07-19 — Fix `ca.methuselah.gen3daemon` launchd permission error.** `daemon_launchd_err.log` shows `can't open file '.../oura_gen3_ble_daemon.py': Operation not permitted` — likely a macOS Full Disk Access / TCC permission needed by the launchd-invoked python3, or a path/quarantine issue. Until fixed, overnight runs depend on someone manually starting the daemon in a terminal, and `daemon_launchd.log`/`daemon_launchd_err.log` can't be trusted as a complete session record.
