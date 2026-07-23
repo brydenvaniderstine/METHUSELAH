@@ -438,10 +438,12 @@ export default function MethuselahFinal() {
       setRhrHist(h); localStorage.setItem("rhrHistory", JSON.stringify(h));
       addLog(`GEN3 RHR: ${Math.round(v.rhr_bpm)} BPM`, "roche");
     }
-    if (v.sleep_duration_hrs != null) {
-      const h = [...sleepHist, v.sleep_duration_hrs].slice(-7);
+    const sleepForHistory = v.sleep_duration_hrs ?? v.sleep_duration_estimate_hrs;
+    if (sleepForHistory != null) {
+      const h = [...sleepHist, sleepForHistory].slice(-7);
       setSleepHist(h); localStorage.setItem("sleepDurationHistory", JSON.stringify(h));
-      addLog(`GEN3 SLEEP: ${v.sleep_duration_hrs.toFixed(1)}H`, "roche");
+      const estFlag = v.sleep_duration_hrs == null ? " (EST)" : "";
+      addLog(`GEN3 SLEEP: ${sleepForHistory.toFixed(1)}H${estFlag}`, "roche");
     }
     if (v.spo2_avg_pct != null) {
       const h = [...spo2Hist, v.spo2_avg_pct].slice(-7);
@@ -473,6 +475,7 @@ export default function MethuselahFinal() {
     rhr: logic.vectors.rhr.value,
     sleepDurationHrs: logic.vectors.sleepDurationHrs.value,
   };
+  const sleepIsEstimate = logic.vectors.sleepDurationHrs.isEstimate === true;
 
   useEffect(() => { setBriefingOpen(false); }, [logic.level]);
 
@@ -606,8 +609,8 @@ export default function MethuselahFinal() {
             />
             <Metric
               label="SLEEP DURATION"
-              val={sleepDurationHrs !== null ? sleepDurationHrs.toFixed(1) : "--"}
-              unit="hrs"
+              val={sleepDurationHrs !== null ? `${sleepIsEstimate ? "~" : ""}${sleepDurationHrs.toFixed(1)}` : "--"}
+              unit={sleepIsEstimate ? "hrs (est.)" : "hrs"}
               color={sleepDurationHrs === null ? "var(--text-dim)" : sleepDurationHrs < THRESHOLDS.sleepDurationCritical ? "var(--accent-red)" : sleepDurationHrs < THRESHOLDS.sleepDurationWarn ? "var(--accent-amber)" : "var(--accent-green)"}
               meta={sleepMeta}
               age={formatAge(sleepTs)}

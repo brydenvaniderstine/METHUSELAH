@@ -33,6 +33,13 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
+**Date:** 2026-07-22 (session 4 — Sleep Duration tile was silently reading a field that almost never populates; wired it to fall back to the estimate)
+
+- **Confirmed a real display bug, not just a theoretical one.** The Sleep Duration tile (`web/src/App.js` ~L607, via `engine/sources.js` `resolveVectors().sleepDurationHrs`) read **only** `sleep_duration_hrs` — the strict 0x4C field that, per design, stays `None` almost every night. `sleep_duration_estimate_hrs` (built by `sleep_duration_estimate.py`, e.g. the 2026-07-19/20 night's real 6.6h result) was computed, written to the bridge JSON, and then never reached the screen. Confirmed against the live `web/public/gen3_latest.json` (both fields `null` that night) and against a reconstructed 6.6h scenario.
+- **Fix:** `engine/sources.js` `sleepDurationHrs` resolver now falls back to `sleep_duration_estimate_hrs` when the strict field is `null`, tagging the result `isEstimate: true`. `web/src/App.js` tile shows `~6.6` with unit `hrs (est.)` when it's the fallback value; strict values still render exactly as before (no `~`, no `(est.)`). The 7-day history/log-line builder (`App.js` ~L441) had the same strict-only bug — also fixed, `(EST)` suffix added to the log line when the history point came from the estimate. No stage/confidence/pattern UI added — single number + one-word qualifier only, per KISS.
+- **Verified:** `resolveVectors()` tested directly (script, not assumption) against three synthetic bridge shapes — estimate-only night → `{value:6.6, isEstimate:true}`; both-null (declined) night → `null`/`AWAITING DATA` (unchanged, doesn't break); strict-populated night → strict value wins, `isEstimate:false`. `npx react-scripts build` compiles clean. Did not verify the rendered pixels in an actual browser session — static/logic verification only, flagged per real-data-only discipline rule 6.
+- Canonical source is `engine/sources.js` (`web/src/engine/sources.js` is a build-time copy per `package.json`'s `prebuild`/`prestart` — edited both, confirmed byte-identical after `cp`).
+
 **Date:** 2026-07-22 (session 3 — built the 2 items the whole-session-reconciliation investigation recommended: outer-ceiling decline check + cross-session bout dedup diagnostics)
 
 - **Built both "build now" items from the earlier 2026-07-22 whole-session-reconciliation investigation (known_issues.md), and nothing else from it** — the multi-bout merge stays discarded (no calibration data yet), daemon start/stop stays rejected as a sleep-boundary substitute.

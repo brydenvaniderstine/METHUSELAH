@@ -71,13 +71,24 @@ export function resolveVectors(gen4, gen3, manual = {}) {
     // Gen3: RMSSD computed from 0x6E/0x80 IBI streams, sleep-window only
     hrv: resolveVector(gen4Fresh?.hrv ?? null, gen3Fresh?.vectors?.hrv_ms ?? null, null),
 
-    // Gen4: total_sleep_duration from Oura API; Gen3: accumulated from daemon 0x6A state transitions.
-    // Morning pull cannot provide this (only captures last ~10min of 0x6A buffer).
-    sleepDurationHrs: resolveVector(
-      gen4Fresh?.totalSleepHrs ?? null,
-      gen3Fresh?.vectors?.sleep_duration_hrs ?? null,
-      null
-    ),
+    // Gen4: total_sleep_duration from Oura API. Gen3: sleep_duration_hrs (0x4C,
+    // authoritative) if present, else sleep_duration_estimate_hrs (same tool's
+    // provisional final-bout + uncovered-tail estimate) so a good overnight
+    // estimate isn't stranded behind the strict field almost never populating.
+    // isEstimate tells the tile to label the value, never to hide it.
+    sleepDurationHrs: (() => {
+      const strict = resolveVector(
+        gen4Fresh?.totalSleepHrs ?? null,
+        gen3Fresh?.vectors?.sleep_duration_hrs ?? null,
+        null
+      );
+      if (strict.value != null) return { ...strict, isEstimate: false };
+      const estimateHrs = gen3Fresh?.vectors?.sleep_duration_estimate_hrs ?? null;
+      if (estimateHrs != null) {
+        return { value: estimateHrs, source: SOURCE_GEN3, ready: true, isEstimate: true };
+      }
+      return { ...strict, isEstimate: false };
+    })(),
 
     // No wearable source on either generation
     glucose: resolveVector(null, null, manual?.glucose ?? null),

@@ -6571,3 +6571,20 @@ execution of `estimate_sleep_duration()` with a real-vs-synthetic-span
 comparison to verify the ceiling actually fires, inspection of the real
 regenerated `pipeline/data/bridge/gen3_latest.json` and
 `bout_checkpoint.json`, `python3 -m py_compile` on both modified files.*
+
+## Sleep Duration tile never showed sleep_duration_estimate_hrs — frontend bug, not a pipeline bug (2026-07-22)
+
+**Finding:** `sleep_duration_estimate.py` and `recompute_bridge_from_daemon.py` have
+been correctly computing and writing `sleep_duration_estimate_hrs` to the bridge
+JSON (confirmed real, e.g. 6.6h on the 2026-07-19/20 night — see this file's
+"Verification" entry above). None of that ever reached the dashboard: the tile's
+source selector (`engine/sources.js`) only ever read the strict `sleep_duration_hrs`
+field, which stays `None` by design almost every night (0x4C-only, no fallback).
+The estimate was being computed correctly and then discarded at the last step.
+
+**Fix:** `engine/sources.js` `sleepDurationHrs` resolver falls back to
+`sleep_duration_estimate_hrs` when the strict field is null, tagged
+`isEstimate: true`. `web/src/App.js` labels the tile `~X.X hrs (est.)` in that
+case, otherwise unchanged. No stage/confidence UI added. See SESSION_HANDOFF.md
+2026-07-22 session 4 for full detail and verification method (synthetic
+`resolveVectors()` tests + clean `react-scripts build`, not yet browser-verified).
