@@ -14,7 +14,7 @@ Usage:
   python3 tools/recompute_bridge_from_daemon.py --push  # also push to live site
 """
 
-import os, sys, re, struct, math
+import os, sys, re, struct, math, time, json
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -25,10 +25,43 @@ from decoders import (
 )
 from decoders.hrv_rmssd import calculate_rmssd
 from gen3_bridge import build_bridge_data, write_local_bridge_file, push_bridge_json
-from sleep_duration_estimate import estimate_sleep_duration
+from sleep_duration_estimate import estimate_sleep_duration, bout_totals_snapshot
 
 DAEMON_DIR = os.path.join(os.path.dirname(__file__), '..', 'data', 'raw_pulls', 'gen3_daemon')
 REPO_ROOT  = os.path.join(os.path.dirname(__file__), '..', '..')
+
+# Cross-session bout-freshness checkpoint (diagnostic only -- see
+# sleep_duration_estimate.py's prior_bout_totals docstring and
+# known_issues.md's 2026-07-22 reconciliation investigation, Finding A).
+# {bout_start: last_seen_total_min}, updated after every real run.
+BOUT_CHECKPOINT_PATH = os.path.join(
+    os.path.dirname(__file__), '..', 'data', 'bridge', 'bout_checkpoint.json')
+
+
+def load_bout_checkpoint():
+    if not os.path.exists(BOUT_CHECKPOINT_PATH):
+        return None
+    try:
+        with open(BOUT_CHECKPOINT_PATH) as f:
+            raw = json.load(f)
+        return {int(k): v for k, v in raw.items()}
+    except (ValueError, OSError):
+        return None
+
+
+def save_bout_checkpoint(prior, entries):
+    """Merge this session's observed bout totals into `prior` (or start
+    fresh if None) and persist. Always keeps the latest total per
+    bout_start -- a bout that keeps accumulating across sessions (real
+    example on record: bout_start=76149641 grew 359.5min -> 399.0min
+    across a real session boundary) must not get stuck at a stale value."""
+    updated = dict(prior) if prior else {}
+    updated.update(bout_totals_snapshot(entries))
+    os.makedirs(os.path.dirname(BOUT_CHECKPOINT_PATH), exist_ok=True)
+    with open(BOUT_CHECKPOINT_PATH, 'w') as f:
+        json.dump({str(k): v for k, v in updated.items()}, f, indent=2, sort_keys=True)
+    return updated
+
 
 # Tick rate: empirically derived from gen3_daemon_20260717_224745 (first boot_ts 67564124,
 # last meaningful boot_ts 67975382, daemon duration=8h=28800s → 14.28 ticks/sec).
@@ -39,7 +72,12 @@ TICKS_PER_SEC = 14.279
 def parse_daemon_log(path):
     entries = []
     line_re = re.compile(r'^\[(.+?)\] boot_ts=(\d+) payload=([0-9a-f]+)$')
-    header_re = re.compile(r'=== Daemon started (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \(poll=(\d+)s, duration=(\d+)h\)')
+    # NOTE: poll/duration are logged as decimals ("poll=5.0s, duration=8.0h")
+    # -- an earlier \d+-only pattern here never matched, so `header` was
+    # silently {} on every real run. Fixed 2026-07-22 (needed for the outer-
+    # ceiling check's real session-start timestamp); confirmed against all
+    # 3 real logs on record that this now actually matches.
+    header_re = re.compile(r'=== Daemon started (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \(poll=([\d.]+)s, duration=([\d.]+)h\)')
 
     header = {}
     with open(path) as f:
@@ -47,7 +85,7 @@ def parse_daemon_log(path):
             line = line.strip()
             hm = header_re.match(line)
             if hm:
-                header = {'start': hm.group(1), 'poll': int(hm.group(2)), 'duration_h': int(hm.group(3))}
+                header = {'start': hm.group(1), 'poll': float(hm.group(2)), 'duration_h': float(hm.group(3))}
                 continue
             m = line_re.match(line)
             if m:
@@ -79,6 +117,22 @@ def main(log_path, do_push=False):
     if header:
         print(f"Daemon started: {header['start']}, duration={header['duration_h']}h, poll={header['poll']}s")
     print(f"Total entries: {len(entries)}")
+
+    # Real, connected-session wall-clock span for the outer-ceiling check --
+    # real logged start timestamp (header, fixed above) to the log file's
+    # own real last-write time (mtime), never the nominal --duration
+    # argument (which overstates elapsed time on a session that ended
+    # early -- confirmed real case on record: gen3_daemon_20260721_213131,
+    # nominal 8.0h, real ~6h46m). Same convention already established by
+    # sleep_confidence_analysis.py's derive_tick_rate for the same reason.
+    session_span_hrs = None
+    if header.get('start'):
+        start_epoch = time.mktime(time.strptime(header['start'], '%Y-%m-%d %H:%M:%S'))
+        end_epoch = os.path.getmtime(log_path)
+        if end_epoch > start_epoch:
+            session_span_hrs = (end_epoch - start_epoch) / 3600
+            print(f"Real connected-session span: {session_span_hrs:.2f}h "
+                  f"(header start -> log file mtime)")
 
     # Compute tick rate from first/last boot_ts and daemon duration
     meaningful = [e['boot_ts'] for e in entries if e['boot_ts'] < 100_000_000]  # exclude glitch values
@@ -159,13 +213,19 @@ def main(log_path, do_push=False):
 
     # PROVISIONAL, separate from sleep_duration_hrs above -- does not touch
     # or backfill it. See pipeline/tools/sleep_duration_estimate.py for the
-    # decline conditions and the final-bout + uncovered-tail calculation.
-    sleep_estimate_result = estimate_sleep_duration(entries)
+    # decline conditions and the final-bout + uncovered-tail calculation,
+    # the outer-ceiling check (session_span_hrs, real from above), and the
+    # cross-session bout-dedup diagnostics (prior_bout_totals, real
+    # checkpoint below -- labeling only, never changes the estimate).
+    prior_bout_totals = load_bout_checkpoint()
+    sleep_estimate_result = estimate_sleep_duration(
+        entries, session_span_hrs=session_span_hrs, prior_bout_totals=prior_bout_totals)
     sleep_duration_estimate_hrs = sleep_estimate_result["sleep_duration_estimate_hrs"]
     sleep_duration_estimate_info = {
         "reason": sleep_estimate_result["reason"],
         "confidence": sleep_estimate_result["confidence"],
     }
+    save_bout_checkpoint(prior_bout_totals, entries)
 
     # HRV from all night's IBI
     hrv_ms = calculate_rmssd(ibi_packets_all) if ibi_packets_all else None

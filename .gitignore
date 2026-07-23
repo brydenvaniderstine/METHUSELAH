@@ -12,3 +12,4 @@ data/raw_pulls/
 .vercel
 pipeline/data/logs/*.log
 pipeline/data/bridge/gen3_latest.json
+pipeline/data/bridge/bout_checkpoint.json

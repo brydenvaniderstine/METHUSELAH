@@ -6223,6 +6223,14 @@ scoped.**
   it and Finding C shows the connect/disconnect moments leave no trace
   in the ring's own event stream.
 
+**ACTED ON 2026-07-22 (later session).** Both "build now" items were
+implemented, real-data-tested against all three nights above, and
+committed. The multi-bout merge remains discarded and daemon start/stop
+remains rejected as a boundary substitute — neither was touched. Full
+writeup, including the real header-parsing bug this session found and
+fixed along the way (blocking the ceiling's real start-timestamp input),
+is in the new entry appended at the end of this file.
+
 ### Not done this session (explicitly out of scope, design-only per the task)
 
 - No code changes to `sleep_duration_estimate.py`, the daemon, or the
@@ -6413,3 +6421,153 @@ experiment figures already on record above, direct execution of the real,
 imported `classify()` (both pre- and post-fix) against every real cycle
 in all three nights and all 45 historical files, `python3 -m py_compile`
 on both modified files.*
+
+---
+
+## ACTED ON: outer-ceiling decline check + cross-session bout dedup diagnostics, both from the 2026-07-22 whole-session reconciliation investigation, built and real-data-verified, 2026-07-22 (later session)
+
+**Scope:** implement the two items that investigation recommended building
+now (Section 7 above) — the outer-ceiling decline check and the
+cross-session bout-dedup diagnostics — and nothing else from that
+investigation. The multi-bout merge stays discarded; daemon start/stop
+stays rejected as a sleep-boundary substitute. Both real per the
+investigation's own framing: the ceiling is a safety check on a number
+that already exists, never a way to derive one; dedup only changes the
+*wording* of a decline, never whether one happens.
+
+### 1. Real bug found and fixed en route: the daemon-log header was never actually parsing
+
+Needed a real, logged session-start timestamp for the ceiling (not
+assumed) — traced this to `recompute_bridge_from_daemon.py`'s
+`parse_daemon_log()`, whose `header_re` required integer `poll=`/`duration=`
+values (`\d+`). Every real log on disk logs these as decimals
+(`poll=5.0s, duration=8.0h`), so the regex **never matched on any real
+run** — `header` has been silently `{}` since this function was written,
+confirmed by re-running it against all 4 real logs on disk pre-fix. The
+one place this was already visibly consumed (`recompute_bridge_from_daemon.py`'s
+own whole-log tick-rate print) was silently always hitting its fallback
+branch as a result — a real, pre-existing latent bug, independent of this
+session, now incidentally fixed. That printed tick-rate value is diagnostic
+only (confirmed: not read by any other code path, doesn't feed
+`sleep_duration_hrs`/`sleep_duration_estimate_hrs`/anything pushed to the
+bridge) so fixing the regex changes only a print statement's accuracy, not
+any real behavior. Fixed to `[\d.]+`, `float()` instead of `int()`;
+confirmed against all 3 real nights the header now parses correctly (real
+example: `Daemon started: 2026-07-21 21:31:31, duration=8.0h, poll=5.0s`).
+
+### 2. Outer-ceiling decline check
+
+`sleep_duration_estimate.py`: new `CEILING_TOLERANCE = 1.1` constant and a
+new `session_span_hrs` parameter on `estimate_sleep_duration()`. Checked
+last, after a candidate `raw_total_min` (final bout total + tail) exists —
+if `raw_total_min > session_span_hrs * 60 * CEILING_TOLERANCE`, declines
+with the specific numbers involved rather than returning a number.
+Declining, not clipping — a value merely capped to the ceiling would still
+be fabricated, same "decline over guess" property as every existing
+condition in this module.
+
+`session_span_hrs` is computed by the caller
+(`recompute_bridge_from_daemon.py`), real and logged, never assumed: the
+log's own `Daemon started` header timestamp (now parsing correctly, see
+above) to the log file's own real last-write time (mtime) — the same
+real-end-of-session convention already established by
+`sleep_confidence_analysis.py`'s `derive_tick_rate` and used there for the
+identical reason (the nominal `--duration` argument overstates elapsed
+time on a session that ends early; confirmed real case on record:
+`gen3_daemon_20260721_213131`, nominal 8.0h, real 6h46m10s = 6.77h).
+
+**Real-data verification:** ran the actual fixed function against all 4
+real logs on disk (07-18/19 through 07-21/22). Real spans: 7.28h, 8.00h,
+7.81h, 6.77h. None of the 3 real estimates that ever reach the ceiling
+check (07-18/19: 5.85h; 07-19/20: 6.6h; the other two nights decline
+earlier, before ever reaching condition 5) come close to their real
+session's ceiling — largest margin used is 6.6h against an 8.00h span (an
+~82% margin from the tolerance-adjusted 8.8h cap). **Confirmed the
+mechanism actually fires, not just that it stays silent on real data**:
+re-ran 07-19/20's real entries with `session_span_hrs=1.0` (a deliberately
+tight, non-real value — the entries themselves are 100% real, only this
+one boundary parameter was varied to prove the check works, since no real
+night on record naturally crosses it) → correctly declined: `"Candidate
+estimate (6.60h) exceeds the real connected-session span (1.00h x 1.1
+tolerance = 1.10h ceiling)."` Also confirmed omitting `session_span_hrs`
+entirely reproduces the exact prior behavior byte-for-byte (backward
+compatible — existing callers, if any ever exist beyond
+`recompute_bridge_from_daemon.py`, are unaffected).
+
+### 3. Cross-session bout dedup — diagnostics only, confirmed to never change behavior
+
+New `bout_totals_snapshot(entries)` (public) returns `{bout_start:
+latest_total_min}` for every bout in a log. New `prior_bout_totals`
+parameter on `estimate_sleep_duration()` — when supplied, every decline
+reason gets a `_freshness_note()` suffix stating the real new-vs-carryover
+split for that log's bouts, and `confidence` gets `new_bouts_this_session`/
+`carryover_bouts_this_session` counts. **Purely additive to decline reason
+text and confidence dict — every decline condition's trigger logic is
+byte-identical to before this change**, confirmed by construction (the
+freshness computation happens after the condition already decided to
+decline, never influences that decision) and by the regression run below.
+
+Persistence lives in the caller, not this module (kept pure/testable, no
+file I/O): `recompute_bridge_from_daemon.py` adds
+`load_bout_checkpoint()`/`save_bout_checkpoint()` against a new
+`pipeline/data/bridge/bout_checkpoint.json` (gitignored, same category as
+`gen3_latest.json` — a runtime-generated local cache, not source).
+Written after every real run, merging this session's
+`bout_totals_snapshot()` into whatever was already checkpointed so a bout
+that keeps accumulating across sessions (real example on record: bout
+`76149641` grew 359.5min → 399.0min across the 07-19/20 → 07-20/21
+boundary) doesn't get stuck at a stale value.
+
+### 4. Real end-to-end verification, all 3 nights, run in real chronological order
+
+Deleted any existing checkpoint and ran the real, unmodified
+`recompute_bridge_from_daemon.py` (no `--push`) against all 4 real logs on
+disk in calendar order — 07-18/19 first (seeds the checkpoint, exactly
+reproducing the cross-night baseline the original investigation used by
+hand), then the 3 nights in scope:
+
+| Night | `sleep_duration_estimate_hrs` | Reason |
+|---|---|---|
+| 07-18/19 (seed) | 5.85 | OK (unaffected by dedup/ceiling — no prior checkpoint yet) |
+| **07-19/20** | **6.6** (unchanged) | OK: final bout total 359.5min + uncovered tail 36.3min. |
+| 07-20/21 | None (unchanged — still declines) | No clear wake/activity signal... **4 new bout(s) this session, 17 carryover.** |
+| 07-21/22 | None (unchanged — still declines) | Final bout has only 1 sample(s)... **5 bout(s) observed this session, all carryover from a prior session's log (0 new bouts) — the ring's firmware never finalized a fresh sleep summary during this connected session.** |
+
+**07-19/20's 6.6h is exactly unchanged** — matches the number on record
+before this session, confirming the ceiling and dedup are inert on the one
+real success case. **Both declined nights keep declining** (no
+false-positive estimates introduced) **and both now carry an honest,
+data-backed reason**: 07-20/21's "4 new, 17 carryover" matches this
+investigation's own by-hand finding exactly (bout_starts `76727073`,
+`76813773`, `76960473`, `76992273`); 07-21/22's "0 new bouts" replaces the
+previously-misleading "final bout has only 1 sample" framing (which read
+as thin-but-real data) with the true state — confirmed real: all 5 bouts
+in that log are carryover, byte-identical to bouts already seen in the
+prior session's log, none grew.
+
+Confirmed via `python3 -m py_compile` on both modified files, and by
+inspecting the real, regenerated `pipeline/data/bridge/gen3_latest.json`
+and `bout_checkpoint.json` (24 distinct bout_starts tracked across the 4
+real logs) after the run, not just the script's stdout.
+
+### Not done this session (explicitly out of scope, per the task)
+
+- The multi-bout merge (discarded in the investigation) was not built.
+- Daemon start/stop as a sleep-boundary substitute (rejected in the
+  investigation) was not introduced — `session_span_hrs` is used
+  exclusively as a ceiling on an already-computed candidate, never as an
+  input to computing one.
+- `sleep_duration_hrs` (the separate, still-`None`-by-design authoritative
+  field) and the bridge merge-protection logic are untouched.
+- The still-open ~22x whole-log-vs-bout-local tick-rate discrepancy is
+  unresolved — `CEILING_TOLERANCE=1.1` is a deliberate small buffer against
+  it, not a fix for it.
+
+*Logged 2026-07-22. Sources: all 4 real logs in
+`pipeline/data/raw_pulls/gen3_daemon/` (07-18/19 through 07-21/22), direct
+execution of the real, modified `recompute_bridge_from_daemon.py` end to
+end (not `--push`) against each in real chronological order, direct
+execution of `estimate_sleep_duration()` with a real-vs-synthetic-span
+comparison to verify the ceiling actually fires, inspection of the real
+regenerated `pipeline/data/bridge/gen3_latest.json` and
+`bout_checkpoint.json`, `python3 -m py_compile` on both modified files.*

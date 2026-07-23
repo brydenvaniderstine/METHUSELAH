@@ -21,6 +21,29 @@ are the load-bearing part of this module. The happy-path arithmetic is the
 easy 5% -- it already worked once (2026-07-19/20, final bout -> ~6.0h against
 a real ~6h20m night). The risk is a messy night silently producing a bad
 number, not the arithmetic itself.
+
+Two additions from the 2026-07-22 whole-session-reconciliation investigation
+(known_issues.md, "Whole-session reconciliation for sleep-duration estimate"
+entry) -- both real-data-tested, both explicitly NOT the full multi-bout
+merge that investigation discarded (no calibration data exists yet for a
+between-bout gap constant) and NOT a daemon-start/stop sleep-boundary
+substitute (confirmed unsafe -- see that entry's Finding C):
+
+1. Outer-ceiling decline (CEILING_TOLERANCE, `session_span_hrs` param):
+   caps any estimate at the real, connected daemon session's own wall-clock
+   span -- this is the same category of gap that let the already-fixed
+   92.0-HRS production bug (known_issues.md, 2026-07-21 session 4) reach the
+   bridge. A session cannot produce more sleep-classified minutes than it
+   was connected for.
+2. Cross-session bout dedup (`prior_bout_totals` param): diagnostic-only,
+   per that investigation's Finding A -- most bouts in a given night's log
+   are stale carryover from a prior session (the daemon's since_boot_ts=0
+   full-history re-request on every fresh connection), not new data. Makes
+   decline reasons state the true freshness instead of a misleading "thin
+   sample" message when the real state is "no new data at all this
+   session." Does not change whether/what the function declines or
+   estimates -- confirmed by the regression check in the commit that added
+   this (same 3 real nights, same numeric outcomes).
 """
 
 import struct
@@ -79,6 +102,20 @@ SUSTAINED_MAX_GAP_TICKS = 400
 # generous relative to that.
 CLUSTER_PAIR_MAX_TICKS = 500
 
+# Multiplier applied to the real, connected daemon-session wall-clock span
+# (header start timestamp -> log file mtime, both real logged/observed
+# times, never assumed) to get the outer ceiling an estimate may not
+# exceed. >1.0 to allow real headroom for the still-unresolved tick-rate
+# uncertainty documented above (TICK_RATE_PER_MIN's ~22x whole-log-vs-
+# bout-local discrepancy) without silently accepting an open-ended guess.
+# 1.1 chosen per the 2026-07-22 reconciliation investigation's own
+# proposal -- not re-derived from a specific real overcap case, since none
+# of the 3 real nights on record ever get close to the ceiling at all (see
+# known_issues.md for the hand-tested margins: 6.6h est. vs 7h59m57s cap on
+# 07-19/20, well clear). Tunable -- revisit if a real night ever approaches
+# it.
+CEILING_TOLERANCE = 1.1
+
 ACTIVITY_TAG_NAMES = {"Motion event", "Real step feature (1)"}
 BEDTIME_TAG_NAME = "Bedtime period"
 SLEEP_SUMMARY_TAG_NAME = "Sleep summary (2)"
@@ -132,6 +169,62 @@ def _group_bouts(entries):
     return [{"bout_start": bs, "samples": bouts[bs]} for bs in order]
 
 
+def bout_totals_snapshot(entries):
+    """Public helper for callers that want to persist a cross-session
+    checkpoint (see `prior_bout_totals` below). Returns {bout_start:
+    latest_total_min} for every bout observed in `entries`, using each
+    bout's own final (highest-boot_ts) sample -- the same value a caller
+    would want to carry forward so a future session can tell a bout that
+    kept accumulating (see known_issues.md: bout 76149641 grew 359.5min ->
+    399.0min across a real session boundary) from one that's genuinely
+    unchanged stale carryover.
+    """
+    bouts = _group_bouts(entries)
+    return {
+        b["bout_start"]: sorted(b["samples"], key=lambda s: s[0])[-1][1]
+        for b in bouts if b["samples"]
+    }
+
+
+def _label_bout_freshness(bouts, prior_bout_totals):
+    """Diagnostic-only split of `bouts` into new-this-session vs.
+    carryover-from-a-prior-session, using a {bout_start: last_seen_total_min}
+    map the caller persisted after a previous run (see bout_totals_snapshot
+    above). Returns None if no prior checkpoint was supplied at all (first
+    real run, or caller doesn't have one yet) -- distinct from "checkpoint
+    supplied but every bout turned out new," which is a real 0/0 split, not
+    an absence of information.
+
+    Purely a labeling function -- does not filter, sum, or otherwise use
+    the split to change any estimate. See module docstring for why (the
+    2026-07-22 investigation explicitly discarded summing multiple bouts
+    as premature; this only makes existing decline reasons honest about
+    which bout produced them).
+    """
+    if prior_bout_totals is None:
+        return None
+    new_bouts, carryover_bouts = [], []
+    for b in bouts:
+        (carryover_bouts if b["bout_start"] in prior_bout_totals else new_bouts).append(b)
+    return {"new": new_bouts, "carryover": carryover_bouts}
+
+
+def _freshness_note(freshness):
+    """Short, human-readable suffix for a decline `reason` string, or ''
+    if no freshness info is available. See _label_bout_freshness."""
+    if freshness is None:
+        return ""
+    n_new, n_carry = len(freshness["new"]), len(freshness["carryover"])
+    if n_new == 0 and n_carry > 0:
+        return (f" {n_carry} bout(s) observed this session, all carryover "
+                 f"from a prior session's log (0 new bouts) -- the ring's "
+                 f"firmware never finalized a fresh sleep summary during "
+                 f"this connected session.")
+    if n_new > 0:
+        return f" {n_new} new bout(s) this session, {n_carry} carryover."
+    return ""
+
+
 def _find_wake_signal(entries, after_boot_ts):
     """boot_ts of the first event in a sustained activity run after
     after_boot_ts, or None if no such run exists in this log."""
@@ -155,7 +248,7 @@ def _find_wake_signal(entries, after_boot_ts):
     return None
 
 
-def estimate_sleep_duration(entries):
+def estimate_sleep_duration(entries, session_span_hrs=None, prior_bout_totals=None):
     """Provisional sleep-duration estimate from the final 0x4C accumulation
     bout in `entries` (the parsed-daemon-log entry list: dicts with
     tag_name/boot_ts/payload, as produced by
@@ -166,7 +259,20 @@ def estimate_sleep_duration(entries):
     Conditions 1 and 2 are structural (checked directly on the final bout's
     samples); condition 4 (no wake signal at all) is checked before
     condition 3 (tail too large) since the tail can't be computed without
-    first finding a signal to measure it against.
+    first finding a signal to measure it against. Condition 5 (outer
+    ceiling) is checked last, after a candidate number exists.
+
+    session_span_hrs: optional real, caller-supplied wall-clock span of the
+    connected daemon session (real logged start timestamp -> real observed
+    end, never assumed -- see recompute_bridge_from_daemon.py for how this
+    is derived). When supplied, caps the estimate (condition 5 below).
+    Analysis-only if omitted -- existing behavior is unchanged.
+
+    prior_bout_totals: optional {bout_start: last_seen_total_min} map from
+    a prior session (see bout_totals_snapshot), used only to make decline
+    `reason` strings honest about which bouts are new vs. carryover.
+    Diagnostic only -- never changes which condition fires or what number
+    (if any) is returned; omitting it reproduces the exact prior behavior.
 
     Returns:
       {
@@ -184,6 +290,13 @@ def estimate_sleep_duration(entries):
             "confidence": None,
         }
 
+    freshness = _label_bout_freshness(bouts, prior_bout_totals)
+    freshness_counts = (
+        {"new_bouts_this_session": len(freshness["new"]),
+         "carryover_bouts_this_session": len(freshness["carryover"])}
+        if freshness is not None else {}
+    )
+
     final_bout = bouts[-1]
     samples = sorted(final_bout["samples"], key=lambda s: s[0])
 
@@ -192,8 +305,9 @@ def estimate_sleep_duration(entries):
         return {
             "sleep_duration_estimate_hrs": None,
             "reason": (f"Final bout has only {len(samples)} sample(s), "
-                       f"below MIN_BOUT_SAMPLES={MIN_BOUT_SAMPLES}."),
-            "confidence": {"final_bout_samples": len(samples)},
+                       f"below MIN_BOUT_SAMPLES={MIN_BOUT_SAMPLES}."
+                       f"{_freshness_note(freshness)}"),
+            "confidence": {"final_bout_samples": len(samples), **freshness_counts},
         }
 
     # Condition 2 -- roughly monotonic growth within the bout.
@@ -204,9 +318,11 @@ def estimate_sleep_duration(entries):
                 "sleep_duration_estimate_hrs": None,
                 "reason": (f"Final bout stage total is not monotonic: "
                            f"sample {i - 1}={totals[i - 1]:.1f}min -> "
-                           f"sample {i}={totals[i]:.1f}min."),
+                           f"sample {i}={totals[i]:.1f}min."
+                           f"{_freshness_note(freshness)}"),
                 "confidence": {"final_bout_samples": len(samples),
-                               "totals_min": [round(t, 1) for t in totals]},
+                               "totals_min": [round(t, 1) for t in totals],
+                               **freshness_counts},
             }
 
     last_boot_ts, last_total_min = samples[-1]
@@ -218,9 +334,11 @@ def estimate_sleep_duration(entries):
             "sleep_duration_estimate_hrs": None,
             "reason": (f"No clear wake/activity signal (sustained run of "
                        f"{SUSTAINED_MIN_EVENTS}+ Motion/Real-step events) "
-                       "found after the final bout's last 0x4C sample."),
+                       "found after the final bout's last 0x4C sample."
+                       f"{_freshness_note(freshness)}"),
             "confidence": {"final_bout_samples": len(samples),
-                           "final_bout_total_min": round(last_total_min, 1)},
+                           "final_bout_total_min": round(last_total_min, 1),
+                           **freshness_counts},
         }
 
     tail_ticks = wake_ts - last_boot_ts
@@ -231,16 +349,51 @@ def estimate_sleep_duration(entries):
         return {
             "sleep_duration_estimate_hrs": None,
             "reason": (f"Uncovered tail ({tail_min:.1f}min) exceeds "
-                       f"TAIL_CAP_MINUTES={TAIL_CAP_MINUTES}."),
+                       f"TAIL_CAP_MINUTES={TAIL_CAP_MINUTES}."
+                       f"{_freshness_note(freshness)}"),
             "confidence": {
                 "final_bout_samples": len(samples),
                 "final_bout_total_min": round(last_total_min, 1),
                 "tail_min": round(tail_min, 1),
                 "tail_capped": True,
+                **freshness_counts,
             },
         }
 
-    estimate_hrs = round((last_total_min + tail_min) / 60, 2)
+    raw_total_min = last_total_min + tail_min
+
+    # Condition 5 -- outer ceiling: a real, connected daemon session cannot
+    # produce more sleep-classified minutes than it was connected for. This
+    # is the gap that let the already-fixed 92.0-HRS bug (known_issues.md,
+    # 2026-07-21 session 4) reach production through a different code path
+    # -- closing it here too, not just at that bug's specific mechanism.
+    # session_span_hrs is real (caller-derived from a logged start
+    # timestamp + observed end), never assumed -- see
+    # recompute_bridge_from_daemon.py. Declining, not clipping: a number
+    # that's merely capped to the ceiling would still be fabricated.
+    if session_span_hrs is not None:
+        ceiling_min = session_span_hrs * 60 * CEILING_TOLERANCE
+        if raw_total_min > ceiling_min:
+            return {
+                "sleep_duration_estimate_hrs": None,
+                "reason": (f"Candidate estimate ({raw_total_min / 60:.2f}h) "
+                           f"exceeds the real connected-session span "
+                           f"({session_span_hrs:.2f}h x "
+                           f"{CEILING_TOLERANCE} tolerance = "
+                           f"{ceiling_min / 60:.2f}h ceiling)."
+                           f"{_freshness_note(freshness)}"),
+                "confidence": {
+                    "final_bout_samples": len(samples),
+                    "final_bout_total_min": round(last_total_min, 1),
+                    "tail_min": round(tail_min, 1),
+                    "session_span_hrs": round(session_span_hrs, 2),
+                    "ceiling_hrs": round(ceiling_min / 60, 2),
+                    "ceiling_exceeded": True,
+                    **freshness_counts,
+                },
+            }
+
+    estimate_hrs = round(raw_total_min / 60, 2)
     return {
         "sleep_duration_estimate_hrs": estimate_hrs,
         "reason": (f"OK: final bout total {last_total_min:.1f}min + "
@@ -252,5 +405,7 @@ def estimate_sleep_duration(entries):
             "tail_min": round(tail_min, 1),
             "tail_capped": False,
             "tick_rate_per_min": TICK_RATE_PER_MIN,
+            "session_span_hrs": round(session_span_hrs, 2) if session_span_hrs is not None else None,
+            **freshness_counts,
         },
     }
