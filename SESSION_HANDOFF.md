@@ -33,6 +33,53 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
+**Date:** 2026-07-23 (session 4 — investigated the 07-22/23 morning-pull failure; found it recurs on ALL 4 nights, not just the deadlock night; UNRESOLVED, but instrumented for next time — no speculative timing fix shipped)
+
+- **Investigated the 07-22/23 "Ring not found in scan window" morning-pull
+  failure as a possibly-separate handoff-timing issue from the confirmed
+  `connect()` deadlock (prior session's entry above).** Real finding: this
+  is **not** confined to that deadlock night — `pipeline/data/raw_pulls/
+  gen3_morning/` and `gen3_evening/` have **zero output files for any of
+  the 4 real overnight daemon nights** (07-19/20 through 07-22/23),
+  including 07-19/20, the one fully healthy night with zero connectivity
+  problems. The automated post-daemon morning pull has never once
+  succeeded since it was built (2026-07-12) — a real, general problem, not
+  something the deadlock explains away.
+- **No exact real timestamps could be recovered for any of the 4 nights**
+  (daemon's own POST-RUN section and the morning pull's scan logic only
+  ever `print()`, never write to a surviving file — lost once `/tmp/
+  daemon_tonight.txt` is gone). Derived what's possible for 07-22/23 from
+  real bridge-file mtimes only (recompute+push at `05:16:53`, ~2s after
+  that night's nominal end — implying the loop exited naturally, not via
+  manual kill as previously assumed, revising that detail from the prior
+  session's writeup).
+- **The in-session 2-second reconnect gap does not validate the 10s
+  cross-process buffer** — checked and found this comparison doesn't
+  transfer: in-session reconnects stay within the same process/
+  CoreBluetooth session, while the POST-RUN handoff is a genuinely
+  different, cross-process peripheral-bond release the code's own
+  existing comment already flags as a distinct macOS quirk.
+- **No speculative timing change made.** There is no real measurement of
+  how long the OS-level bond release actually takes on this machine —
+  not from any successful case (none exist) or partial one. Per explicit
+  instruction, did not guess a new number for the 10s wait or 120s scan
+  timeout; both are unchanged.
+- **What was built instead: real-timestamped, persistent handoff logging**
+  (`pipeline/logs/morning_pull_handoff.log`, new) in both
+  `oura_gen3_ble_daemon.py`'s POST-RUN section and
+  `oura_gen3_morning_pull.py`'s own scan attempt — survives independently
+  of `/tmp`, regardless of invocation path. Not a fix; sets up the *next*
+  occurrence to actually be diagnosable with real elapsed-time data.
+  Smoke-tested (mocked scan failure + an incidental real unmocked scan
+  attempt in this environment) — confirmed both paths log correctly.
+- Full writeup in `known_issues.md`, 2026-07-23 "UNRESOLVED" entry.
+- **Next session:** tonight's watchdog test (see item 0 below) will also
+  be the first real data point for this issue — check
+  `pipeline/logs/morning_pull_handoff.log` in the morning regardless of
+  whether the watchdog itself had to intervene. If it shows a real scan
+  duration/outcome, that's the first-ever real evidence to size an actual
+  fix against instead of guessing.
+
 **Date:** 2026-07-23 (session 3 — built a subprocess-level watchdog for the recurring connect() deadlock; ADDRESSED, not yet RESOLVED — tonight is the first real test)
 
 - **Built `pipeline/tools/gen3_daemon_watchdog.py`.** Detects the deadlock
@@ -312,7 +359,7 @@ conflict, this file takes precedence — it is version-controlled.
 
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
 
-0. **NEW 2026-07-23 — Tonight is the FIRST REAL TEST of the connect()-deadlock watchdog. Launch with the watchdog, not the daemon directly:** `cd ~/Desktop/METHUSELAH && nohup python3 pipeline/tools/gen3_daemon_watchdog.py > /tmp/daemon_tonight.txt 2>&1 &`. Same shape as before (`[poll_seconds] [duration_hours]` optional args, same log-checking habit: `tail -f /tmp/daemon_tonight.txt`). The watchdog kills and relaunches the daemon subprocess if the log file goes >20min without a new real event — built and tested against a simulated hang this session (`known_issues.md` 2026-07-23 "ADDRESSED" entry), but has never run against real hardware/a real deadlock. In the morning: check `/tmp/daemon_tonight.txt` for any `[WATCHDOG ...]` restart lines (if present, that's a real deadlock the watchdog caught — note the timestamps and how many restarts) and confirm the night's data looks complete/continuous either way. Only mark the known_issues.md entry "RESOLVED" (currently "ADDRESSED") after this confirms one of: (a) a real deadlock occurred and was recovered, or (b) a full clean night with zero false-positive restarts.
+0. **NEW 2026-07-23 — Tonight is the FIRST REAL TEST of the connect()-deadlock watchdog, AND the first night with real morning-pull handoff timing evidence. Launch with the watchdog, not the daemon directly:** `cd ~/Desktop/METHUSELAH && nohup python3 pipeline/tools/gen3_daemon_watchdog.py > /tmp/daemon_tonight.txt 2>&1 &`. Same shape as before (`[poll_seconds] [duration_hours]` optional args, same log-checking habit: `tail -f /tmp/daemon_tonight.txt`). The watchdog kills and relaunches the daemon subprocess if the log file goes >20min without a new real event — built and tested against a simulated hang this session (`known_issues.md` 2026-07-23 "ADDRESSED" entry), but has never run against real hardware/a real deadlock. In the morning: (a) check `/tmp/daemon_tonight.txt` for any `[WATCHDOG ...]` restart lines (if present, that's a real deadlock the watchdog caught — note the timestamps and how many restarts) and confirm the night's data looks complete/continuous either way — only mark that known_issues.md entry "RESOLVED" (currently "ADDRESSED") after this confirms a real recovery or a full clean night with zero false positives; (b) **also check `cat pipeline/logs/morning_pull_handoff.log`** — this is the first night with real, persistent timestamps for the daemon-release → morning-pull-scan handoff (known_issues.md 2026-07-23 "UNRESOLVED" entry). Every automated morning pull on record has failed with no surviving evidence of why; this log should finally show real elapsed scan time and outcome. If it shows a specific number, that's the first real data point to size an actual fix (the 10s wait / 120s scan timeout) against — still don't guess a new number without it.
 0. **NEW 2026-07-21 — Run an evening walk test with `walk_test_keepwarm.py` active BEFORE starting the walk.** Tool is built and dry-run verified (connects, holds, logs cleanly — see today's summary above and `known_issues.md`), but 0x7E/0x7F walk verification itself has NOT been done — deferred today for heat. Start `python3 pipeline/tools/walk_test_keepwarm.py` while stationary, wait for "Connected and authenticated. Holding warm." in the output, THEN put the ring on / leave for the walk, and leave the tool running through the whole walk. Ctrl+C when done. Check the resulting log under `pipeline/data/raw_pulls/gen3_walk/` for `Real step feature (1)`/`(2)` entries with `analyze_fft_walk.py`. Do not claim 0x7E/0x7F is fixed until this actually produces walk data — the dry run only proved connection mechanics, nothing about the buffer-timing race itself.
 0. **NEW 2026-07-19 — Wire live 0x4C decoding into the daemon loop, or accept the morning-pull-only path and prioritize its buffer window.** Finding 1 above: 24 real 0x4C firings tonight, zero used for `sleep_duration_hrs` because only `oura_gen3_morning_pull.py` has the epoch formula, and it only runs once, post-daemon, with whatever buffer happens to still be there. Two paths: (a) decode 0x4C directly in the daemon's own per-cycle loop instead of relying on a single post-run pull, or (b) keep the morning-pull-only design but investigate why tonight's post-daemon pull's buffer held no 0x4C at all (~42min window, arrived right after 24 firings during the session — worth understanding the buffer/rollover timing before assuming another night will do better). Either way, resolve the **0x4C bout-boundary reset behavior** first (does it reset per-disruption, per-BLE-session, or something else) — summing across firings blindly will be wrong.
 0. **NEW 2026-07-19 — Fix `ca.methuselah.gen3daemon` launchd permission error.** `daemon_launchd_err.log` shows `can't open file '.../oura_gen3_ble_daemon.py': Operation not permitted` — likely a macOS Full Disk Access / TCC permission needed by the launchd-invoked python3, or a path/quarantine issue. Until fixed, overnight runs depend on someone manually starting the daemon in a terminal, and `daemon_launchd.log`/`daemon_launchd_err.log` can't be trusted as a complete session record.

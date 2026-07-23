@@ -6975,3 +6975,136 @@ subprocess test harness (throwaway fake daemon scripts, not committed)
 exercising the real `gen3_daemon_watchdog.run()` and
 `oura_gen3_ble_daemon._last_real_boot_ts_in_log()` functions.
 `python3 -m py_compile` on both modified/new files.*
+
+## UNRESOLVED (real cause not found; instrumented, not fixed): automated post-daemon morning pull fails on ALL 4 real nights, not just 07-22/23's deadlock night, 2026-07-23
+
+**Scope:** investigate the 07-22/23 "Ring not found in scan window" morning-
+pull failure as a possibly-distinct handoff-timing issue, separate from the
+already-confirmed/addressed `connect()` deadlock. Strictly the daemon's
+POST-RUN → morning-pull handoff (`oura_gen3_ble_daemon.py` ~L497-543,
+`oura_gen3_morning_pull.py`'s `main()`) — `classify()`, the watchdog, and
+`sleep_duration_estimate.py` were not touched.
+
+### Real finding #1: this is not confined to the deadlock night
+
+Checked whether any automated post-daemon morning pull has ever produced
+output since the daemon's own POST-RUN auto-pull was built (2026-07-12).
+Real result: **`pipeline/data/raw_pulls/gen3_morning/` and `gen3_evening/`
+have zero files dated between 2026-07-19 06:00 and 2026-07-23 12:00** —
+covering all 4 real overnight daemon nights on record, **including
+2026-07-19/20, the one fully healthy night** (session_span_hrs=8.00h,
+zero connectivity gaps, clean disconnect at the natural end of the loop).
+If the automated morning pull had ever succeeded after any of these 4
+nights, a file would exist here. None does. This directly answers the
+task's question: **the failure is NOT explainable by the 07-22/23 deadlock
+incident alone** — it recurs on a night with zero connection problems, so
+whatever's wrong is a real, separate, general handoff issue.
+
+(`pull_morning.sh` — the *separate*, Shortcut-triggered manual invocation
+path that logs to `pipeline/data/logs/morning_pull.log` — is unrelated to
+this: that log's own mtime, 2026-07-02, shows it hasn't been triggered
+since well before any of these 4 nights, confirming it isn't a second,
+confounding source of the missing files.)
+
+### Real finding #2: no timestamp evidence survives for any of the 4 nights
+
+Both `oura_gen3_ble_daemon.py`'s POST-RUN section and
+`oura_gen3_morning_pull.py`'s scan-and-connect logic only ever `print()` —
+nothing about the handoff (disconnect time, 10s-wait boundaries, scan
+start/outcome) was ever written to a file that survives past the terminal
+session. `subprocess.run([sys.executable, pull_script], capture_output=False)`
+inherits stdout, so the morning pull's own prints went wherever the
+daemon's own stdout went (`/tmp/daemon_tonight.txt` per the documented
+launch convention) — which does not survive in `/tmp` across sessions and
+was not preserved for any of the 4 nights checked. **The task's request
+for exact real timestamps (daemon release time vs. morning-pull scan
+start vs. scan duration) cannot be fully satisfied for any of the 4
+nights** — this is itself the core finding, not a gap in this
+investigation's effort.
+
+What CAN be derived indirectly for 07-22/23 specifically, from real
+filesystem timestamps (not printed logs): the local bridge files
+(`pipeline/data/bridge/gen3_latest.json`, `bout_checkpoint.json`) have
+mtime `05:16:53` — 2 seconds after that night's own nominal `end_time`
+(`21:16:51 + 8h = 05:16:51`). Since `recompute_bridge_from_daemon.py --push`
+runs synchronously in POST-RUN *before* the 10s wait, this strongly
+implies the main loop was still alive and looping (silently failing to
+reconnect, per the confirmed deadlock — entry above) right up until
+`time.time() >= end_time`, then exited *naturally* (not via a manual kill,
+revising this session's own earlier framing) into POST-RUN. From there:
+recompute+push at ~05:16:53, 10s wait to ~05:17:03, morning pull fired at
+~05:17:03, scanning for up to 120s (`scan_for_ring(timeout_seconds=120)`)
+— so it would have given up by ~05:19:03 if the ring was never found.
+These are derived from real, dated artifacts, not printed timestamps —
+flagged as such, not presented as directly observed.
+
+### Real finding #3: the in-session reconnect comparison the task asked for does not transfer cleanly
+
+Checked `oura_gen3_ble_daemon.py`'s in-session disconnect/reconnect path
+(~L338-340): it uses only a **2-second** `asyncio.sleep(2)` before
+rescanning — far shorter than the morning pull's 10s buffer — and, per
+this session's earlier watchdog investigation, no real night shows tick-
+stream evidence of an in-session reconnect ever failing outright. But
+this comparison does not actually validate or invalidate the 10s
+cross-process buffer: an in-session reconnect stays within the *same*
+Python process / asyncio event loop / CoreBluetooth session the whole
+time, while the POST-RUN handoff spins up a **brand-new, separate Python
+process** with its own fresh `BleakClient`/CoreBluetooth session against
+a peripheral the *previous* process just released. The code's own
+existing comment already identifies this as a distinct, known macOS bug
+category ("connectPeripheral queues indefinitely behind the
+just-disconnected bond") — not the same mechanism the 2-second in-session
+gap is evidence for. **The 2-second in-session figure is real but not
+informative for this specific cross-process question; it is not,
+therefore, used to justify any specific new number.**
+
+### No speculative timing change made, per explicit instruction
+
+There is no real measurement anywhere on record of how long the OS
+actually takes to release a peripheral bond across a process boundary on
+this machine — not from a successful case (there are none), not from a
+partial one. Raising the 10s buffer to any other specific number (20s,
+30s, 60s) right now would be exactly the "arbitrary round number" the
+task explicitly said not to ship. None was made. `oura_gen3_ble_daemon.py`'s
+10s wait and `oura_gen3_morning_pull.py`'s 120s scan timeout are
+**unchanged**.
+
+### What WAS built: real-timestamped, persistent handoff logging (not a fix — instrumentation)
+
+Added `_log_handoff()` to both `oura_gen3_ble_daemon.py` (POST-RUN
+section: loop-exit time + whether a live client existed to cleanly
+disconnect, 10s-wait start, morning-pull subprocess fire time + exit
+code) and `oura_gen3_morning_pull.py` (scan start, scan outcome +
+elapsed seconds, found-vs-not-found) — both appending to a new,
+persistent `pipeline/logs/morning_pull_handoff.log` that survives
+independently of `/tmp` or the invoking terminal session, regardless of
+whether `oura_gen3_morning_pull.py` is invoked by the daemon, by
+`pull_morning.sh`, or manually. This does not change the failure
+behavior or any threshold — it exists purely so the *next* occurrence
+(tonight, given the watchdog is also under its first live test — prior
+entry above) produces the real evidence this investigation could not
+find for any of the 4 past nights, enabling an actual real-data-justified
+fix instead of another guess. Smoke-tested (mocked `scan_for_ring` to
+fail instantly, and separately let it run for real against no hardware
+in this environment) — confirmed both code paths write sensible,
+correctly-timestamped entries and don't crash; the sandbox's own real
+(unmocked) scan attempt also correctly logged a real 120.1s
+gave-up-after entry, incidentally confirming the logging works
+correctly on the genuine failure path too, not just the mocked one.
+
+**Status: UNRESOLVED.** The root cause of why the automated morning
+pull's scan fails after every single daemon night, including fully
+healthy ones, remains genuinely unknown. Not attributable to the
+07-22/23 deadlock incident specifically (finding #1). Do not close this
+out or guess a specific timing fix until `morning_pull_handoff.log`
+produces a real occurrence with actual elapsed-time evidence.
+
+*Logged 2026-07-23. Sources: `pipeline/data/raw_pulls/gen3_morning/`
+and `gen3_evening/` (real directory listings, sorted by real mtime,
+confirming zero output 07-19 through 07-23), `pipeline/data/logs/
+morning_pull.log`'s own real mtime (confirms `pull_morning.sh` is not a
+confound), `pipeline/data/bridge/*.json` real mtimes (05:16:53, the only
+available indirect timing evidence for 07-22/23), `oura_gen3_ble_daemon.py`
+and `oura_gen3_morning_pull.py` (real code read directly, not assumed),
+`python3 -m py_compile` on both modified files, and a real (if
+BLE-hardware-less) smoke test of the new logging code.*

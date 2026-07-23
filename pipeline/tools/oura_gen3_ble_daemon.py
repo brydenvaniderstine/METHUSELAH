@@ -494,6 +494,7 @@ async def main():
 
             await asyncio.sleep(poll_seconds)
 
+        had_live_client = client is not None
         if client is not None:
             try:
                 await client.disconnect()
@@ -502,6 +503,29 @@ async def main():
 
     print(f"\n=== Daemon session complete. Total events logged: {total_events_logged} ===")
     print(f"Full log: {log_path}")
+
+    # Real-timestamped, persistent record of the daemon->morning-pull handoff.
+    # Every automated post-daemon morning pull on record (all 4 real nights,
+    # 2026-07-19/20 through 2026-07-22/23, including the one fully healthy
+    # night) has failed to produce output, and stdout is only ever inherited
+    # (never captured to a surviving file) across this handoff -- so there is
+    # currently no way to tell, after the fact, how long the OS actually took
+    # to release the peripheral or how long the scan ran before giving up.
+    # This does not change the 10s buffer or the morning pull's own scan
+    # timeout (known_issues.md 2026-07-23: no real timing measurement exists
+    # yet to justify a specific new number, so none is guessed here) -- it
+    # exists so the NEXT occurrence produces the real evidence needed to make
+    # that decision instead of another unexplained silent failure.
+    handoff_log = _os.path.join(repo_root, 'pipeline', 'logs', 'morning_pull_handoff.log')
+    _os.makedirs(_os.path.dirname(handoff_log), exist_ok=True)
+
+    def _log_handoff(msg):
+        with open(handoff_log, "a") as hf:
+            hf.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+
+    _log_handoff(f"Daemon loop exited (log={_os.path.basename(log_path)}). "
+                 f"Live client at exit: {had_live_client} "
+                 f"({'disconnect() called' if had_live_client else 'client was already None -- no clean disconnect to make, likely a prior unresolved connect() attempt'}).")
 
     # Always recompute the final bridge from the complete daemon log.
     # This runs after the main loop so it has all IBI + sleep data for the
@@ -524,6 +548,7 @@ async def main():
     # 2026-07-14). 10s is conservative; 5s has been seen to be insufficient.
     import time as _time
     print("[POST-RUN] Waiting 10s for CoreBluetooth to release peripheral...")
+    _log_handoff("Starting 10s post-recompute wait before firing morning pull.")
     _time.sleep(10)
 
     # Always fire a morning pull immediately after the daemon ends.
@@ -533,6 +558,7 @@ async def main():
     # right here (~06:47) catches the ring before the buffer rolls or the
     # session transitions to active state.
     print(f"\n[MORNING PULL] Firing post-daemon pull to capture 0x4C sleep summary...")
+    _log_handoff("Firing oura_gen3_morning_pull.py subprocess now.")
     pull_script = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
                                  "oura_gen3_morning_pull.py")
     result = _subprocess.run([_sys.executable, pull_script], capture_output=False)
@@ -540,6 +566,9 @@ async def main():
         print("[MORNING PULL] Completed.")
     else:
         print(f"[MORNING PULL] Exited with code {result.returncode}.")
+    _log_handoff(f"Morning pull subprocess exited with code {result.returncode}. "
+                 f"See oura_gen3_morning_pull.py's own morning_pull_handoff.log entries "
+                 f"above for its real scan start/outcome timestamps.")
 
 
 if __name__ == "__main__":

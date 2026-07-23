@@ -110,12 +110,34 @@ def parse_event(data: bytes):
     return {"tag": tag, "tag_name": EVENT_TAGS.get(tag, f"UNKNOWN (0x{tag:02x})"),
             "length": length, "boot_ts": ts_boot, "payload": payload}
 
+_HANDOFF_LOG = _os.path.join(_os.path.dirname(__file__), '..', 'logs', 'morning_pull_handoff.log')
+
+
+def _log_handoff(msg):
+    """Real-timestamped, persistent record of this script's own scan
+    attempt -- see oura_gen3_ble_daemon.py's matching entries for why: every
+    automated post-daemon morning pull on record has failed silently with no
+    surviving timing evidence (stdout is only ever inherited, never
+    captured). Written regardless of caller (daemon subprocess, pull_morning.sh,
+    manual run) so the real scan-start/outcome timestamps and elapsed time
+    are available after the fact no matter how this script was invoked."""
+    _os.makedirs(_os.path.dirname(_HANDOFF_LOG), exist_ok=True)
+    with open(_HANDOFF_LOG, "a") as hf:
+        hf.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+
+
 async def main():
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Scanning for ring...")
+    _scan_start = time.time()
+    _log_handoff("Scan starting (scan_for_ring, timeout_seconds=120).")
     found = await scan_for_ring(timeout_seconds=120)
+    _scan_elapsed = time.time() - _scan_start
     if not found:
         print("Ring not found in scan window — is it nearby and charged?")
+        _log_handoff(f"Scan gave up after {_scan_elapsed:.1f}s (timeout_seconds=120) — "
+                     f"ring not found.")
         return
+    _log_handoff(f"Ring found after {_scan_elapsed:.1f}s — connecting.")
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Ring detected — connecting...")
     async with BleakClient(ADDR, timeout=30) as client:
         print("Connected.")
