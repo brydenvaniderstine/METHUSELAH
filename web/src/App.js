@@ -588,7 +588,7 @@ export default function MethuselahFinal() {
               onSubmit={submitGlucose}
             />
             <Metric
-              label="HRV // SYSTEMIC FRICTION"
+              label="HRV"
               val={hrv !== null ? Math.round(hrv) : "--"}
               unit="ms"
               color={hrv === null ? "var(--text-dim)" : hrv < THRESHOLDS.hrv ? "var(--accent-amber)" : "var(--accent-green)"}
