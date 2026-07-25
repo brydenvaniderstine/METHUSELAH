@@ -266,20 +266,33 @@ tested and found inconclusive for the others, nothing confirmed yet.
       a per-bout accumulator (2026-07-19/20 entry below). Decoder:
       `pipeline/decoders/0x5a.py` (decode logic already handled
       variable length correctly; only the docstring was wrong).
-      **Stage 0/1/2 exact-match cross-validation against 0x4C now
-      confirmed across 6 independent bouts spanning 3 separate nights**
-      (2026-07-12, 2026-07-18/19, 2026-07-20) — up from the original
-      n=1 bout. Internal Gen3-vs-Gen3 consistency only, not external
-      ground truth; per the project's dashboard rules this does not
-      change deep-sleep%/stage-breakdown's Discard/AWAITING-DATA status.
-      **Stage 3 / `0xFF`-sentinel ambiguity is NOT resolved** — the
-      2026-07-18 "off by ~8 epochs, 2 misclassified 0xFF bytes" theory
-      is falsified by the larger sample: the gap across the 6 bouts is
-      8/2/38/-5/47/57 (once even negative — 0x5A overcounts), with no
-      consistent relationship to the number of 0xFF bytes present. This
-      is the strongest current lead on the long-standing `sleep_state`-
+      **Stage 0/1/2 exact-match cross-validation against 0x4C re-verified
+      2026-07-24 at full-corpus scale: 38 distinct bouts after de-duping
+      byte-identical retransmitted backlog copies (found this session —
+      raw burst count was 114, but 76 were re-transmissions of bouts
+      already seen in an earlier daemon file; see known_issues.md
+      2026-07-24)** — up from the 2026-07-21 sample of 6 bouts. Exact
+      match holds 100% for bouts with 2+ chunks (31/31); single-chunk
+      bouts (7/7) show a stage-0 overcount, tentatively linked to `0x00`
+      possibly being unwritten buffer padding rather than real WAKE
+      epochs — unconfirmed, flagged as an open lead, not chased further.
+      Internal Gen3-vs-Gen3 consistency only, not external ground truth;
+      per the project's dashboard rules this does not change
+      deep-sleep%/stage-breakdown's Discard/AWAITING-DATA status.
+      **Stage 3 / `0xFF`-sentinel ambiguity is NOT resolved.** 2026-07-24
+      tested a literature-informed refinement (0xFF bytes clustering
+      adjacent to stage-3 runs specifically, motivated by external
+      research on deep sleep being the hardest-classified stage
+      industry-wide) — NOT supported; adjacency correlation (r≈0.2) is
+      weaker than the already-falsified total-0xFF-count measure
+      (r≈0.5, itself mostly explained by bout length). This is the
+      strongest current lead on the long-standing `sleep_state`-
       flatness open question (2026-06-28 entry, top of known_issues.md)
-      but stage 3 keeps it at PARTIAL, not DONE.
+      but stage 3 keeps it at PARTIAL, not DONE. Also fixed a real bug
+      this session: `complete`/`missing_chunks` hardcoded `range(23)`
+      instead of the bout's actual length, causing false "partial
+      capture" warnings in `oura_gen3_morning_pull.py` for most
+      genuinely-complete short bouts (105/114 in the corpus).
 - [ ] 0x49/0x4C/0x4F/0x58 sleep_summary (1)/(2)/(3)/(4) — all fired for
       the first time, directly contradicting this roadmap's prior "Gen3
       does NOT emit (0 packets across 27 pulls)" status for 0x49/0x4C/0x4F.

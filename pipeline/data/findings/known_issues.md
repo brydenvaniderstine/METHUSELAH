@@ -7108,3 +7108,471 @@ available indirect timing evidence for 07-22/23), `oura_gen3_ble_daemon.py`
 and `oura_gen3_morning_pull.py` (real code read directly, not assumed),
 `python3 -m py_compile` on both modified files, and a real (if
 BLE-hardware-less) smoke test of the new logging code.*
+
+## RULED OUT with real data (not resolved): TCC/subprocess-identity theory for the watchdog's first real overnight run finding the ring ZERO times in ~8h, 2026-07-24
+
+**Scope:** the watchdog's very first real overnight test (2026-07-23 21:16:32
+- 2026-07-24 05:16:32) logged **zero real events** for the entire session
+(`gen3_daemon_20260723_211632.txt` contains only its header line) across
+**23 watchdog-triggered restarts**, with the first restart firing at
+21:37:32 — only 21 minutes after session start, meaning the ring was never
+found from essentially the first scan, not partway through the night. The
+automated post-daemon morning pull's own independent scan then also failed
+identically (`morning_pull_handoff.log`: gave up after 120.1s). Ring
+confirmed worn continuously overnight (one ~30s bathroom break) — physical/
+wear ruled out by the owner before this investigation started.
+
+**Task's hypothesis: macOS TCC could silently deny Bluetooth to the
+watchdog's subprocess-spawned daemon because it presents a different "app
+identity" than a direct Terminal launch, with no Python-level exception.**
+Checked directly against real OS logs and a real live reproduction — **not
+supported by any evidence found; actively contradicted by three
+independent real-data sources below.**
+
+**1. Real `log show` TCC data from the actual failed session, not
+inference.** `log show --predicate 'process == "tccd"'` for
+2026-07-23 21:16:00–21:20:00 shows the exact real authorization exchange
+for the watchdog-spawned daemon process:
+```
+21:16:32.833 AUTHREQ_ATTRIBUTION msgID=64201.1 service=kTCCServiceBluetoothAlways
+  responsible={com.apple.Terminal, pid=92735, .../Terminal.app/Contents/MacOS/Terminal}
+  requesting={com.apple.python3, pid=64201, .../Xcode.app/.../Python3.framework/.../Python}
+21:16:32.851 AUTHREQ_RESULT msgID=64201.1 authValue=2 authReason=4   ← ALLOWED
+21:17:02.893 (identical exchange, msgID=64201.3, 30s later — matches
+  scan_for_ring()'s own timeout=min(30,remaining) inner retry loop)
+21:17:02.906 AUTHREQ_RESULT msgID=64201.3 authValue=2               ← ALLOWED
+```
+`authValue=2` is Allowed (0=Denied, 1=Unknown/needs-prompt, 2=Allowed).
+Both real checks, at the daemon's actual start and its next real retry
+cycle, resolved the "responsible" party correctly up through
+`com.apple.Terminal` — exactly the same attribution a direct Terminal
+launch would get — and both were granted. **This is the OS's own real,
+contemporaneous record for the actual failing process, not a retest**: TCC
+did not deny Bluetooth to the watchdog-spawned subprocess last night.
+
+**2. `TCC.db` shows no recent Bluetooth grant change, contradicting the
+task's item 3 (FDA toggle invalidating a separate Bluetooth grant).**
+`sqlite3 ~/Library/"Application Support"/com.apple.TCC/TCC.db` for
+`kTCCServiceBluetoothAlways` shows exactly two grants on record —
+`com.apple.Terminal` and `com.google.Chrome` — both `auth_value=2`, both
+`last_modified = 2026-05-01`. Neither was touched anywhere near
+2026-07-23 (yesterday's Full Disk Access change). If toggling FDA for
+python3 had reset/invalidated the Bluetooth grant, this table would show a
+modification near that date; it does not. (Could not query the
+system-level `/Library/Application Support/com.apple.TCC/TCC.db` — needs
+`sudo` + an interactive password not available in this environment; noted
+as a real limitation, not glossed over, but the user-db finding plus
+finding 1's real ALLOWED result already leave this hypothesis unsupported.)
+
+**3. Live reproduction, same day, same hardcoded ring address, same
+machine — the watchdog's actual subprocess-spawn mechanism was tested
+directly, not just reasoned about:**
+- Isolated `scan_for_ring()` called directly (`python3 scan_test.py`):
+  found the ring in **1.0s**.
+- The identical call launched via `subprocess.Popen([sys.executable, ...])`
+  — the exact mechanism `gen3_daemon_watchdog.py`'s `launch_daemon()` uses
+  to spawn `oura_gen3_ble_daemon.py`, no shell, inherited stdio, same
+  binary: found the ring in **12.9s**.
+- The real `gen3_daemon_watchdog.py` itself, run end-to-end
+  (`poll=5s duration=0.05h`, ~3 real minutes): scanned, found the ring in
+  3s, connected, authenticated, ran 15 real poll cycles (3,841 real events
+  logged: 0x6A/0x6E/0x6F/0x75/0x6B/0x61 all decoding cleanly, 0 decode
+  fails, 0 restarts), reached nominal end, and completed its real
+  POST-RUN recompute + morning pull (found the ring again, pulled a real
+  256-packet history, pushed a real bridge update — `200 → live site
+  updated`).
+
+Run under the identical code path that failed all night, **today it works
+end-to-end with zero changes** — directly disproving "the watchdog's
+subprocess-spawning method itself caused the failure."
+
+**4. `bluetoothd`'s own real logs for the entire failed window show the
+radio was not dead.** `log show` for `bluetoothd` across the full
+21:16:00–05:17:00 span shows **13,351 real 'start scan' requests** and
+**11,676 real 'Scanning stopped successfully' events**, most reporting
+nonzero Advertising Events received (sampled at both the very start —
+12, 2, 11, 15, 9 events — and the very end of the window — 39, 0, 84, 0,
+42 events at 05:16:47–05:16:57). The adapter was actively scanning and
+receiving real BLE advertisements from something, continuously, the whole
+night, right up to the moment the daemon loop exited.
+
+**What remains genuinely open (not confirmed, not code-fixed):** with
+TCC, subprocess-identity, and adapter/radio failure all ruled out by real
+data, the mechanically-sound explanation that best fits every symptom —
+zero detection from the very first scan, identical across all 24 process
+launches, self-resolving by morning, reproduces instantly today — is that
+**the ring itself was not advertising as a connectable peripheral during
+this specific window**, e.g. held in an active BLE connection by another
+central (most plausibly the phone's own Oura app) for the session's
+duration. A BLE peripheral does not advertise while already connected, so
+this would produce exactly this signature without requiring any bug in
+this codebase at all. **This is NOT confirmed** — last night's own 0x53
+(wear event, off-body) / 0x5B (BLE connection) tags, which could show a
+competing central's connection, were never logged, precisely because zero
+events of any kind were captured. Cannot be resolved retroactively from
+existing artifacts.
+
+**Recommended next step is instrumentation, not a guessed fix** (per this
+project's own discipline — no speculative timing/code change made): add a
+raw, unfiltered advertisement counter inside `scan_for_ring()`'s
+`detection_callback` (count every callback invocation regardless of
+address match, log periodically even on zero) so the next occurrence can
+distinguish (a) zero raw advertisements seen by our own scanner — a real
+RF/adapter issue, from (b) other devices' advertisements seen but the
+ring's specific address never appears — consistent with the
+already-connected-elsewhere hypothesis, from (c) the ring's real address
+appearing but the equality filter not matching — a real address/UUID bug.
+Also flagged as the one input only the owner can supply: whether the
+phone running the Oura app was powered on / Bluetooth-enabled / in range
+of the ring overnight, unlike other successful nights on record. No code
+was changed by this investigation.
+
+**Status: UNRESOLVED** (true root cause not confirmed), but three of the
+task's four candidate causes are now definitively ruled out with real,
+contemporaneous OS-level data plus a live end-to-end reproduction —
+narrowing the field substantially from the original framing.
+
+*Logged 2026-07-24. Sources: `pipeline/data/raw_pulls/gen3_daemon/
+gen3_daemon_20260723_211632.txt` (real, header-only — confirms zero
+events), `pipeline/logs/morning_pull_handoff.log` (real timestamped
+handoff entries for the failed night), `log show --predicate 'process ==
+"tccd"'` for 2026-07-23 21:16:00–21:20:00 (real TCC authorization records
+for the actual failing process, msgID 64201.x/13754.318x, authValue=2),
+`sqlite3` query against the real user `TCC.db`
+(`kTCCServiceBluetoothAlways` rows, real `last_modified` epochs),
+`log show --predicate 'process == "bluetoothd"'` for the full
+21:16:00–05:17:00 window (real scan-start/scan-stop counts and
+Advertising-Events counts), and three real live reproduction runs
+performed 2026-07-24 06:09–06:14 (direct `scan_for_ring()`,
+`subprocess.Popen`-spawned `scan_for_ring()`, and a full real
+`gen3_daemon_watchdog.py` run — `gen3_daemon_20260724_061056.txt`,
+3,841 real logged events, real bridge pushes confirmed `200`). No code
+modified by this investigation.*
+
+## Night 5 investigation, continued: OS-level Bluetooth bond with the ring identified as the best-supported remaining explanation — real evidence, still not log-confirmed, no code change, 2026-07-24
+
+**New input this round:** macOS System Settings → Bluetooth shows the ring
+under "My Devices" — a genuine system-level pairing/bond, currently "Not
+Connected." This is a real relationship the OS has with the ring,
+independent of anything `bleak`/this codebase does. It also falsifies the
+prior session's "phone's Oura app holding the connection" hypothesis:
+phone Bluetooth was off both last night and at the time of this check.
+
+**1. Does macOS's own bond with the ring interfere with `bleak`'s scan?
+Real, documented mechanism found — checked against Apple's own guidance,
+not assumed:**
+- Web search of Apple developer forum discussions on this exact class of
+  problem: "iOS/macOS maintains an internal cache of previously
+  connected/bonded peripherals... may automatically reconnect to it at the
+  system level without your app being aware," and — the load-bearing fact
+  — **Apple's own recommendation for a peripheral already connected at the
+  system level is to use `retrieveConnectedPeripheralsWithServices:`
+  instead of `scanForPeripherals`, because already-connected peripherals
+  don't reliably appear in a fresh scan.** `BleakScanner` (what
+  `scan_for_ring()` uses) is a passive-advertisement scanner — it can only
+  detect a peripheral that is currently *advertising*. **A connected BLE
+  peripheral does not advertise, full stop — this is standard BLE
+  behavior, not a bug in this codebase.** If macOS's own bonded
+  relationship with the ring caused *any* central on this Mac (including
+  one macOS itself opens in the background, independent of our Python
+  process) to hold a connection to the ring, `scan_for_ring()` would
+  correctly find nothing — no code defect required.
+- Second search confirmed the generic, documented macOS behavior
+  underpinning this: "The Mac can remember paired devices and attempt to
+  reconnect bonded accessories when they're brought within range" — i.e.
+  macOS's own background reconnection to bonded accessories is a real,
+  described feature, not speculation.
+- This mechanism is consistent with **every** symptom on record without
+  requiring any new assumption: zero detection from the very first scan
+  (an OS-level connection can begin before our process ever starts
+  scanning), identical failure across all 23 restarts (an OS-level
+  connection is independent of our process being killed/relaunched —
+  restarting our code does nothing to it), self-resolving by morning
+  (the OS-level connection eventually ends), and instant success in
+  today's live reproduction (no competing OS-level connection active at
+  the time of testing).
+
+**2. Checked `bluetoothd`/`blued` logs for the actual failure window for
+direct evidence of macOS itself connecting to the ring — real limitation
+found, not glossed over.** `log show` for the full 2026-07-23 21:16–
+2026-07-24 05:17 window contains **zero** occurrences of the ring's real
+address (`a0:38:f8:c4:47:98`, checked in colon, hyphen, and unpunctuated
+form) anywhere in the log text. This is **not evidence of absence** —
+macOS's `log show` redacts virtually all Bluetooth device identifiers as
+`<private>` at the default privacy level system-wide (confirmed: even
+unrelated, clearly-benign entries like
+`decryptProximityPairingPayload device:<private> address:<private>` are
+redacted the same way throughout the log). Unmasking private log data on
+macOS requires either `sudo log config --mode "private_data:on"` or an
+installed diagnostic logging profile — `sudo` requires an interactive
+password not available in this environment, so this could not be
+attempted. **This means a direct log citation naming the ring specifically
+in a background reconnect attempt could not be obtained — flagged
+honestly as a real gap, not claimed as confirmed.** (The
+`LeConnectionManager::leAddressChangedCallback` lines that do appear
+~hourly all night are the Mac's own outgoing BLE privacy address rotating
+— a normal, unrelated system behavior, checked and ruled out as a red
+herring, not evidence of anything ring-specific.)
+
+**3. Real, direct test: does the ring's existing OS-level bond, by
+itself, block `bleak` scanning on this machine?** No — checked empirically,
+not assumed. All three live reproductions in the prior investigation round
+(today, 2026-07-24) succeeded — direct `scan_for_ring()`, subprocess-spawned
+`scan_for_ring()`, and the full `gen3_daemon_watchdog.py` run — **while the
+exact same "My Devices" bond confirmed by the user was already present.**
+This rules out the simple, categorical version of the hypothesis ("a
+bonded device can't be found by a fresh scan"). It does **not** rule out
+the more specific version: that the bond alone is harmless, but macOS
+*actively using* that bond to hold a connection at some other time
+(e.g. an idle overnight period with no other Bluetooth activity
+competing for attention) is what blocks discovery — which is the
+mechanism described in Finding 1, and the two are not in tension.
+
+**4. Investigated whether a prior "reconnect script" exists, per the
+owner's recollection — searched real commit history and every doc file,
+not assumed.** `git log --all --oneline` (236 commits) has real,
+plentiful "reconnect" commits, but every one of them is the in-code
+`scan_for_ring()`/`open_connection()` reconnect logic already documented
+above and in the 2026-07-14 through 07-23 entries — nothing that reads as
+a standalone manual/OS-level workaround script. `known_issues.md`,
+`SESSION_HANDOFF.md`, `ARCHITECTURE.md`, and `open_ring_roadmap.md` were
+grepped for "forget," "unpair," "re-pair," "blueutil," and "System
+Settings" — no hits. **Real, concrete finding instead:** `blueutil`
+(a Homebrew CLI tool that can query/toggle macOS Bluetooth pairing and
+power state) is installed on this machine, "Installed (on request)" per
+`brew info blueutil`, with an install receipt timestamp of 2026-06-18 —
+over three weeks before this BLE daemon project began (2026-07-12) and
+five weeks before last night's failure. This is very likely what the
+owner is recalling as "a reconnect script" — most likely a manual
+`blueutil` command run from the terminal at some point, not a script
+committed to this repo. Could not confirm the specific historical
+invocation: this session's shell has no accessible `.zsh_history` (the
+Mac's interactive shell is zsh per `$SHELL`/default; only a small, mostly
+irrelevant `.bash_history` exists here) — flagged as a real, unresolved
+gap in this sub-question, not fabricated.
+
+**Side investigation, checked and correctly walked back rather than
+oversold:** `blueutil --paired` lists the ring as `paired`, but
+`blueutil --info a0-38-f8-c4-47-98` (run 3x) consistently reports
+`not paired` for the identical address — an apparent live discrepancy
+that looked, at first, like a real anomaly specific to the ring. Checked
+against other real, undeniably-paired devices on the same machine for
+comparison: `blueutil --info` **also** reports `not paired` for
+"Bryden's iPhone" and the "Living Room" speaker — both devices that are
+definitely genuinely paired and in daily use. Since the discrepancy
+reproduces identically on devices that have nothing to do with the ring
+or this investigation, **this is a `blueutil --info` lookup/parsing quirk
+in this tool version, not a signal about the ring's bond health** —
+checked, found not to hold up, and reported as ruled out rather than kept
+as false support for the main hypothesis.
+
+**No code fix implemented — none is justified by what's confirmed.** Per
+explicit instruction: if the OS-level pairing is the real interfering
+factor, the fix is a **manual, user-side action**, not a code change:
+
+> **Recommended next step: "Forget This Device" for the Oura Ring Gen3 in
+> System Settings → Bluetooth, done manually by the owner — not scripted,
+> not automated by this codebase.** This removes the precondition
+> (an OS-level bond) that macOS's own documented background-reconnection
+> behavior depends on, leaving `bleak`'s scan-then-connect as the only
+> thing on this Mac able to initiate a connection to the ring.
+
+**One real caveat the owner should know before relying on this
+overnight:** this codebase's own auth handshake
+(`gen3_ble_connection.py`'s `open_connection()`) does its own
+application-level AES challenge/response over plain GATT writes/notifies
+— it does not obviously depend on OS-level LE bonding to function. But
+if forgetting the device causes the *next* connection attempt to trigger
+a fresh macOS pairing negotiation (possible if any characteristic on the
+ring requires Security-Manager-level encryption — not confirmed either
+way here), that could involve a system-level prompt a headless overnight
+run wouldn't be able to answer. **Recommend the owner test one supervised
+connect cycle after forgetting the device — not a fresh unattended
+overnight run — to confirm no pairing prompt appears before trusting this
+for Night 6.**
+
+**Status: UNRESOLVED, but narrowed further with real evidence.** The
+OS-level-bond-plus-background-reconnection mechanism is now the
+best-supported remaining explanation — consistent with every symptom,
+grounded in Apple's own documented CoreBluetooth guidance, and not
+contradicted by any evidence gathered across either investigation round —
+but it is **not log-confirmed** for last night specifically, due to a
+real, disclosed limitation (macOS's own address redaction, unresolvable
+without `sudo` access this environment doesn't have). No code was
+changed. The concrete, real, user-actionable next step is the manual
+"Forget This Device" step above, tested supervised before the next
+overnight run.
+
+*Logged 2026-07-24. Sources: real `system_profiler SPBluetoothDataType`
+and macOS System Settings → Bluetooth (My Devices list, user-supplied,
+"Not Connected"), `blueutil --paired` / `blueutil --info <addr>` run live
+against the ring and, for comparison, "Bryden's iPhone," the "Living
+Room" speaker, "Bryden Van Iderstine's Keyboard," and "Bryden's AirPods
+Pro" (all real, current device states), `brew info blueutil` (real
+install-on-request receipt, 2026-06-18), `log show --predicate
+'process == "bluetoothd"'` for the full real 2026-07-23 21:16–2026-07-24
+05:17 failure window (grepped for the ring's real address in three
+formats — zero hits — and for `leAddressChangedCallback`/
+`decryptProximityPairingPayload` redaction patterns), `git log --all
+--oneline` (236 real commits, grepped for reconnect/forget/unpair/blueutil),
+real grep of `known_issues.md`/`SESSION_HANDOFF.md`/`ARCHITECTURE.md`/
+`open_ring_roadmap.md`, and two web searches against Apple developer
+forum / CoreBluetooth documentation discussion (see citations below). No
+code modified by this investigation.*
+
+Sources (web):
+- [CoreBluetooth CBCentralManager cannot connect to discovered peripheral](https://developer.apple.com/forums/thread/769277)
+- [Why Your iOS BLE Scan Returns No Results (And How to Fix It)](https://punchthrough.com/ios-ble-scan-returns-no-results/)
+- [Fix Mac Bluetooth not working in 2026: Troubleshooting guide](https://setapp.com/how-to/quickly-fix-mac-bluetooth-not-working)
+
+## 0x5A corpus-wide re-verification: retransmission duplication found, real `complete`-flag bug fixed, stage-3-gap hypothesis (0xFF adjacent to stage-3 runs) tested and NOT supported, 2026-07-24
+
+Prompted by external research (`output/sleep-stage-science-ppg-hrv.md` — literature
+review of sleep-stage science and PPG/HRV wearable detection, done via a separate
+research-report workflow; NOT itself decoder evidence). That report's two most
+relevant findings — 30-second epochs are the industry/PSG standard, and deep
+sleep (N3) is consistently the hardest/most volatile stage to classify across
+every study reviewed, Oura's own included — motivated re-running the 2026-07-21
+0x5A-vs-0x4C stage-3 gap study at full corpus scale instead of the original 6
+bouts, and testing one specific hypothesis derived from it. Built
+`pipeline/tools/analyze_0x5a_stage3_gap.py` (PARALLEL ANALYSIS ONLY, reuses the
+real `decode_sleep_phase_data`/`decode_sleep_summary_2` decoders, does not touch
+the live pipeline) to scan all 69 raw pull files rather than the 5 daemon files
+used previously.
+
+**Finding 1 — the corpus contains extensive byte-identical retransmitted
+duplicate bouts; this is a real methodology risk for future corpus-wide
+analysis, not just this one.** 114 true-complete 0x5A bursts were found
+corpus-wide; 76 of them are exact duplicates (same `boot_ts`, same payload
+content, same everything) of a bout already seen in an earlier daemon file —
+e.g. the bout at `boot_ts=72958151` appears verbatim in the 07-18, 07-19,
+07-20, 07-21, and 07-22 daemon files. **This is the same mechanism already
+root-caused for 0x4C on 2026-07-22** (`### 2. Finding A` above,
+`oura_gen3_ble_daemon.py:225-290`: `last_boot_ts` is never checkpointed to
+disk, so every daemon start requests `since_boot_ts=0` — the ring's entire
+retained history — not just what's new) — 0x5A fires in the same cluster
+as 0x4C and shares the same `request_history()` call, so it inherits the
+same backlog-retransmission behavior. This entry extends the *already-known*
+mechanism to 0x5A specifically and quantifies it for this decoder, it is not
+a new root cause. **De-duplicating by `boot_ts` leaves 38 truly distinct
+bouts** (up from the 6 previously analyzed). ~~This does not invalidate the
+2026-07-21 6-bout finding — it happened to use 6 distinct `boot_ts`
+values~~ — **correction below (part 2): 3 of those 6 `boot_ts` values were
+mis-dated to the wrong night by this exact mechanism, since the 2026-07-21
+session predated the 2026-07-22 root-cause discovery by a day and had no
+reason to check for it.** Any future statistical claim across this corpus
+must dedupe by `boot_ts` first or
+risk silently overweighting whichever bout got retransmitted most.
+
+**Finding 2 — real code bug found and fixed: `0x5a.py`'s `complete`/
+`missing_chunks` fields were computed against a hardcoded
+`expected_chunks = set(range(23))`, contradicting the decoder's own docstring
+claim (and the 2026-07-21 finding) that chunk count is variable, not fixed at
+23.** This is exactly the "verify the actual code does what's claimed" failure
+mode the project's rules warn about: the 2026-07-21 session fixed the
+*docstring* and the *reassembly* logic (which already correctly used
+`max(packets.keys())+1`) but never checked this separate field, which still
+silently mis-flagged every genuinely complete bout with fewer than 23 chunks
+as PARTIAL. Real operational impact: `oura_gen3_morning_pull.py` prints
+`WARNING: partial capture — missing chunks [...]` off this field — 105 of the
+114 true-complete bursts in the corpus were affected, meaning most manual
+pulls would have shown a bogus partial-capture warning for a genuinely
+complete short bout. **Fixed** in `pipeline/decoders/0x5a.py`: expected chunk
+count is now derived from `max(packets.keys())+1`, matching the reassembly
+logic. Verified against the full corpus post-fix: 0/114 mismatches (was
+105/114). Sanity-checked empty-packets and single-chunk edge cases directly;
+no existing test suite for decoders in this project, verification is
+corpus-based per project convention.
+
+**Finding 3 — the "stage 0/1/2 exact match, beyond doubt" claim holds at
+n=38 (up from n=6) but ONLY for bouts with 2+ chunks (31/31 exact match,
+100%).** All 7 mismatches found are exclusively single-chunk (idx=0-only,
+52-epoch) bursts, and every mismatch is in stage 0 only — 0x5A always
+substantially *overcounts* stage 0 relative to 0x4C in these cases (e.g.
+`boot_ts=70071641`: 0x5A decodes 36 epochs of stage 0 in that one chunk;
+the matched 0x4C record, 2 ticks later with no better candidate nearby,
+reports stage0=0). Manually decoded that case byte-for-byte: the chunk's
+epoch sequence is 8× NO_DATA, then 8 epochs of real-looking mixed
+LIGHT/stage-3 activity, then **36 straight epochs of stage 0, all from
+`0x00` bytes**. 0x4C for the same moment says only stage1=3, everything
+else 0 — which matches the *real-looking* middle segment (3 epochs of
+LIGHT) but not the 0x00 tail or the stage-3 epochs.
+
+⚠️ **New, unconfirmed lead — not chased further this session per the
+one-hypothesis-at-a-time rule:** one plausible read is that **`0x00` may be a
+second ambiguous byte value, structurally like `0xFF`** — a buffer's
+unwritten/zero-padding tail on a freshly-started accumulator rather than 4
+real WAKE epochs — which would explain why this only shows up in the
+smallest, freshest single-chunk bouts (a fully-populated buffer in an 18-29
+chunk bout wouldn't have an unwritten tail to misread). This is NOT
+confirmed: it's equally possible 0x4C represents a narrower/just-reset
+accumulator window than 0x5A at that exact instant, independent of any
+padding byte value. Flagging as an open lead for a dedicated future session,
+not promoting it.
+
+For 2+-chunk bouts, this finding actually *strengthens* the original
+confirmation (100% exact match at 5x the original sample), while narrowing
+exactly where the earlier claim was silently relying on a sample too small
+to hit the single-chunk edge case.
+
+**Finding 4 — primary task result: the report-informed "0xFF bytes cluster
+adjacent to stage-3 runs" hypothesis is NOT supported.** Tested whether 0xFF
+(NO_DATA sentinel) bytes disproportionately border decoded stage-3 runs,
+which would be consistent with deep sleep being the hardest-bounded stage
+per the literature review. At n=38 (n=31 excluding the Finding-3 single-chunk
+artifacts): correlation of the stage-3 gap (`4C.stage3 - 5A.stage3_nonFF`)
+against 0xFF-adjacent-to-stage3-run count is r≈0.21-0.23 — weak, and
+*weaker* than the cruder "total 0xFF bytes in the bout" measure (r≈0.50).
+That total-count correlation is itself substantially confounded by bout
+length: chunk count correlates with total 0xFF count at r≈0.73, and with
+`|gap|` at r≈0.30-0.42. **No evidence that 0xFF bytes specifically cluster
+around stage-3 boundaries more than bout length alone would predict.** The
+"deep sleep is the hardest/most-reclassified stage → edge-effect
+misencoding" hypothesis, as concretely operationalized here, does not hold
+up. Stage 3's real encoding stays an open, unresolved ceiling — this session
+narrows what it *isn't* (a boundary-adjacency effect) without resolving what
+it *is*. **0x5A stays PARTIAL, not promoted to DONE or closer to DONE on
+stage 3.**
+
+Tooling: `pipeline/tools/analyze_0x5a_stage3_gap.py` (new, committed) — rerun
+this as the corpus grows rather than hand-picking bouts; it already does the
+`boot_ts` dedup from Finding 1 and the single-chunk exclusion from Finding 3.
+
+## Follow-up correction: the 2026-07-21 "6 bouts / 3 separate nights" claim overstated night-diversity — Finding 1 above (retransmitted backlog) means 4 of those 6 bouts were mis-dated by which file they were first noticed in, 2026-07-24 (part 2)
+
+Prompted directly by the owner asking, after Finding 1 above, whether any
+previously-logged sample-size claims should be rechecked for the same
+retransmission issue rather than assuming past sessions were unaffected.
+Checked the specific 6 `boot_ts` values from the 2026-07-21 finding against
+every file they actually appear in (not just the one file each was noticed
+in that session):
+
+| boot_ts | 2026-07-21 label | files it actually appears in | true earliest night |
+|---|---|---|---|
+| 63610354 | 07-12 | 07-12 only | 07-12 — correct |
+| 68815528 | 07-18/19 | 07-18 only | 07-18/19 — correct |
+| 69667118 | 07-18/19 | 07-18, 07-19 | 07-18/19 — correct |
+| 72958131 | **07-20** | 07-18, 07-19, 07-20, 07-21, 07-22 | **07-18/19** — mislabeled |
+| 74792521 | **07-20** | 07-18, 07-19, 07-20, 07-22 | **07-18/19** — mislabeled |
+| 75892380 | **07-20** | 07-19, 07-20, 07-22 | **07-19** — mislabeled |
+
+Three of the six bouts the 2026-07-21 session attributed to "07-20" were
+actually retransmitted backlog from the 07-18/19 (or 07-19) bout, still
+being re-offered days later — the session scanned `gen3_daemon_20260720_*`
+and reasonably assumed a bout found there originated that night, without
+checking whether it also existed in earlier files. **Corrected reading: the
+2026-07-21 "6 independent bouts across 3 separate nights" claim is really
+6 bouts across *at most 2* confirmed distinct physical sleep nights
+(2026-07-12 and 2026-07-18/19)** — not 3. This does **not** undermine the
+exact-match confirmation itself (still 6 structurally distinct accumulator
+states, at 5 different chunk counts, all matching 0x4C exactly) — it only
+corrects the "spans 3 separate physical nights, so it's not one night's
+classifier quirk" independence argument, which was weaker than claimed.
+Practically moot now: the 2026-07-24 corpus-wide re-verification above
+(n=38, deduplicated by first-occurrence `boot_ts` from the start) supersedes
+this sample and doesn't repeat the error. Flagging this both as a direct
+answer to the owner's question and as a general caution: **`boot_ts`
+first-occurrence, not "which file I was looking at," is the only reliable
+way to date a bout in this corpus** — any older finding that dates a bout
+by file name alone should be treated as provisional until re-checked the
+same way.
