@@ -464,7 +464,7 @@ export default function MethuselahFinal() {
 
   useEffect(() => {
     if (!locked) {
-      addLog("TELEMETRY STREAM ACTIVE // OLIVER_BC", "event");
+      addLog("TELEMETRY STREAM ACTIVE", "event");
       addLog("READY // 4 VECTORS ENGAGED", "event");
     }
   }, [locked]);
