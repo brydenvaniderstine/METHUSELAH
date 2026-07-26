@@ -19,7 +19,7 @@ it fires on a daemon night) provides 4-stage data — cross-referencing
 0x6A timing with 0x5A epochs is the path to closing this condition.
 
 Usage:
-  cd ~/Desktop/METHUSELAH/pipeline
+  cd ~/methuselah/pipeline
   python3 tools/track_b_sleep_state_analysis.py data/raw_pulls/gen3_daemon/<logfile>
 """
 

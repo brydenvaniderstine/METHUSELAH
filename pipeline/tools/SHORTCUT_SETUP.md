@@ -3,8 +3,8 @@
 Two lock screen shortcuts. One tap = pull runs on Mac, files itself,
 no terminal required. Works at any hour, any shift, any wake time.
 
-## Absolute paths (recorded 2026-07-01)
-- Repo root: `/Users/brydenvaniderstine/Desktop/METHUSELAH`
+## Absolute paths (recorded 2026-07-01, repo moved 2026-07-26 — see known_issues.md)
+- Repo root: `/Users/brydenvaniderstine/methuselah`
 - Python:    `/usr/bin/python3`
 - Hostname:  `Brydens-MacBook-Pro.local`
 - User:      `brydenvaniderstine`
@@ -23,14 +23,14 @@ no terminal required. Works at any hour, any shift, any wake time.
    - User: `brydenvaniderstine`
    - Authentication: Password or SSH Key (SSH Key recommended)
    - Port: 22
-   - Script: `bash /Users/brydenvaniderstine/Desktop/METHUSELAH/pipeline/tools/pull_morning.sh`
+   - Script: `bash /Users/brydenvaniderstine/methuselah/pipeline/tools/pull_morning.sh`
 4. Rename shortcut: **METHUSELAH MORNING**
 5. Add to Lock Screen widget
 
 ## Shortcut 2 — Evening pull (tap before sleep)
 
 Same steps as above but:
-   - Script: `bash /Users/brydenvaniderstine/Desktop/METHUSELAH/pipeline/tools/pull_evening.sh`
+   - Script: `bash /Users/brydenvaniderstine/methuselah/pipeline/tools/pull_evening.sh`
    - Rename shortcut: **METHUSELAH EVENING**
    - Add to Lock Screen widget beside the morning shortcut
 

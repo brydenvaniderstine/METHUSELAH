@@ -24,14 +24,14 @@ NOT supported (weaker correlation than the already-falsified total-count
 measure). Stage 3 stays PARTIAL/unresolved.
 
 Run from repo root:
-  cd ~/Desktop/METHUSELAH && python3 pipeline/tools/analyze_0x5a_stage3_gap.py
+  cd ~/methuselah && python3 pipeline/tools/analyze_0x5a_stage3_gap.py
 """
 import glob
 import os
 import re
 import sys
 
-REPO = os.path.expanduser("~/Desktop/METHUSELAH")
+REPO = os.path.expanduser("~/methuselah")
 sys.path.insert(0, REPO)
 
 from pipeline.decoders import decode_sleep_phase_data, decode_sleep_summary_2  # noqa: E402

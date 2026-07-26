@@ -7854,3 +7854,101 @@ daemon must actually run for fresh nightly biometrics to land at all.
 06:14:35 Jul-24 exit, no writes until 20:33 Jul-25), `daemon_launchd_err.log`
 (9× EPERM), live `curl methuselah.ca/api/gen3-bridge`, raw pull files, and two
 real reproduction scripts.*
+
+## 2026-07-26 (session 6, part 2) — Daemon EPERM: ROOT CAUSE CONFIRMED + FIXED (two stacked TCC walls)
+
+**Background:** the launchd daemon (`ca.methuselah.gen3daemon`) had never once
+succeeded (`runs=9`, all `last exit code=2`, `Operation not permitted` opening
+the script file) since the 2026-07-23 FDA-grant attempt failed to fix it (see
+that entry). Investigated further this session while fixing the bridge-
+overwrite regression, since the daemon being dead is *why* the bridge went 38h
+stale in the first place.
+
+**Root cause #1 (file-open EPERM) — CONFIRMED via TCC.db, not inferred:**
+queried `~/Library/Application Support/com.apple.TCC/TCC.db` directly (177
+real rows, 17 services, fully readable). Two hard facts:
+- `kTCCServiceSystemPolicyAllFiles` (Full Disk Access): **zero rows, for
+  anything, on this account.** The 07-23 grant attempt never persisted —
+  confirmed, not just suspected.
+- `kTCCServiceSystemPolicyDesktopFolder`: every real grant is keyed to a
+  genuine **app bundle identifier** (`com.apple.Terminal`, `com.apple.dt.Xcode`,
+  `com.microsoft.VSCode`, etc.) — never a bare executable path.
+- `/usr/bin/python3` (what the plist directly execs) is `codesign`-identified
+  as `com.apple.dt.xcode_select.tool-shim`, `TeamIdentifier=not set` — a bare,
+  non-bundled system shim. macOS's Full Disk Access / Desktop Folder UI is
+  bundle-centric and cannot persist a grant to it. This is why manual pulls
+  from Terminal always worked (python3 inherits Terminal.app's own grant as
+  its "responsible" parent) and launchd never did (no bundled parent to
+  inherit from). Not a misconfiguration to retry — a structural limitation.
+
+**Fix #1:** moved the whole repo out of `~/Desktop` (a TCC-protected special
+folder) to `~/methuselah` (unprotected). Eliminates the Desktop-Folder gate
+entirely — no grant of any kind needed. Updated: the plist's `ProgramArguments`
+script path, `WorkingDirectory`, `StandardOutPath`/`StandardErrorPath`;
+`pull_morning.sh`/`pull_evening.sh` REPO var; `SHORTCUT_SETUP.md`,
+`SHORTCUT_SCRIPT.txt` (iOS Shortcut — **must be manually updated on the phone
+too, outside my reach**); usage-example paths in `analyze_0x5a_stage3_gap.py`
+(incl. its functional `REPO` constant), `track_b_sleep_state_analysis.py`,
+`sleep_confidence_analysis.py`, `track_b_streak_counter.py`,
+`WALK_EXPERIMENT.md`, `TASK_HANDOFF.md`. `gen3_daemon_watchdog.py` needed no
+change (already resolves paths via `__file__`, not hardcoded). Verified live:
+`launchctl kickstart` after the move got **past** the file-open stage for the
+first time ever (`last exit code` changed from the constant 2 to a new,
+different failure) — proof this specific wall is cleared.
+
+**Root cause #2 (Bluetooth), previously hidden behind #1:** clearing the
+file-open crash exposed a second, separate TCC wall the daemon had never
+survived long enough to hit: `bleak.exc.BleakError: BLE is not authorized -
+check macOS privacy settings` on `CentralManagerDelegate.alloc().init()`.
+Checked `kTCCServiceBluetoothAlways` in TCC.db — same pattern as FDA: only
+real app bundles (`com.apple.Terminal`, `com.google.Chrome`) hold grants,
+never a bare binary. Same structural limitation, different TCC category —
+moving the repo does nothing for this one (not folder-gated).
+
+**Fix #2:** changed the plist to spawn the daemon **inside Terminal.app**
+via `osascript -e 'tell application "Terminal" to do script "..."'` instead of
+invoking `python3` directly — mirroring the existing `SHORTCUT_SCRIPT.txt`
+pattern already used successfully for manual pulls. Checked
+`kTCCServiceAppleEvents` first: unlike FDA/Bluetooth, this table **does**
+contain a bare-binary grant (`/usr/libexec/sshd-keygen-wrapper` →
+`com.apple.Terminal`), suggesting Automation permission isn't universally
+bundle-only on this Mac — worth the live test rather than assuming either way.
+
+**Verified live, end-to-end, real data (not simulated):** kickstart after fix
+#2 → `launchctl print` showed a real running pid inside a real new Terminal
+window (`osascript` introspection confirmed: *"...Python
+tools/oura_gen3_ble_daemon.py 5 8..."*) → daemon found + connected to the ring
+(11:35:36–11:35:55) → decoded 2 real cycles (256 events each, ACTIVE WINDOW
+then MIXED WINDOW) → pushed to the live bridge successfully twice. **First
+successful launchd-triggered daemon run ever recorded** (prior: `runs=9`, all
+exit 2; this run: exit 0, real BLE data captured). Stopped gracefully via
+`SIGINT` (the daemon's own documented Ctrl+C handler) once verified, rather
+than let an unsupervised 8h BLE session run mid-day — logs confirm clean
+shutdown ("Stopped by user. Already-logged data and the last bridge push are
+preserved."). Job remains bootstrapped/loaded for tonight's real 22:00 fire.
+
+**New observation surfaced by this real run (not a regression from today's
+merge fix, a pre-existing bridge-schema limit exposed by it):** the live
+midday capture measured fresh `rhr_bpm` (85.8) and `sleep_temp_c` (34.36) but
+no fresh `hrv_ms`/`ibi_hr_bpm`/`spo2_avg_pct` — those were correctly preserved
+via `merge_with_existing_bridge()` (this session's earlier fix) from the
+2-day-old July-24 values, BUT because the pull *did* have some fresh
+biometrics, the whole-payload timestamp was not downgraded (per the fix's
+"any fresh biometric → stay fresh" rule) — so the preserved SpO2/HRV/IBI ride
+along under today's live timestamp instead of rendering stale. Root cause:
+the bridge has exactly one `timestamp` field for the whole payload — no
+per-vector timestamps — so a mixed fresh/preserved push can't represent
+partial freshness. Not touched this session (tile rendering / bridge schema
+are out of scope for the daemon-EPERM task) — flagged for a future session:
+either per-vector timestamps in the bridge schema, or accept this as a known,
+narrow edge case (only triggers when a pull has *some* but not all
+biometrics fresh, unlike the common all-or-nothing narrow-pull case the fix
+targets).
+
+**Scope note:** the plist lives in `~/Library/LaunchAgents/`, outside the git
+repo — its changes are not version-controlled and won't show up in `git diff`.
+
+*Logged 2026-07-26. Sources: live `sqlite3` queries against the real
+`TCC.db` (177 rows), live `launchctl print`/`kickstart`/`bootout`/`bootstrap`,
+real daemon + osascript logs, live `curl` against the production bridge
+endpoint, and a real end-to-end BLE connection to the physical ring.*

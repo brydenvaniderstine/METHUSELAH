@@ -23,7 +23,7 @@ Unblock three decoder investigations simultaneously:
 - Return to Mac within 60 seconds of completing 500th step
 - Run pull immediately — do not take ring off, do not do anything else first:
 ```bash
-cd ~/Desktop/METHUSELAH && python3 pipeline/tools/oura_gen3_morning_pull.py
+cd ~/methuselah && python3 pipeline/tools/oura_gen3_morning_pull.py
 ```
 - Note exact step count and approximate walk duration in the output filename area
 

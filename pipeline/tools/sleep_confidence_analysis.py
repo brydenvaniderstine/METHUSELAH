@@ -19,7 +19,7 @@ Built 2026-07-22 to answer three open questions:
      diverge from the existing classify() label?
 
 Usage:
-  cd ~/Desktop/METHUSELAH
+  cd ~/methuselah
   python3 pipeline/tools/sleep_confidence_analysis.py [daemon_log_path] [--out FILE]
 
 Defaults to the most recent file in pipeline/data/raw_pulls/gen3_daemon/.

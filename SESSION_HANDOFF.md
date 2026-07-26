@@ -61,11 +61,51 @@ conflict, this file takes precedence — it is version-controlled.
 - **Recoverability:** the 06:14 values are gone from remote+local (KV is a
   single key, overwritten twice); only the raw pull
   `gen3_pull_20260724_061435.txt` retains them.
-- **Still open (unchanged):** the daemon EPERM is why the bridge went 38h stale.
-  This fix makes the *symptom* non-destructive; the daemon must actually run for
-  fresh nightly biometrics to land. See known_issues.md 2026-07-26 entry.
 - **Scope honored:** `classify()`, `sleep_duration_estimate.py`, daemon,
-  watchdog, tile rendering untouched.
+  watchdog, tile rendering untouched (this part of the session).
+
+**Part 2, same session — daemon EPERM root-caused and FIXED, live-verified:**
+- **Restored real tile data as an immediate stopgap:** decoded
+  `gen3_pull_20260724_061435.txt` via `recompute_bridge_from_daemon.py` (it
+  already handles this file format) and pushed it live with its **real**
+  2026-07-24 06:14:35 timestamp (not `now()` — corrected manually before
+  push), so it renders honestly STALE rather than falsely live.
+- **Root cause #1 (file-open EPERM), confirmed via live TCC.db query (not
+  inferred):** Full Disk Access has **zero grants on this account, for
+  anything** — the 07-23 grant attempt never persisted. Desktop-Folder grants
+  are all keyed to real app-bundle identifiers, never a bare binary — and
+  `/usr/bin/python3` (what the plist execs) is a bare system shim
+  (`com.apple.dt.xcode_select.tool-shim`, no TeamIdentifier). Structurally
+  ungrantable on this Mac, not a misconfiguration to retry.
+- **Fix #1:** moved the whole repo `~/Desktop/METHUSELAH` → `~/methuselah`
+  (out of the TCC-protected Desktop folder). Updated the plist, both
+  `pull_*.sh` wrappers, `SHORTCUT_SETUP.md`/`SHORTCUT_SCRIPT.txt` (iOS
+  Shortcut app itself still needs manual update on the phone — outside my
+  reach), and usage-example paths in five tool scripts. Verified live:
+  `launchctl kickstart` got past the file-open crash for the first time ever.
+- **Root cause #2 (Bluetooth), hidden behind #1 until now:**
+  `BleakError: BLE is not authorized`. Same structural pattern — 
+  `kTCCServiceBluetoothAlways` is bundle-only too, confirmed via TCC.db.
+- **Fix #2:** plist now spawns the daemon inside Terminal.app via `osascript`
+  (mirrors `SHORTCUT_SCRIPT.txt`'s existing working pattern) instead of
+  invoking `python3` directly.
+- **Verified live, real data, end-to-end:** kickstart → real Terminal window
+  opened running the daemon → connected to the real ring → decoded 2 real
+  cycles (256 events each) → pushed to the live bridge twice, successfully.
+  **First successful launchd-triggered daemon run ever** (prior: `runs=9`,
+  all exit code 2). Stopped gracefully via `SIGINT` once verified (daemon's
+  own documented Ctrl+C handler) rather than let an unsupervised 8h BLE
+  session run mid-day. Job remains loaded for tonight's real 22:00 fire.
+- **New edge case surfaced (not caused by today's fixes, pre-existing bridge
+  schema gap):** a pull with *some* but not all fresh biometrics (real case:
+  fresh `rhr_bpm`/`sleep_temp_c`, preserved 2-day-old `hrv_ms`/`spo2_avg_pct`)
+  keeps the whole-payload timestamp fresh, since the bridge has one shared
+  timestamp for all vectors — so the preserved fields ride along as
+  falsely-live. Only affects mixed fresh/preserved pulls, not the common
+  all-preserved case the merge fix targets. Flagged for a future session
+  (per-vector timestamps, or accept as known-narrow). Tile rendering/schema
+  untouched this session per scope.
+- Full detail: known_issues.md 2026-07-26 entries (both parts).
 
 ---
 

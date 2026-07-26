@@ -16,7 +16,7 @@ A date counts toward the streak if classified SLEEP_WINDOW or DAEMON.
 MIXED and NONE break the streak.
 
 Usage:
-  cd ~/Desktop/METHUSELAH/pipeline
+  cd ~/methuselah/pipeline
   python3 tools/track_b_streak_counter.py [--verbose]
 """
 
