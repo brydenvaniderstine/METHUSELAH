@@ -33,6 +33,73 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
+**Date:** 2026-07-26 (session 6 — investigated + fixed a RECURRENCE of the bridge-overwrite bug: the 2026-07-25 20:33 ACTIVE WINDOW pull nulled fresh RHR/IBI_HR/SPO2/TEMP. Same failure class as the 2026-07-19 overwrite.)
+
+- **What happened (reproduced, not inferred):** the last real bridge write was
+  the **2026-07-24 06:14:35** SLEEP WINDOW pull (rhr 55.8 / ibi 55.9 / spo2 92.1
+  / temp 33.87 / batt 75.8). The **2026-07-25 20:33** ACTIVE WINDOW pull pushed
+  those four as NULL. The assumed "14.3h old" was wrong — the bridge was
+  **~38.3h old**, because the launchd daemon has been dead since ~07-24 (EPERM,
+  see prior session) so no fresh SLEEP push landed overnight.
+- **Root cause:** `merge_with_existing_bridge()` had a hard `age > 18h`
+  early-return that abandoned all backfill → the null new-pull vectors overwrote
+  real data. The ACTIVE-WINDOW downgrade guard (fires only <18h) also let the
+  push through. Both defenses failed *open* on data older than 18h. Nulling real
+  data was the destructive move the 18h cap conflated with "don't show stale as
+  fresh."
+- **Fix (only `pipeline/tools/gen3_bridge.py`):** merge now backfills null
+  vectors from the existing bridge **regardless of age** (never nulls real
+  data). When a pull carries no biometric of its own (`BIOMETRIC_VECTOR_FIELDS`)
+  it inherits the existing bridge's **older timestamp**, so preserved data
+  renders STALE (isStale, STALE_HRS=12) instead of masquerading as fresh —
+  honors rule #5 without touching tile rendering. `MERGE_MAX_AGE_HOURS` removed
+  (its goal is now met by the timestamp downgrade, without data loss).
+- **Regression-tested 12/12** (`scratchpad/regression_bridge_merge.py`): ACTIVE
+  over fresh sleep (preserved+stale); SLEEP with fresh biometrics over older
+  sleep (fresh wins, not aged); >18h existing (preserved but stale, not
+  resurrected fresh); daemon recompute (never merges, unaffected).
+- **Recoverability:** the 06:14 values are gone from remote+local (KV is a
+  single key, overwritten twice); only the raw pull
+  `gen3_pull_20260724_061435.txt` retains them.
+- **Still open (unchanged):** the daemon EPERM is why the bridge went 38h stale.
+  This fix makes the *symptom* non-destructive; the daemon must actually run for
+  fresh nightly biometrics to land. See known_issues.md 2026-07-26 entry.
+- **Scope honored:** `classify()`, `sleep_duration_estimate.py`, daemon,
+  watchdog, tile rendering untouched.
+
+---
+
+**Date:** 2026-07-25 (session 5 — asked to build a launchd-scheduled periodic Gen3 pull to auto-populate the 4-vector grid. STOPPED AT THE PREREQUISITE GATE: the existing daemon launchd job still cannot execute; the 2026-07-23 Full Disk Access grant did NOT fix it. No scheduled job built — a job that can't run is worse than none.)
+
+- **Prerequisite (per the task): verify `ca.methuselah.gen3daemon` can actually
+  launch now, post-FDA-grant, before building a second job on the same
+  foundation. Result: it still fails.** Live reproduction at
+  **2026-07-25 11:17:20** via `launchctl kickstart -k` —
+  `runs` 7→8, `last exit code = 2`, job died instantly (never started the 8h
+  daemon), and `daemon_launchd_err.log` grew 7→8 lines with the same
+  `can't open file '.../oura_gen3_ble_daemon.py': [Errno 1] Operation not
+  permitted`. The last unattended fire (07-24 22:23) failed identically.
+  Both are dated *after* the 07-23 FDA grant → the grant did not fix launchd
+  execution. **No launchd run has ever succeeded (`runs=8`, all exit 2).**
+- **Root cause isolated by real elimination:** file exists, unix perms
+  `-rw-r--r--`; the SAME Xcode python3 opens the SAME file fine from a Terminal
+  context (`open OK, bytes=31272`). The only variable that flips
+  success→failure is launcher identity (Terminal vs launchd). Script lives in
+  `~/Desktop/` (TCC-protected `SystemPolicyDesktopFolder`); the launchd agent's
+  context lacks access to that folder, and user-domain `TCC.db` shows no Full
+  Disk Access row for python. It's a file-open EPERM — dies before touching
+  Bluetooth; distinct from the separate 07-23/24 "ring found zero times"
+  Bluetooth question.
+- **Not built (deliberately):** the periodic-pull plist, its concurrency guard,
+  and its attempt-logging. `merge_with_existing_bridge()` failure-safety
+  verification also deferred — all moot until the launchd context can open a
+  Desktop file. Nothing in scope was touched (no tile/gate/`classify()`/
+  `sleep_duration_estimate.py`/daemon changes; no new pull path). Full detail:
+  `known_issues.md` 2026-07-25 "GATE FAILED" entry.
+- **Expectation set (unchanged):** fixing the launchd context would restore HRV
+  + Cardiac Load freshness. Sleep Duration stays blank regardless — never
+  computed; that's the wake-window test, not this.
+
 **Date:** 2026-07-23 (session 4 — investigated the 07-22/23 morning-pull failure; found it recurs on ALL 4 nights, not just the deadlock night; UNRESOLVED, but instrumented for next time — no speculative timing fix shipped)
 
 - **Investigated the 07-22/23 "Ring not found in scan window" morning-pull
@@ -362,7 +429,7 @@ conflict, this file takes precedence — it is version-controlled.
 0. **NEW 2026-07-23 — Tonight is the FIRST REAL TEST of the connect()-deadlock watchdog, AND the first night with real morning-pull handoff timing evidence. Launch with the watchdog, not the daemon directly:** `cd ~/Desktop/METHUSELAH && nohup python3 pipeline/tools/gen3_daemon_watchdog.py > /tmp/daemon_tonight.txt 2>&1 &`. Same shape as before (`[poll_seconds] [duration_hours]` optional args, same log-checking habit: `tail -f /tmp/daemon_tonight.txt`). The watchdog kills and relaunches the daemon subprocess if the log file goes >20min without a new real event — built and tested against a simulated hang this session (`known_issues.md` 2026-07-23 "ADDRESSED" entry), but has never run against real hardware/a real deadlock. In the morning: (a) check `/tmp/daemon_tonight.txt` for any `[WATCHDOG ...]` restart lines (if present, that's a real deadlock the watchdog caught — note the timestamps and how many restarts) and confirm the night's data looks complete/continuous either way — only mark that known_issues.md entry "RESOLVED" (currently "ADDRESSED") after this confirms a real recovery or a full clean night with zero false positives; (b) **also check `cat pipeline/logs/morning_pull_handoff.log`** — this is the first night with real, persistent timestamps for the daemon-release → morning-pull-scan handoff (known_issues.md 2026-07-23 "UNRESOLVED" entry). Every automated morning pull on record has failed with no surviving evidence of why; this log should finally show real elapsed scan time and outcome. If it shows a specific number, that's the first real data point to size an actual fix (the 10s wait / 120s scan timeout) against — still don't guess a new number without it.
 0. **NEW 2026-07-21 — Run an evening walk test with `walk_test_keepwarm.py` active BEFORE starting the walk.** Tool is built and dry-run verified (connects, holds, logs cleanly — see today's summary above and `known_issues.md`), but 0x7E/0x7F walk verification itself has NOT been done — deferred today for heat. Start `python3 pipeline/tools/walk_test_keepwarm.py` while stationary, wait for "Connected and authenticated. Holding warm." in the output, THEN put the ring on / leave for the walk, and leave the tool running through the whole walk. Ctrl+C when done. Check the resulting log under `pipeline/data/raw_pulls/gen3_walk/` for `Real step feature (1)`/`(2)` entries with `analyze_fft_walk.py`. Do not claim 0x7E/0x7F is fixed until this actually produces walk data — the dry run only proved connection mechanics, nothing about the buffer-timing race itself.
 0. **NEW 2026-07-19 — Wire live 0x4C decoding into the daemon loop, or accept the morning-pull-only path and prioritize its buffer window.** Finding 1 above: 24 real 0x4C firings tonight, zero used for `sleep_duration_hrs` because only `oura_gen3_morning_pull.py` has the epoch formula, and it only runs once, post-daemon, with whatever buffer happens to still be there. Two paths: (a) decode 0x4C directly in the daemon's own per-cycle loop instead of relying on a single post-run pull, or (b) keep the morning-pull-only design but investigate why tonight's post-daemon pull's buffer held no 0x4C at all (~42min window, arrived right after 24 firings during the session — worth understanding the buffer/rollover timing before assuming another night will do better). Either way, resolve the **0x4C bout-boundary reset behavior** first (does it reset per-disruption, per-BLE-session, or something else) — summing across firings blindly will be wrong.
-0. **NEW 2026-07-19 — Fix `ca.methuselah.gen3daemon` launchd permission error.** `daemon_launchd_err.log` shows `can't open file '.../oura_gen3_ble_daemon.py': Operation not permitted` — likely a macOS Full Disk Access / TCC permission needed by the launchd-invoked python3, or a path/quarantine issue. Until fixed, overnight runs depend on someone manually starting the daemon in a terminal, and `daemon_launchd.log`/`daemon_launchd_err.log` can't be trusted as a complete session record.
+0. **UPDATED 2026-07-25 (was NEW 2026-07-19) — Fix the `ca.methuselah.gen3daemon` launchd `Operation not permitted` error. THIS IS NOW A HARD BLOCKER for any launchd automation, including the requested scheduled auto-pull, which was NOT built because of it.** Re-confirmed still broken 2026-07-25 (live kickstart, `runs=8` all `exit 2`); the 2026-07-23 Full Disk Access grant did NOT fix it. Root cause isolated to the launchd execution context lacking access to the TCC-protected `~/Desktop/` folder (same Xcode python3 reads the file fine from Terminal). **Owner action required (cannot be scripted or verified from a session — TCC grants must be owner-set and then re-tested):** either (a) move the repo out of `~/Desktop` to a non-TCC-protected path (most robust; eliminates the grant entirely, but a large path-refactor — out of scope to do blindly), OR (b) grant Full Disk Access to the identity launchd actually attributes, then **re-verify with `launchctl kickstart -k gui/$(id -u)/ca.methuselah.gen3daemon` and confirm `last exit code` is no longer 2** — the grant existing in System Settings is NOT proof it works (07-23 proved that). Only once a kickstart run exits non-2 should the scheduled auto-pull (plist + concurrency guard + attempt-logging, all deferred this session) be built. Full evidence + remediation detail: `known_issues.md` 2026-07-25 "GATE FAILED" entry.
 0. **Tonight's run — daemon is ready, `asyncio.wait_for` confirmed working 2 nights in a row.** Launch with: `cd ~/Desktop/METHUSELAH && nohup python3 -u pipeline/tools/oura_gen3_ble_daemon.py > /tmp/daemon_tonight.txt 2>&1 &`. Check startup with `tail -f /tmp/daemon_tonight.txt`, close lid once authenticated. Morning: `cat /tmp/daemon_tonight.txt`. Goal: third night of 0x5A cluster to further confirm stage 0 vs stage 3 disambiguation hypothesis.
 0. **Fix `~/.zshrc` credential mismatch** — `GEN3_BRIDGE_WRITE_SECRET` in `.zshrc` is wrong/stale. Working secret is in `~/.bash_profile` (last of 3 export lines: `30157c93fc0efadc54aa1257676e1e3fd5cb27c084267c8e2dbb6e500387c80d`). Either remove the `.zshrc` export or sync it to this value. Until fixed, any bridge push from a zsh shell will get HTTP 401.
 0. **Live end-to-end tile verification** — tile rework verified in no-data state only. First overnight daemon session will confirm Gen3-sourced HRV and Sleep Debt values appear in the correct tile slot with `● GEN3 BLE` and correct age label. Gen4 live path also needs re-verification once a new Oura token is provisioned.

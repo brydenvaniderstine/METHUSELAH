@@ -7576,3 +7576,281 @@ first-occurrence, not "which file I was looking at," is the only reliable
 way to date a bout in this corpus** — any older finding that dates a bout
 by file name alone should be treated as provisional until re-checked the
 same way.
+
+## Architectural hypothesis test: does Gen3 finalize a full-night sleep summary onboard, retrievable in ONE brief morning pull (like Gen4)? — single undisturbed-night pull, 2026-07-25
+
+**Why this was run.** Real-world trigger: a Gen4 ring, unworn for a while with an
+inactive account / no API access, still produced a complete real sleep score (91)
+from a single local sync — proving *that* generation finalizes a full-night summary
+onboard, independent of any live connection. Hypothesis under test: the Gen3 ring does
+the same, and the entire past week of daemon / watchdog / connect()-deadlock work may
+have been solving a self-inflicted problem (holding an all-night connection when a
+single brief morning sync would suffice). Last night (2026-07-24 → 07-25) the Gen3 ring
+was worn continuously with **NO daemon, NO watchdog, nothing touching it** — mimicking
+how the Oura app actually uses these rings.
+
+**Method (no pipeline changes — one-off diagnostic only).** ONE clean connection using
+the existing validated primitives from `gen3_ble_connection.py` verbatim
+(`scan_for_ring` → `open_connection` → `request_history(since_boot_ts=0)`), then
+disconnect. Full buffer decoded with the committed `decode_sleep_summary_2` (0x4C) and
+`decode_bedtime_period` (0x76). Raw pull saved to
+`pipeline/data/raw_pulls/gen3_morning/gen3_pull_20260725_094649_UNDISTURBED.txt`.
+Not changed: `sleep_duration_estimate.py`, `classify()`, the daemon, the bridge, any
+decoder. Pull performed 2026-07-25 ~09:46 local.
+
+**Result — the connection worked; the summary was NOT there.**
+- Clean scan-then-connect + auth + full-buffer drain succeeded: **256 events** returned
+  (the ~255-event circular FIFO, drained in one shot). The one-shot retrieval mechanism
+  itself is fine.
+- **Zero 0x4C (Sleep summary 2). Zero 0x76 (Bedtime period).** No sleep-summary cluster
+  of any kind (also zero 0x49/0x4F/0x58/0x5A). Traced directly to the decoded pull, not
+  assumed.
+- Tag composition (top): 0x6E×90, 0x77×61, 0x60×45, 0x6F×19, 0x72×8, 0x6A×8, 0x4A×8,
+  0x61×8 — i.e. PPG/optical/SpO2/IBI measurement tags plus sleep-period/sleep-ACM. The
+  8× 0x6A all decode to **sleep_state=1 (asleep)**, so this IS genuine sleep-context
+  measurement data — just per-epoch measurement, no finalized summary.
+
+**Buffer structure — it was an ~11-minute slice, not a night.** Of the 256 events,
+**255 cluster tightly at boot_ts ≈ 72,912,245–72,914,649 (span only ~2,404 ticks ≈
+~11 minutes at 3.70 tps)**, plus a single stray event at boot_ts = 128,649,983. The
+biggest internal gap (~55.7M ticks) sits between that lone event and the tight cluster.
+So the retrievable buffer on this undisturbed morning was one short sleep-measurement
+window plus one straggler — nowhere near a full night's worth of data.
+
+**One genuine ambiguity, flagged not assumed (per real-data-only discipline).** The
+255-event cluster sits at boot_ts ≈ 72.9M, which is the SAME tick era as the daemon
+nights of ~2026-07-18 through 07-22 (their real event ticks were ~72–77M; the
+4.29-billion `max` values in those logs are the known 0x11/0x1F terminator garbage, not
+real events). Two readings, and I cannot disambiguate them from boot_ts alone:
+  - (a) **No reboot:** the 72.9M cluster is week-old carryover frozen in the buffer, the
+    ring wrote almost no new events while undisturbed (only the single 128.6M event is
+    fresh), and real ticks for 07-25 are ~128M+. Implies the buffer never captured last
+    night at all.
+  - (b) **Reboot:** boot_ts reset, the 72.9M cluster is this-morning's ~11-min session
+    post-reboot, and the 128.6M event is a pre-reboot straggler with a stale-but-higher
+    counter.
+  Weak lean toward (a): a single higher-valued event coexisting with a low cluster is
+  more consistent with a monotonic-no-reboot FIFO whose newest event is 128.6M and whose
+  other 255 slots are stale, than with a reboot (which regresses/clears the counter — a
+  pre-reboot straggler surviving alongside post-reboot events is odd). **Either way the
+  load-bearing conclusions below are unaffected: no summary present, and the buffer is an
+  ~11-min slice, not a night.**
+
+**Direct comparison vs prior daemon nights (question #3).** 0x4C/0x76 counts decoded
+from every substantial daemon log on disk, deduping byte-identical 0x4C retransmissions
+and counting distinct bouts by 0x76 `start_ring_time`:
+
+| night (source)                    | 0x4C raw | 0x4C uniq | 0x76 raw | distinct bouts |
+|-----------------------------------|:-------:|:--------:|:-------:|:-------------:|
+| 2026-07-12 evening (daemon)       |    1    |    1     |    1    |       1       |
+| 2026-07-18/19 (daemon)            |   24    |   24     |   24    |      18       |
+| 2026-07-19/20 (daemon)            |   29    |   29     |   29    |      19       |
+| 2026-07-20/21 (daemon)            |   34    |   34     |   34    |      21       |
+| 2026-07-21/22 (daemon)            |    5    |    5     |    5    |       5       |
+| 2026-07-22/23 (daemon)            |   19    |   19     |   19    |      12       |
+| **2026-07-24/25 (UNDISTURBED, single pull)** | **0** | **0** | **0** | **0** |
+
+Every daemon night captured the summary cluster; the single undisturbed pull captured
+none. **Caveat carried from `fable_investigation_2026-07-24.md`:** those per-night "18–21
+distinct bouts" are heavily inflated by *retransmitted backlog* — the ring re-reports the
+same handful of underlying completed bouts across cycles/nights (corpus-wide, 114 raw
+0x4C collapsed to 38 truly-distinct bouts). So the daemon side is NOT "sleep genuinely
+fragmented into 20 pieces"; it's "the summary is present and re-emitted repeatedly." The
+real contrast is simply present-repeatedly (daemon) vs entirely-absent (single pull).
+
+**Interpretation — hypothesis NOT validated for Gen3; NOT cleanly falsified either;
+the daemon week is NOT retroactively proven pointless.**
+- This single undisturbed morning pull did **not** reproduce the Gen4 "one sync →
+  complete finalized summary" behavior. No summary was retrievable. On the evidence in
+  front of us, the Gen4 model does **not** transfer to Gen3 as-is.
+- The result is fully **consistent with the long-established ~255-event circular FIFO
+  constraint** (top of this file, 2026-06-28) that motivated the daemon in the first
+  place: a one-shot pull only ever sees the last ~256 events, and on Gen3 the finalized
+  summary is not sitting in that window come mid-morning. This does **not** support "the
+  daemon was solving a self-inflicted problem" — if anything it reinforces that catching
+  the 0x4C/0x76 cluster on Gen3 requires either continuous draining or a pull timed to
+  the finalization moment. **Every 0x4C this project has ever captured came from a daemon
+  session (or the one lucky 2026-07-12 evening pull) — never from a routine morning pull,
+  and this is one more morning pull with zero.**
+- **Real confound, stated honestly:** the pull was at ~09:46, an unknown number of hours
+  after wake / sleep-session finalization. The summary may have been generated and then
+  evicted from the tiny FIFO, or may fire only in a narrow post-wake window this pull
+  missed. So this does NOT definitively falsify "Gen3 finalizes a summary onboard" — it
+  only shows that summary is not retrievable by a *mid-morning* one-shot pull.
+- **Decisive next test (not run — would be a second connection; owner's call):** a single
+  clean pull taken **within a few minutes of waking**, before the FIFO cycles past the
+  finalization window. If that catches a single clean full-night 0x4C/0x76 bout, the
+  hypothesis is validated and the morning-sync architecture becomes viable; if it too
+  comes back empty, the hypothesis is falsified for Gen3 and the daemon is confirmed
+  necessary. Today's pull narrows it to exactly that timing question.
+
+**Files touched this session:** this `known_issues.md` entry, and the saved raw pull
+(`gen3_pull_20260725_094649_UNDISTURBED.txt`). No code, no decoder, no pipeline, no
+bridge, no `SESSION_HANDOFF.md`. Diagnostic scripts were scratch-only (not committed).
+
+## GATE FAILED — the launchd `Operation not permitted` bug is NOT fixed by the 2026-07-23 Full Disk Access grant; scheduled-pull job NOT built, 2026-07-25
+
+**Task:** build a second launchd job to run `oura_gen3_morning_pull.py` on a
+3–4h schedule so the dashboard's 4-vector grid self-populates. Explicit
+prerequisite: *verify the existing `ca.methuselah.gen3daemon` job can actually
+launch now (post-FDA-grant) before building a second job on the same
+foundation; if it still fails, report and stop.* **It still fails. Build was
+not started. This is that report.**
+
+**Live, today-dated reproduction (not inference from old logs):**
+- `launchctl kickstart -k gui/$(id -u)/ca.methuselah.gen3daemon` run manually
+  at **2026-07-25 11:17:20**. Real result: `runs` incremented **7 → 8**,
+  `last exit code = 2`, `state = not running` (died instantly, never started
+  the 8h daemon), and `daemon_launchd_err.log` grew **7 → 8 lines**, the new
+  line identical to the prior seven:
+  ```
+  /Applications/Xcode.app/Contents/Developer/usr/bin/python3: can't open file
+  '/Users/brydenvaniderstine/Desktop/METHUSELAH/pipeline/tools/oura_gen3_ble_daemon.py':
+  [Errno 1] Operation not permitted
+  ```
+- This is a **file-open EPERM**, not a Bluetooth denial. Python cannot even
+  `open()` its own script; it dies before importing bleak or touching the
+  radio. (Distinct from the separately-investigated 07-23/24 Bluetooth-TCC
+  "ring found zero times" question — that was ruled out earlier; this is a
+  different, upstream failure on a different code path: the launchd path, not
+  the watchdog/Terminal path.)
+
+**Proven post-FDA-grant, not stale:** the prior seven failures could have
+predated the 2026-07-23 FDA grant. Run #8 above is dated **2026-07-25**, two
+days *after* the grant. The last unattended run (`err.log` mtime
+**2026-07-24 22:23:24**, the 22:00 nightly fire) also failed identically. So
+the FDA-grant-to-Xcode-python3 did **not** fix launchd execution — directly
+confirming the task's stated suspicion. No launchd run has ever succeeded
+(`runs=8`, all exit 2).
+
+**Root cause isolated to the execution context, by real elimination (not a guess):**
+- File exists, unix perms `-rw-r--r--` (world-readable) → not a missing-file
+  or permission-bit problem.
+- The **same** `/usr/bin/python3` (→ `/Applications/Xcode.app/.../python3`)
+  opening the **same** file from this Terminal/Claude-Code context succeeds:
+  `open OK, bytes=31272`, rc=0. So the binary, the file, and unix perms are
+  all fine.
+- The **only** variable that flips success→failure is *who launched the
+  interpreter*: Terminal (works) vs launchd (EPERM).
+- The script lives under `~/Desktop/`, which is a **TCC-protected folder**
+  (`kTCCServiceSystemPolicyDesktopFolder`, protected since Catalina). Terminal
+  holds access to that folder; the launchd agent's execution context does not.
+- User-domain `TCC.db` has **no `kTCCServiceSystemPolicyAllFiles` (Full Disk
+  Access) row** for python — consistent with the 07-23 grant either not
+  persisting, going to the system-domain db (needs sudo to inspect), or being
+  attached to a client identity that does not match how launchd attributes
+  this agent's file access. (Mechanism = likely; the *fact* that launchd
+  context is denied Desktop access is confirmed by the elimination above.)
+
+**Why swapping interpreters won't help:** the denial is folder-access, not
+binary-specific. Any interpreter this launchd agent invokes will be denied
+`~/Desktop` reads until the launchd context is granted access. This is a
+location/TCC problem, not a Python problem.
+
+**Remediation paths (all require the owner's interactive action — cannot be
+scripted from here, and TCC changes must be owner-verified, not assumed):**
+1. **Most robust: move the repo out of `~/Desktop`** to a non-TCC-protected
+   path (e.g. `~/methuselah/`). Eliminates the FDA requirement entirely; no
+   grant needed. But it's a large structural change (plist paths, shell
+   scripts, bridge references) and out of this task's scope — flag, don't do.
+2. **Grant Full Disk Access to the identity launchd actually attributes**, then
+   re-verify with `launchctl kickstart -k …` and confirm `last exit code`
+   flips from 2 → (daemon actually starts). The 07-23 attempt targeted Xcode's
+   python3 but produced no user-db AllFiles row and did not fix execution;
+   the entry needs to be re-checked in System Settings ▸ Privacy & Security ▸
+   Full Disk Access (correct binary, toggle on) and, critically, **re-tested by
+   kickstart** — the grant existing in the UI is not proof it works.
+3. Until (1) or (2) is done and a kickstart run exits non-2, **do not add any
+   scheduled job.** A launchd pull built now would fail every fire with the
+   same EPERM, silently, and be strictly worse than the current manual path.
+
+**Not built this session (deliberately, per the gate):** the periodic-pull
+plist, its concurrency guard, and its attempt-logging. Design was NOT written
+because a job that cannot execute is worse than none. `merge_with_existing_bridge()`
+failure-safety verification, the guard design, and the plist are all deferred
+to the moment the launchd context can actually open a Desktop file.
+
+**Scope honored:** no tile rendering, freshness gate, `classify()`,
+`sleep_duration_estimate.py`, or daemon code touched. No new pull path written.
+
+**Files touched this session:** this `known_issues.md` entry and
+`SESSION_HANDOFF.md`. No plist created, no code changed, no bridge touched.
+Diagnostic commands were read-only except the `launchctl kickstart` probe
+(which only incremented the existing job's failed-run counter and appended one
+more identical error line — no state changed).
+
+*Logged 2026-07-25. Sources: live `launchctl print
+gui/$(id -u)/ca.methuselah.gen3daemon` (real `runs=8`, `last exit code=2`),
+`pipeline/logs/daemon_launchd_err.log` (real 7→8 line growth, real mtimes
+2026-07-24 22:23:24 and 2026-07-25 11:17:20), real `ls -l` perms, a real
+cross-context `open()` test with the identical Xcode python3 binary, and a
+best-effort user-domain `TCC.db` query. Unattended scheduled execution remains
+unverified because the job cannot execute at all.*
+
+## 2026-07-26 — Bridge overwrite RECURRENCE: ACTIVE pull nulled fresh biometrics (same failure class as 2026-07-19)
+
+**Symptom (all real):** RHR/IBI_HR/SPO2/TEMP tiles went N/A after a manual
+`oura_gen3_morning_pull.py` run.
+- Last real bridge write before the incident: **2026-07-24 06:14:35** SLEEP
+  WINDOW pull — `gen3_pull_20260724_061435.txt` (0x6A×10, 0x6F×23, 0x75×2).
+  Bridge held rhr_bpm 55.8, ibi_hr_bpm 55.9, spo2_avg_pct 92.1, sleep_temp_c
+  33.87, battery_pct 75.8.
+- **2026-07-25 20:33:32** ACTIVE WINDOW pull (`gen3_pull_20260725_203332.txt`,
+  zero sleep tags) pushed `[BRIDGE PUSH] 200` with those four biometrics NULL.
+- Recurred again **2026-07-26 10:50** (live KV now battery 74.2, rest null).
+
+**Root cause (reproduced, not inferred — `scratchpad/repro_bridge_overwrite.py`):**
+NOT a timezone/units bug, NOT an uncalled merge, NOT an already-null local file,
+NOT the ACTIVE-WINDOW downgrade guard mis-scoping. The existing bridge was
+**genuinely ~38.3h old**, not the ~14.3h assumed — because the **launchd daemon
+has been dead since ~07-24 (EPERM, see 2026-07-25 entry)**, so no fresh SLEEP
+push landed on the night of 07-24→25. Both defenses share one 18h assumption
+and both failed *open* on data that old:
+- Downgrade guard (`oura_gen3_morning_pull.py`): fires only for existing
+  SLEEP WINDOW **<18h** → at 38.3h it let the push through.
+- `merge_with_existing_bridge()` (`gen3_bridge.py`): had a hard
+  `age_h > MERGE_MAX_AGE_HOURS(18)` early-return that **abandoned all backfill**
+  → the null new-pull vectors were written as-is. The 18h cap conflated "don't
+  show stale as fresh" with "null the field"; nulling is the destructive move.
+This is the **same failure class as the 2026-07-19 bridge overwrite** (there, a
+SLEEP-WINDOW-classified narrow pull slipped past the guard; here, an ACTIVE pull
+over a >18h bridge slipped past the age cap). One class: *a narrow pull that
+measured a field can null a prior real value for it.*
+
+**Recoverability:** none from remote/local — the single-key KV (`gen3_latest`)
+and the local file were both overwritten (twice). The 06:14 values survive only
+in the raw pull `gen3_pull_20260724_061435.txt` (re-decodable).
+
+**Fix (`gen3_bridge.py::merge_with_existing_bridge`):** removed the destructive
+age gate. Now backfills any null vector from the existing bridge **regardless of
+age** (never nulls real data), and — to keep freshness honest without touching
+tile rendering — when a pull carries **no biometric of its own** (new
+`BIOMETRIC_VECTOR_FIELDS` set) but preserves them from the existing bridge, the
+merged snapshot **inherits the existing bridge's older timestamp**. Preserved
+data then renders STALE (App.js `isStale`, STALE_HRS=12) instead of masquerading
+as freshly measured — honoring non-negotiable rule #5. A fresh pull's own value
+always wins (only gaps are filled); a fresh push is never falsely aged (min()
+guard + biometric-contribution check). `MERGE_MAX_AGE_HOURS` deleted (obsolete —
+its "don't republish stale as fresh" goal is now met by the timestamp downgrade,
+without data loss).
+
+**Regression-tested** (`scratchpad/regression_bridge_merge.py`, 12/12 pass):
+(1) ACTIVE over fresh sleep → preserved + stale ts; (2) SLEEP with fresh
+biometrics over older sleep → fresh wins, not aged, gaps filled; (3) >18h
+existing → PRESERVED (not nulled) but renders stale, i.e. "not resurrected as
+fresh" — the corrected reading of the old "not backfilled" behavior;
+(4) daemon recompute → structurally never calls merge, unaffected.
+
+**Scope honored:** only `gen3_bridge.py` changed. `classify()`,
+`sleep_duration_estimate.py`, daemon, watchdog, tile rendering untouched. The
+downgrade guard was left as-is (belt-and-suspenders; merge now makes it
+redundant for data safety).
+
+**Upstream still open:** the daemon EPERM (2026-07-25 entry) is the real reason
+the bridge went 38h stale. This fix makes the *symptom* non-destructive, but the
+daemon must actually run for fresh nightly biometrics to land at all.
+
+*Logged 2026-07-26. Sources: `pipeline/logs/morning_pull_handoff.log` (real
+06:14:35 Jul-24 exit, no writes until 20:33 Jul-25), `daemon_launchd_err.log`
+(9× EPERM), live `curl methuselah.ca/api/gen3-bridge`, raw pull files, and two
+real reproduction scripts.*
