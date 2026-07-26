@@ -107,6 +107,52 @@ conflict, this file takes precedence — it is version-controlled.
   untouched this session per scope.
 - Full detail: known_issues.md 2026-07-26 entries (both parts).
 
+**Part 3, same session — reviewed a live post-fix screenshot, attempted Track
+B condition #1, tuned sleep-duration thresholds:**
+- **Confirmed the fixes reached production**: live screenshot showed real
+  HRV/RHR/glucose values rendering (direct result of parts 1-2 above).
+- **Flagged, not fixed (owner said leave as-is for now):** (a) the
+  "INITIATE ACTIVE RECOVERY PROTOCOL / EXECUTE PROTOCOL" panel
+  (`engine/commands.js` lines 26-28) is pre-existing code that conflicts with
+  the project's own non-negotiable rule #2 (no CTA/suggestion layer — see
+  methuselah skill); (b) the 85.8 bpm driving that "CARDIAC LOAD ELEVATED"
+  warning was the midday active-state value from this session's own daemon
+  verification test, not a resting reading — the alert is likely firing on
+  mislabeled data on top of the design-rule conflict. Both left untouched
+  per owner instruction.
+- **Track B condition #1 attempted, blocked on a real, newly-identified
+  issue (not data availability):** built
+  `pipeline/tools/track_b_condition1_crossref.py` to cross-reference 0x6A
+  state transitions against the richest real 0x5A sleep-phase bout on record
+  (07-19 daemon night, 1252 valid epochs). Found `boot_ts`-to-wall-clock tick
+  rate cannot be reliably derived — three independent methods on the same
+  file disagree by up to 17x (244.1 vs. 14.279 [the existing pipeline
+  constant, now suspect] vs. ~104 ticks/sec). Running the analysis with any
+  one of them produced results that don't survive a sanity check (a
+  below-chance state/stage match rate — the signature of misalignment, not
+  a real finding). **Condition #1 stays OPEN**, now with a specific,
+  actionable blocker (need an independent wall-clock calibration anchor)
+  instead of the previous vague "cross-reference 0x6A with 0x5A" note. Full
+  detail: known_issues.md 2026-07-26 part 3.
+- **Sleep Duration tile — clarified scope, no manual entry needed.** Owner
+  asked about inputting sleep duration; turned out they wanted a rough
+  ring-derived approximation with Green/Amber/Red banding, not manual entry.
+  That mechanism (`sleep_duration_estimate_hrs`) already existed end-to-end
+  (tile already renders `~X.X hrs (est.)` when populated) — it's been empty
+  because the 0x4C/bedtime cluster it depends on went quiet 07-23 onward,
+  correlating with the daemon EPERM outage just fixed in part 2. It fired
+  reliably 5 consecutive real nights before that (07-18 through 07-22).
+  **Only change made:** `engine/thresholds.js` (+ its build-synced copy
+  `web/src/engine/thresholds.js`, via `web/package.json`'s `prestart`/
+  `prebuild` scripts) — `sleepDurationWarn`/`sleepDurationCritical` and the
+  matching `BRI_BRACKETS.sleepDuration` band changed from 8h/6h to 7h/4h
+  (green ≥7h, amber 4-6h, red <4h), per owner's exact spec. Verified: dev
+  server compiles clean, every call site confirmed to read from
+  `THRESHOLDS`/`BRI_BRACKETS` dynamically (no hardcoded duplicates). **Not
+  visually confirmed live** — `sleepDurationHrs` is currently `null` in real
+  data, no fake data injected (real-data-only discipline); tonight's daemon
+  run is the natural first real test if the bedtime cluster fires again.
+
 ---
 
 **Date:** 2026-07-25 (session 5 — asked to build a launchd-scheduled periodic Gen3 pull to auto-populate the 4-vector grid. STOPPED AT THE PREREQUISITE GATE: the existing daemon launchd job still cannot execute; the 2026-07-23 Full Disk Access grant did NOT fix it. No scheduled job built — a job that can't run is worse than none.)
@@ -465,11 +511,66 @@ conflict, this file takes precedence — it is version-controlled.
 ## Next session priority
 
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
+⚠️ **Repo moved 2026-07-26**: `~/Desktop/METHUSELAH` → `~/methuselah`. Any older note
+below still referencing the old Desktop path is historical — use `~/methuselah` instead.
+
+0. **FIRST CHECK — did tonight's real unattended 22:00 daemon run actually complete?**
+   The daemon EPERM + Bluetooth-authorization bugs were both root-caused and fixed
+   2026-07-26 (known_issues.md same-date entries, both parts) and live-verified via a
+   manual `kickstart` (real ring connection, real data, real bridge push) — but that was
+   a manual test stopped early on purpose, not a full unattended night. Tonight's 22:00
+   calendar-triggered fire is the **first real unattended test of the fix**. Check:
+   `launchctl print gui/$(id -u)/ca.methuselah.gen3daemon` (runs count, last exit code),
+   `pipeline/logs/daemon_launchd.log`/`daemon_launchd_err.log`, and whether a real
+   `gen3_daemon_*.txt` file exists for tonight with a full session's worth of data. This
+   is also Track B condition #5's 13th of 14 nights needed (`track_b_streak_counter.py`
+   showed 12/14 as of 07-26) — two more clean nights closes it.
+0. **Confirm the iOS Shortcut app was updated on the phone.** I updated
+   `pipeline/tools/SHORTCUT_SCRIPT.txt`/`SHORTCUT_SETUP.md` with the new `~/methuselah`
+   path, but the actual Shortcuts app configuration on the iPhone is outside any
+   session's reach — owner action required (edit the "Run Script over SSH" action's
+   Script field in both METHUSELAH MORNING and METHUSELAH EVENING shortcuts).
+0. **Track B condition #1 — real, specific blocker identified 2026-07-26, not closed.**
+   `pipeline/tools/track_b_condition1_crossref.py` (new, kept in repo) attempted to
+   cross-reference 0x6A against the richest real 0x5A bout on record. Blocked by an
+   unreliable `boot_ts`-to-wall-clock tick rate — three independent derivations on the
+   same file disagreed by up to 17x (244.1 vs. 14.279 [existing pipeline constant, now
+   suspect] vs. ~104 ticks/sec). Do not reuse the 14.279 constant elsewhere without
+   flagging this. Needs an independent calibration anchor before this can be reattempted
+   — see known_issues.md 2026-07-26 part 3 for the specific next-step suggestion.
+0. **Sleep Duration tile thresholds changed 2026-07-26, not yet visually confirmed.**
+   `engine/thresholds.js` (`sleepDurationWarn`/`sleepDurationCritical` and
+   `BRI_BRACKETS.sleepDuration`) changed from 8h/6h to 7h/4h bands per owner request.
+   Verified by tracing every call site (all read dynamically, no hardcoded duplicates)
+   and a clean dev-server compile — NOT visually confirmed live, since
+   `sleepDurationHrs` was `null` in real data at the time (no fake data injected). Check
+   the tile's actual color once a real value lands (tied to the same 0x4C/bedtime-cluster
+   firing as condition #1 above and the sleep_duration_estimate_hrs gap).
+0. **Known, deliberately-left-as-is (owner said "leave as is for now", 2026-07-26):**
+   the "INITIATE ACTIVE RECOVERY PROTOCOL" CTA panel (`engine/commands.js` L26-28)
+   conflicts with the project's own non-negotiable rule #2 (no CTA/suggestion layer).
+   Separately, the RHR value that triggers it can be a midday active-state reading
+   mislabeled as resting HR. Do not "fix" either without asking again first — this was
+   an explicit owner choice to defer, not an oversight.
 
 0. **NEW 2026-07-23 — Tonight is the FIRST REAL TEST of the connect()-deadlock watchdog, AND the first night with real morning-pull handoff timing evidence. Launch with the watchdog, not the daemon directly:** `cd ~/Desktop/METHUSELAH && nohup python3 pipeline/tools/gen3_daemon_watchdog.py > /tmp/daemon_tonight.txt 2>&1 &`. Same shape as before (`[poll_seconds] [duration_hours]` optional args, same log-checking habit: `tail -f /tmp/daemon_tonight.txt`). The watchdog kills and relaunches the daemon subprocess if the log file goes >20min without a new real event — built and tested against a simulated hang this session (`known_issues.md` 2026-07-23 "ADDRESSED" entry), but has never run against real hardware/a real deadlock. In the morning: (a) check `/tmp/daemon_tonight.txt` for any `[WATCHDOG ...]` restart lines (if present, that's a real deadlock the watchdog caught — note the timestamps and how many restarts) and confirm the night's data looks complete/continuous either way — only mark that known_issues.md entry "RESOLVED" (currently "ADDRESSED") after this confirms a real recovery or a full clean night with zero false positives; (b) **also check `cat pipeline/logs/morning_pull_handoff.log`** — this is the first night with real, persistent timestamps for the daemon-release → morning-pull-scan handoff (known_issues.md 2026-07-23 "UNRESOLVED" entry). Every automated morning pull on record has failed with no surviving evidence of why; this log should finally show real elapsed scan time and outcome. If it shows a specific number, that's the first real data point to size an actual fix (the 10s wait / 120s scan timeout) against — still don't guess a new number without it.
 0. **NEW 2026-07-21 — Run an evening walk test with `walk_test_keepwarm.py` active BEFORE starting the walk.** Tool is built and dry-run verified (connects, holds, logs cleanly — see today's summary above and `known_issues.md`), but 0x7E/0x7F walk verification itself has NOT been done — deferred today for heat. Start `python3 pipeline/tools/walk_test_keepwarm.py` while stationary, wait for "Connected and authenticated. Holding warm." in the output, THEN put the ring on / leave for the walk, and leave the tool running through the whole walk. Ctrl+C when done. Check the resulting log under `pipeline/data/raw_pulls/gen3_walk/` for `Real step feature (1)`/`(2)` entries with `analyze_fft_walk.py`. Do not claim 0x7E/0x7F is fixed until this actually produces walk data — the dry run only proved connection mechanics, nothing about the buffer-timing race itself.
 0. **NEW 2026-07-19 — Wire live 0x4C decoding into the daemon loop, or accept the morning-pull-only path and prioritize its buffer window.** Finding 1 above: 24 real 0x4C firings tonight, zero used for `sleep_duration_hrs` because only `oura_gen3_morning_pull.py` has the epoch formula, and it only runs once, post-daemon, with whatever buffer happens to still be there. Two paths: (a) decode 0x4C directly in the daemon's own per-cycle loop instead of relying on a single post-run pull, or (b) keep the morning-pull-only design but investigate why tonight's post-daemon pull's buffer held no 0x4C at all (~42min window, arrived right after 24 firings during the session — worth understanding the buffer/rollover timing before assuming another night will do better). Either way, resolve the **0x4C bout-boundary reset behavior** first (does it reset per-disruption, per-BLE-session, or something else) — summing across firings blindly will be wrong.
-0. **UPDATED 2026-07-25 (was NEW 2026-07-19) — Fix the `ca.methuselah.gen3daemon` launchd `Operation not permitted` error. THIS IS NOW A HARD BLOCKER for any launchd automation, including the requested scheduled auto-pull, which was NOT built because of it.** Re-confirmed still broken 2026-07-25 (live kickstart, `runs=8` all `exit 2`); the 2026-07-23 Full Disk Access grant did NOT fix it. Root cause isolated to the launchd execution context lacking access to the TCC-protected `~/Desktop/` folder (same Xcode python3 reads the file fine from Terminal). **Owner action required (cannot be scripted or verified from a session — TCC grants must be owner-set and then re-tested):** either (a) move the repo out of `~/Desktop` to a non-TCC-protected path (most robust; eliminates the grant entirely, but a large path-refactor — out of scope to do blindly), OR (b) grant Full Disk Access to the identity launchd actually attributes, then **re-verify with `launchctl kickstart -k gui/$(id -u)/ca.methuselah.gen3daemon` and confirm `last exit code` is no longer 2** — the grant existing in System Settings is NOT proof it works (07-23 proved that). Only once a kickstart run exits non-2 should the scheduled auto-pull (plist + concurrency guard + attempt-logging, all deferred this session) be built. Full evidence + remediation detail: `known_issues.md` 2026-07-25 "GATE FAILED" entry.
+0. ~~**Fix the `ca.methuselah.gen3daemon` launchd `Operation not permitted` error.**~~
+   **RESOLVED 2026-07-26.** Root cause was two stacked TCC walls, both confirmed via
+   direct `TCC.db` queries: (a) Full Disk Access has zero grants on this account for
+   anything, and Desktop-Folder access is bundle-identity-only — a bare `/usr/bin/python3`
+   can never receive it, so the option (a)/(b) framing below is obsolete (option (b) was
+   never viable at all). Fixed by moving the repo out of `~/Desktop` to `~/methuselah`
+   (eliminates the Desktop-Folder gate) and having the plist spawn the daemon inside
+   Terminal.app via `osascript` instead of invoking `python3` directly (Terminal already
+   holds the Bluetooth grant a bare binary can't get either). Verified live end-to-end:
+   real `kickstart` → real Terminal window → real ring connection → real decoded cycles
+   → real bridge pushes. First successful launchd-triggered run ever (`runs=9` before,
+   all exit 2; the fixed run exited 0 with real data). Full detail: `known_issues.md`
+   2026-07-26 entry ("Daemon EPERM: ROOT CAUSE CONFIRMED + FIXED"). See "Next session
+   priority" item 0 above — tonight's unattended 22:00 fire is the still-open follow-up
+   (this fix was verified via manual kickstart, not yet a full unattended night).
 0. **Tonight's run — daemon is ready, `asyncio.wait_for` confirmed working 2 nights in a row.** Launch with: `cd ~/Desktop/METHUSELAH && nohup python3 -u pipeline/tools/oura_gen3_ble_daemon.py > /tmp/daemon_tonight.txt 2>&1 &`. Check startup with `tail -f /tmp/daemon_tonight.txt`, close lid once authenticated. Morning: `cat /tmp/daemon_tonight.txt`. Goal: third night of 0x5A cluster to further confirm stage 0 vs stage 3 disambiguation hypothesis.
 0. **Fix `~/.zshrc` credential mismatch** — `GEN3_BRIDGE_WRITE_SECRET` in `.zshrc` is wrong/stale. Working secret is in `~/.bash_profile` (last of 3 export lines: `30157c93fc0efadc54aa1257676e1e3fd5cb27c084267c8e2dbb6e500387c80d`). Either remove the `.zshrc` export or sync it to this value. Until fixed, any bridge push from a zsh shell will get HTTP 401.
 0. **Live end-to-end tile verification** — tile rework verified in no-data state only. First overnight daemon session will confirm Gen3-sourced HRV and Sleep Debt values appear in the correct tile slot with `● GEN3 BLE` and correct age label. Gen4 live path also needs re-verification once a new Oura token is provisioned.

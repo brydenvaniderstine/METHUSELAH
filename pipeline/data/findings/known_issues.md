@@ -7952,3 +7952,57 @@ repo — its changes are not version-controlled and won't show up in `git diff`.
 `TCC.db` (177 rows), live `launchctl print`/`kickstart`/`bootout`/`bootstrap`,
 real daemon + osascript logs, live `curl` against the production bridge
 endpoint, and a real end-to-end BLE connection to the physical ring.*
+
+## 2026-07-26 (session 6, part 3) — Track B Condition #1 attempted: blocked on boot_ts tick-rate calibration, not on data availability
+
+**Attempt:** built `pipeline/tools/track_b_condition1_crossref.py` (parallel analysis
+only, mirrors `analyze_0x5a_stage3_gap.py`'s convention) to cross-reference
+0x6A state transitions against the 0x5A sleep-phase cluster on a real full
+night (`gen3_daemon_20260719_212709.txt` — richest true-complete 0x5A burst
+on record: 29 chunks, 1252 valid epochs; 9707 0x6A samples same file).
+
+**Finding — real, not data-availability-limited:** converting 0x5A's 30s/epoch
+grid onto 0x6A's `boot_ts` tick axis requires a tick-rate, and three
+independent, individually-reasonable derivations disagree by up to 17x on
+this same file:
+- Whole-file meaningful-tag span / real session mtime span: **244.1 ticks/sec**
+- The existing established constant (derived from a DIFFERENT file, 07-17,
+  documented in `recompute_bridge_from_daemon.py`): **14.279 ticks/sec**
+- Median 0x6A inter-sample tick delta / the known real ~2.9s inter-sample
+  gap (`oura_gen3_ble_daemon.py` comment, confirmed 2026-07-21): **~104 ticks/sec**
+
+Running the epoch-anchored contingency table with the 244.1 estimate produced
+a red flag, not a result: 0x6A state=0 landed on 0x5A stage=0 (WAKE) only
+0.9% of the time — *below* the ~15% pure-chance base rate, the signature of
+systematic misalignment rather than a real physiological mismatch. Confirmed
+0x6A's own boot_ts sequence has zero backward jumps in-file (clean, monotonic
+on its own axis) — the problem is specifically the cross-axis conversion, not
+0x6A's own data quality. A coarse, alignment-free check (whole-file 0x6A
+state=1 % vs. the bout's 0x5A sleep-stage %: 63.9% vs 85.4%) is too weak to
+draw a conclusion from either (different time windows: whole file vs. one bout).
+
+**Status: Condition #1 remains OPEN.** This refines the previous vague "cross-
+reference 0x6A timing with 0x5A epochs" note (in
+`track_b_sleep_state_analysis.py`'s docstring) into a concrete, specific
+blocker: **no reliable boot_ts-to-wall-clock calibration currently exists**,
+not "insufficient 0x5A data" (rich real data already exists — see above).
+Do not trust a specific match-percentage from this script without first
+resolving which (if any) of the three tick-rate estimates is real; the
+14.279 constant used elsewhere in the pipeline (`recompute_bridge_from_daemon.py`,
+`sleep_confidence_analysis.py`) has NOT been independently re-validated against
+this finding and its own docstring history already records unrelated tick-rate
+bugs being found/fixed multiple times — treat it as unconfirmed, not
+authoritative, until reconciled.
+
+**Next step, if reopened:** find a calibration anchor independent of both
+methods above — e.g., a tag whose payload carries an actual wall-clock or
+sub-second-resolution timestamp near a known real event, or a controlled
+real-world test (a manual action at a logged real time, e.g. removing the
+ring, cross-referenced against the nearest 0x6A/0x53 boot_ts) — before
+trusting any epoch-to-boot_ts anchoring again.
+
+*Logged 2026-07-26. Sources: real `gen3_daemon_20260719_212709.txt` (9707
+0x6A samples, 29-chunk 0x5A burst), direct inspection of consecutive boot_ts
+deltas and backward-jump checks, `pipeline/tools/track_b_condition1_crossref.py`
+(kept in repo, not deleted — decode/contingency logic is sound, only the
+time-anchoring step is unresolved).*

@@ -6,8 +6,8 @@ export const THRESHOLDS = {
   glucose:   5.8,  // mmol/L — fast if above
   hrv:       25,   // ms — personal baseline −1SD (355-night avg 29.3ms); personalised to this user
   rhr:       63,   // bpm — active recovery if above
-  sleepDurationWarn: 8,     // hrs — below this: yellow (sleep protocol tonight)
-  sleepDurationCritical: 6, // hrs — below this: red (acute deficit)
+  sleepDurationWarn: 7,     // hrs — below this: yellow (sleep protocol tonight)
+  sleepDurationCritical: 4, // hrs — below this: red (acute deficit)
 };
 
 // BRI scoring brackets — determine the readiness index score
@@ -15,7 +15,7 @@ export const BRI_BRACKETS = {
   glucose:       { optimal: 5.0, nominal: 5.8 }, // < optimal → 25pts, <= nominal → 15pts
   hrv:           { optimal: 55,  nominal: 22  },  // >= optimal → 25pts, >= nominal → 15pts
   rhr:           { optimal: 50,  nominal: 63  },  // < optimal → 25pts, <= nominal → 15pts
-  sleepDuration: { optimal: 8,   nominal: 6   },  // >= 8h → 25pts (green), >= 6h → 15pts (yellow), < 6h → 0pts (red)
+  sleepDuration: { optimal: 7,   nominal: 4   },  // >= 7h → 25pts (green), >= 4h → 15pts (yellow), < 4h → 0pts (red)
 };
 
 // BRI score → label + color mapping
