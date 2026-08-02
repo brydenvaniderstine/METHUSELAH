@@ -213,6 +213,19 @@ function getTrend(history) {
   return "stable";
 }
 
+// Sanity ceiling for sleep-duration history entries -- no single day can
+// plausibly exceed this many hours of sleep. Guards sleepDurationHistory
+// (persisted in localStorage, never otherwise bounds-checked) against any
+// bad value that ever reaches it, past or future -- e.g. the now-fixed
+// 92.0-HRS production bug (see known_issues.md) could still be sitting in
+// an existing browser's localStorage today, silently inflating the 7-day
+// average and trend for anyone who had that bug reach their device before
+// it was fixed. Applied both when loading existing history (self-heals
+// old contamination) and when appending a new value (stops new bad values
+// from ever being written).
+const SLEEP_DURATION_PLAUSIBLE_MAX_H = 24;
+const isPlausibleSleepHours = (h) => typeof h === "number" && h > 0 && h <= SLEEP_DURATION_PLAUSIBLE_MAX_H;
+
 function avgOf(history) {
   if (!history || history.length === 0) return null;
   return history.reduce((a, b) => a + b, 0) / history.length;
@@ -312,7 +325,8 @@ export default function MethuselahFinal() {
   const [glucoseTimestamp, setGlucoseTimestamp] = useState(() => localStorage.getItem("glucoseTimestamp") || null);
   const [hrvHist,   setHrvHist]   = useState(() => JSON.parse(localStorage.getItem("hrvHistory") || "[]"));
   const [rhrHist,   setRhrHist]   = useState(() => JSON.parse(localStorage.getItem("rhrHistory") || "[]"));
-  const [sleepHist, setSleepHist] = useState(() => JSON.parse(localStorage.getItem("sleepDurationHistory") || "[]"));
+  const [sleepHist, setSleepHist] = useState(() =>
+    JSON.parse(localStorage.getItem("sleepDurationHistory") || "[]").filter(isPlausibleSleepHours));
   const [glucHist,  setGlucHist]  = useState(() => JSON.parse(localStorage.getItem("glucoseHistory") || "[]"));
   const [spo2Hist,  setSpo2Hist]  = useState(() => JSON.parse(localStorage.getItem("spo2History") || "[]"));
   const [stepHist,  setStepHist]  = useState(() => JSON.parse(localStorage.getItem("stepHistory") || "[]"));
@@ -369,6 +383,7 @@ export default function MethuselahFinal() {
         const newGlucHist = [...glucHist, glucose].slice(-7);
         setGlucHist(newGlucHist);
         localStorage.setItem("glucoseHistory", JSON.stringify(newGlucHist));
+        pushGlucoseToServer(glucose, nowIso);
         setGlucoseEntryOpen(false);
         setGlucoseInput("");
         addLog("BLE INTERCEPT: " + glucose.toFixed(1) + " MMOL/L // AUTO-LOGGED", "roche");
@@ -396,6 +411,7 @@ export default function MethuselahFinal() {
     const newGlucHist = [...glucHist, val].slice(-7);
     setGlucHist(newGlucHist);
     localStorage.setItem("glucoseHistory", JSON.stringify(newGlucHist));
+    pushGlucoseToServer(val, nowIso);
     addLog(`MANUAL GLUCOSE: ${val.toFixed(1)} MMOL/L`, "roche");
     const briGlucose = calculateBRI({ glucose: val, hrv, rhr, sleepDurationHrs, glucosePending: false });
     addLog(`BIOLOGICAL READINESS INDEX: ${briGlucose.score} // ${briGlucose.label} // ALL VECTORS CONFIRMED`, "", briGlucose.color);
@@ -422,6 +438,41 @@ export default function MethuselahFinal() {
     return () => clearInterval(id);
   }, []);
 
+  // Cross-device glucose sync (2026-08-02) -- localStorage never leaves the
+  // browser it was written in, so a reading entered on one device was
+  // invisible on any other. Adopt the server's reading if it's for today
+  // and newer than whatever this device already has (covers "entered on
+  // another device after this one last loaded"); submitGlucose/
+  // readBLEGlucose below push new readings back up so other devices pick
+  // them up on their own next fetch.
+  useEffect(() => {
+    fetch('/api/glucose')
+      .then(res => res.ok ? res.json() : null)
+      .catch(() => null)
+      .then(data => {
+        if (!data || data.value == null || !data.timestamp) return;
+        const today = new Date().toLocaleDateString("en-CA");
+        const serverDate = new Date(data.timestamp).toLocaleDateString("en-CA");
+        if (serverDate !== today) return;
+        const localTimestamp = localStorage.getItem("glucoseTimestamp");
+        if (!localTimestamp || new Date(data.timestamp) > new Date(localTimestamp)) {
+          setGlucoseReading(data.value);
+          setGlucoseTimestamp(data.timestamp);
+          localStorage.setItem("glucoseReading", data.value.toString());
+          localStorage.setItem("glucoseDate", today);
+          localStorage.setItem("glucoseTimestamp", data.timestamp);
+        }
+      });
+  }, []);
+
+  const pushGlucoseToServer = (value, timestamp) => {
+    fetch('/api/glucose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value, timestamp }),
+    }).catch(() => {}); // best-effort -- local state/localStorage already updated regardless
+  };
+
   // Update 7-day histories from Gen3 bridge — once per bridge date
   useEffect(() => {
     if (!gen3Bridge?.vectors || !gen3Bridge.timestamp) return;
@@ -439,7 +490,7 @@ export default function MethuselahFinal() {
       addLog(`GEN3 RHR: ${Math.round(v.rhr_bpm)} BPM`, "roche");
     }
     const sleepForHistory = v.sleep_duration_hrs ?? v.sleep_duration_estimate_hrs;
-    if (sleepForHistory != null) {
+    if (sleepForHistory != null && isPlausibleSleepHours(sleepForHistory)) {
       const h = [...sleepHist, sleepForHistory].slice(-7);
       setSleepHist(h); localStorage.setItem("sleepDurationHistory", JSON.stringify(h));
       const estFlag = v.sleep_duration_hrs == null ? " (EST)" : "";
