@@ -473,32 +473,75 @@ export default function MethuselahFinal() {
     }).catch(() => {}); // best-effort -- local state/localStorage already updated regardless
   };
 
-  // Update 7-day histories from Gen3 bridge — once per bridge date
+  // Cross-device history sync for HRV/RHR/Sleep/SpO2/Steps (2026-08-02) --
+  // same problem and same fix as glucose above: each device was building its
+  // own separate 7-day history purely from localStorage, so the SAME live
+  // value showed a DIFFERENT 7d avg/trend on a laptop vs. a phone (confirmed
+  // side-by-side: 47ms vs 38ms HRV avg, 69 vs 62bpm RHR avg, 33.7h vs 7.6h
+  // sleep avg, all for the identical live reading). Adopts the server's
+  // history as authoritative on load whenever it has any entries -- the
+  // "Update 7-day histories" effect below pushes each day's values back up
+  // so every device converges on the same shared history.
+  useEffect(() => {
+    fetch('/api/vector-history')
+      .then(res => res.ok ? res.json() : null)
+      .catch(() => null)
+      .then(history => {
+        if (!history || typeof history !== 'object') return;
+        const dates = Object.keys(history).sort();
+        const extract = (field) => dates.map(d => history[d][field]).filter(v => v != null).slice(-7);
+        const fromServer = {
+          hrv: extract('hrv'),
+          rhr: extract('rhr'),
+          sleepDurationHrs: extract('sleepDurationHrs').filter(isPlausibleSleepHours),
+          spo2: extract('spo2'),
+          steps: extract('steps'),
+        };
+        if (fromServer.hrv.length)              { setHrvHist(fromServer.hrv);        localStorage.setItem("hrvHistory", JSON.stringify(fromServer.hrv)); }
+        if (fromServer.rhr.length)              { setRhrHist(fromServer.rhr);        localStorage.setItem("rhrHistory", JSON.stringify(fromServer.rhr)); }
+        if (fromServer.sleepDurationHrs.length)  { setSleepHist(fromServer.sleepDurationHrs); localStorage.setItem("sleepDurationHistory", JSON.stringify(fromServer.sleepDurationHrs)); }
+        if (fromServer.spo2.length)              { setSpo2Hist(fromServer.spo2);      localStorage.setItem("spo2History", JSON.stringify(fromServer.spo2)); }
+        if (fromServer.steps.length)             { setStepHist(fromServer.steps);     localStorage.setItem("stepHistory", JSON.stringify(fromServer.steps)); }
+      });
+  }, []);
+
+  // Update 7-day histories from Gen3 bridge — once per bridge date.
+  // Writes to localStorage (fast local cache) AND pushes to the shared
+  // /api/vector-history store (2026-08-02) so every device converges on
+  // the same history instead of each building its own -- see the fetch-on-
+  // mount effect above. The server write is a same-date merge (see
+  // api/vector-history.js), so multiple devices recording "today" is
+  // harmless, not duplicated.
   useEffect(() => {
     if (!gen3Bridge?.vectors || !gen3Bridge.timestamp) return;
     const bridgeDate = new Date(gen3Bridge.timestamp).toLocaleDateString("en-CA");
     if (localStorage.getItem("lastBridgeHistoryDate") === bridgeDate) return;
     const v = gen3Bridge.vectors;
+    const serverPayload = { date: bridgeDate };
     if (v.hrv_ms != null) {
       const h = [...hrvHist, v.hrv_ms].slice(-7);
       setHrvHist(h); localStorage.setItem("hrvHistory", JSON.stringify(h));
+      serverPayload.hrv = v.hrv_ms;
       addLog(`GEN3 HRV: ${Math.round(v.hrv_ms)} MS`, "roche");
     }
     if (v.rhr_bpm != null) {
       const h = [...rhrHist, v.rhr_bpm].slice(-7);
       setRhrHist(h); localStorage.setItem("rhrHistory", JSON.stringify(h));
+      serverPayload.rhr = v.rhr_bpm;
       addLog(`GEN3 RHR: ${Math.round(v.rhr_bpm)} BPM`, "roche");
     }
     const sleepForHistory = v.sleep_duration_hrs ?? v.sleep_duration_estimate_hrs;
     if (sleepForHistory != null && isPlausibleSleepHours(sleepForHistory)) {
       const h = [...sleepHist, sleepForHistory].slice(-7);
       setSleepHist(h); localStorage.setItem("sleepDurationHistory", JSON.stringify(h));
+      serverPayload.sleepDurationHrs = sleepForHistory;
       const estFlag = v.sleep_duration_hrs == null ? " (EST)" : "";
       addLog(`GEN3 SLEEP: ${sleepForHistory.toFixed(1)}H${estFlag}`, "roche");
     }
     if (v.spo2_avg_pct != null) {
       const h = [...spo2Hist, v.spo2_avg_pct].slice(-7);
       setSpo2Hist(h); localStorage.setItem("spo2History", JSON.stringify(h));
+      serverPayload.spo2 = v.spo2_avg_pct;
       const avg = h.reduce((a, b) => a + b, 0) / h.length;
       const trend = h.length >= 2 ? (h[h.length-1] - h[0] > 0.3 ? "TRENDING UP" : h[0] - h[h.length-1] > 0.3 ? "TRENDING DOWN" : "STABLE") : "BUILDING";
       addLog(`GEN3 SPO2 7D AVG: ${avg.toFixed(1)}% // ${trend} // NOTE: GEN3 READS ~3-5% LOW`, "roche");
@@ -506,9 +549,17 @@ export default function MethuselahFinal() {
     if (v.step_count != null && v.step_count > 0) {
       const h = [...stepHist, v.step_count].slice(-7);
       setStepHist(h); localStorage.setItem("stepHistory", JSON.stringify(h));
+      serverPayload.steps = v.step_count;
       const avg = Math.round(h.reduce((a, b) => a + b, 0) / h.length);
       const trend = h.length >= 2 ? (h[h.length-1] - h[0] > 200 ? "TRENDING UP" : h[0] - h[h.length-1] > 200 ? "TRENDING DOWN" : "STABLE") : "BUILDING";
       addLog(`GEN3 STEPS 7D AVG: ${avg}/DAY // ${trend}`, "roche");
+    }
+    if (Object.keys(serverPayload).length > 1) {
+      fetch('/api/vector-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(serverPayload),
+      }).catch(() => {}); // best-effort -- local state/localStorage already updated regardless
     }
     localStorage.setItem("lastBridgeHistoryDate", bridgeDate);
   }, [gen3Bridge]);
