@@ -9,7 +9,7 @@ as of 2026-06-21 reorganization.
 data/
   raw_pulls/
     gen3_morning/       <- output of oura_gen3_morning_pull.py, one file per run
-    gen3_autoloop/      <- output of oura_gen3_auto_loop.py, one file per session
+    gen3_daemon/        <- output of oura_gen3_ble_daemon.py, one file per overnight session
   findings/
     sleep_state_findings.md      <- sleep_state enum mapping investigation
   comparisons/
@@ -34,10 +34,11 @@ raw file.
 ## Adding new data
 
 When running a new pull:
-- `python3 tools/oura_gen3_morning_pull.py` -> move output to
-  `data/raw_pulls/gen3_morning/`
-- `python3 tools/oura_gen3_auto_loop.py` -> move output to
-  `data/raw_pulls/gen3_autoloop/`
+- `python3 tools/oura_gen3_morning_pull.py` -> auto-files itself to
+  `data/raw_pulls/gen3_morning/` (or `gen3_evening/`, based on the pull
+  classifier)
+- `python3 tools/gen3_daemon_watchdog.py` (overnight daemon) -> writes to
+  `data/raw_pulls/gen3_daemon/` directly
 
 When logging a new comparison night: append a row to
 `data/comparisons/gen3_gen4_comparison_log.csv`

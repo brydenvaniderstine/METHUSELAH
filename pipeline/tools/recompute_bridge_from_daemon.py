@@ -77,6 +77,11 @@ TICKS_PER_SEC = 14.279
 # validated approach instead of duplicating it with a weaker check.
 VALID_TAG_NAMES = set(EVENT_TAGS.values())
 
+# Tags this script's decode loop below actually dispatches on -- named by
+# their EVENT_TAGS value (single source of truth) rather than a second,
+# separately-maintained name->tag reverse map that could drift from it.
+DECODE_TAG_NAMES = {EVENT_TAGS[t] for t in (0x6A, 0x6E, 0x6F, 0x75, 0x61, 0x4C)}
+
 
 def parse_daemon_log(path):
     entries = []
@@ -104,17 +109,6 @@ def parse_daemon_log(path):
                     'payload': bytes.fromhex(m.group(3)),
                 })
     return header, entries
-
-
-# Tag name → numeric tag (subset needed for decode dispatch)
-TAG_NAMES = {
-    'Sleep period info (2)': 0x6A,
-    'SPO2 IBI+amplitude':    0x6E,
-    'SPO2 event':            0x6F,
-    'Sleep temp event':      0x75,
-    'Debug data':            0x61,
-    'Sleep summary (2)':     0x4C,
-}
 
 
 def main(log_path, do_push=False):
@@ -172,13 +166,14 @@ def main(log_path, do_push=False):
     prev_state = None
     prev_ts = None
     last_6a_ts = None
+    decode_fail_counts = {}
 
     for e in entries:
-        tag = TAG_NAMES.get(e['tag_name'])
-        if tag is None:
+        name = e['tag_name']
+        if name not in DECODE_TAG_NAMES:
             continue
         try:
-            if tag == 0x6A:
+            if name == EVENT_TAGS[0x6A]:
                 d = decode_sleep_period_info_2(e['payload'])
                 hr_avgs.append(d['average_hr'])
                 s = d['sleep_state']
@@ -189,22 +184,22 @@ def main(log_path, do_push=False):
                         state_runs.append((prev_state, prev_ts, bt))
                     prev_state = s
                     prev_ts = bt
-            elif tag == 0x6E:
+            elif name == EVENT_TAGS[0x6E]:
                 d = decode_spo2_ibi_amplitude(e['payload'])
                 ibi_packets_all.append(d['ibi_ms'])
-            elif tag == 0x6F:
+            elif name == EVENT_TAGS[0x6F]:
                 d = decode_spo2_event(e['payload'])
                 if d['spo2_percent']:
                     spo2_avgs.append(sum(d['spo2_percent']) / len(d['spo2_percent']))
-            elif tag == 0x75:
+            elif name == EVENT_TAGS[0x75]:
                 d = decode_sleep_temp_event(e['payload'])
                 temps.extend(d['temps_c'])
-            elif tag == 0x61:
+            elif name == EVENT_TAGS[0x61]:
                 if len(e['payload']) > 0 and e['payload'][0] == 0x14:
                     from decoders import decode_debug_data_fuel_gauge
                     d = decode_debug_data_fuel_gauge(e['payload'])
                     fuel_gauge_pct = round(d['battery_percentage'], 1)
-            elif tag == 0x4C:
+            elif name == EVENT_TAGS[0x4C]:
                 d = decode_sleep_summary_2(e['payload'])
                 durs = d['stage_durations_min']
                 sleep_stages_bridge = {
@@ -214,7 +209,12 @@ def main(log_path, do_push=False):
                 }
                 print(f"0x4C cluster found! Stages: {sleep_stages_bridge}")
         except Exception as ex:
-            pass
+            # Malformed/short packets happen on real hardware and shouldn't
+            # abort the whole recompute -- but silently eating them made a
+            # real decoder bug indistinguishable from expected noise. Count
+            # and report per tag instead so a spike is visible without
+            # aborting the run.
+            decode_fail_counts[e['tag_name']] = decode_fail_counts.get(e['tag_name'], 0) + 1
 
     # Close the last run at the last 0x6A timestamp (not max of all entries —
     # non-0x6A events continue after sleep ends and would inflate the duration).
@@ -264,6 +264,8 @@ def main(log_path, do_push=False):
     print(f"  sleep_temp_c:       {temp}")
     print(f"  battery_pct:        {fuel_gauge_pct}")
     print(f"  sleep_stages:       {sleep_stages_bridge}")
+    if decode_fail_counts:
+        print(f"  decode failures:    {dict(decode_fail_counts)}")
     print()
 
     bridge_data = build_bridge_data(
