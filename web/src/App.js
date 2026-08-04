@@ -2,23 +2,39 @@ import React, { useState, useEffect, useRef } from "react";
 import { evaluateSources, calculateBRI, THRESHOLDS, SOURCE_GEN4, SOURCE_GEN3 } from "./engine/index.js";
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400;1,700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #050505;
-  --panel: #0a0a0a;
-  --line: #1e1e1e;
-  --line-bright: #333333;
-  --text-main: #f0f0f0;
-  --text-dim: #555555;
-  --text-mid: #888888;
-  --accent-red: #ff2a2a;
-  --accent-green: #00ff66;
-  --accent-amber: #ffb300;
-  --accent-blue: #00aaff;
-  --font-mono: 'Space Mono', 'Courier New', Courier, ui-monospace, SFMono-Regular, monospace;
+  --bg: oklch(0.13 0.012 240);
+  --panel: oklch(0.15 0.012 240);
+  --line: oklch(0.28 0.01 240);
+  --line-bright: oklch(0.3 0.01 240);
+  --text-main: oklch(0.92 0.01 240);
+  --text-dim: oklch(0.4 0.01 240);
+  --text-mid: oklch(0.55 0.01 240);
+  --accent-red: oklch(0.65 0.18 25);
+  --accent-green: oklch(0.75 0.15 145);
+  --accent-amber: oklch(0.78 0.15 80);
+  --accent-cyan: oklch(0.75 0.13 220);
+  --font-mono: 'IBM Plex Mono', 'Courier New', Courier, ui-monospace, SFMono-Regular, monospace;
+
+  /* fibonacci spacing, clamped so the large desktop-fidelity steps don't
+     blow out the fixed-viewport mobile PWA layout below */
+  --sp-1: 8px;
+  --sp-2: 13px;
+  --sp-3: 21px;
+  --sp-4: clamp(21px, 4vw, 34px);
+  --sp-5: clamp(34px, 6vw, 55px);
+  --sp-6: clamp(34px, 8vw, 89px);
+
+  /* fibonacci/golden type scale, large steps clamped for mobile */
+  --fs-11: 11px; --fs-12: 12px; --fs-13: 13px; --fs-14: 14px; --fs-15: 15px; --fs-16: 16px;
+  --fs-19: clamp(14px, 4vw, 19px);
+  --fs-21: clamp(15px, 4vw, 21px);
+  --fs-34: clamp(20px, 6vw, 34px);
+  --fs-55: clamp(28px, 9vw, 55px);
 }
 
 html, body, #root {
@@ -26,7 +42,7 @@ html, body, #root {
   padding-bottom: env(safe-area-inset-bottom);
   height: 100vh; width: 100%;
   background: var(--bg); color: var(--text-main);
-  font-family: var(--font-mono); font-size: 11px;
+  font-family: var(--font-mono); font-size: var(--fs-11);
   text-transform: uppercase; overflow: hidden;
 }
 
@@ -49,50 +65,50 @@ body::before {
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
-  padding: 12px;
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
   position: relative;
   z-index: 1;
-  gap: 16px;
+  gap: var(--sp-3);
   box-sizing: border-box;
   overflow: hidden;
 }
 
 .header {
   display: flex; justify-content: space-between; align-items: flex-start;
-  border-bottom: 2px solid var(--text-main); padding-bottom: 10px; overflow: hidden;
+  border-bottom: 1px solid var(--line-bright); padding-bottom: var(--sp-2); overflow: hidden;
 }
 
 .brand-wrap { display: flex; flex-direction: column; gap: 2px; }
-.brand { font-size: 13px; font-weight: 700; letter-spacing: 2px; }
+.brand { font-size: var(--fs-21); font-weight: 700; letter-spacing: 6px; }
 
-.header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.header-right { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
 .header-top-row { display: flex; gap: 12px; align-items: center; }
-.live-badge { display: flex; align-items: center; gap: 6px; font-size: 9px; letter-spacing: 2px; }
+.live-badge { display: flex; align-items: center; gap: 6px; font-size: var(--fs-12); letter-spacing: 2px; color: var(--accent-cyan); }
 .blink { width: 7px; height: 7px; border-radius: 50%; animation: pulse 1.5s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; box-shadow: 0 0 8px currentColor; } 50% { opacity: 0.15; box-shadow: none; } }
-.clock { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; }
+.clock { font-size: var(--fs-12); color: var(--text-dim); letter-spacing: 1px; font-variant-numeric: tabular-nums; }
 
 .telemetry-grid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 2px; background: var(--line); border: 1px solid var(--line-bright);
 }
-.tel-block { background: var(--panel); padding: 8px; position: relative; overflow: hidden; }
-.tel-label { font-size: 8px; color: var(--text-dim); letter-spacing: 1px; margin-bottom: 6px; line-height: 1.3; }
-.tel-value { font-size: 18px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
-.tel-unit { font-size: 10px; color: var(--text-dim); }
+.tel-block { background: var(--panel); padding: var(--sp-3); position: relative; overflow: hidden; }
+.tel-label { font-size: var(--fs-11); color: var(--text-mid); letter-spacing: 2px; margin-bottom: var(--sp-1); line-height: 1.3; }
+.tel-value { font-size: var(--fs-55); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.tel-unit { font-size: var(--fs-14); color: var(--text-dim); }
 .tel-bar-wrap { height: 2px; background: var(--line); margin: 8px 0; }
 .tel-bar { height: 100%; transition: width 1s ease, background 0.5s; }
-.tel-meta { font-size: 8px; color: var(--text-dim); letter-spacing: 0.2px; margin: 3px 0 2px; line-height: 1.4; }
-.tel-source { font-size: 8px; color: var(--accent-blue); letter-spacing: 1px; margin-top: 2px; }
+.tel-meta { font-size: var(--fs-12); color: var(--text-dim); letter-spacing: 0.2px; margin: 6px 0 2px; line-height: 1.4; }
+.tel-source { font-size: var(--fs-11); color: var(--accent-cyan); letter-spacing: 1px; margin-top: 6px; }
 .tel-stale { opacity: 0.65; }
-.tel-tap-hint { font-size: 8px; color: var(--text-dim); letter-spacing: 1px; margin-top: 4px; }
+.tel-tap-hint { font-size: var(--fs-11); color: var(--text-dim); letter-spacing: 1px; margin-top: 4px; }
 
 @keyframes glucosePulse {
-  0%, 100% { border-color: #ffb300; }
-  50% { border-color: #333333; }
+  0%, 100% { border-color: var(--accent-amber); }
+  50% { border-color: var(--line-bright); }
 }
 .glucose-pulse {
-  border: 1px solid #ffb300;
+  border: 1px solid var(--accent-amber);
   animation: glucosePulse 1s ease-in-out infinite;
 }
 
@@ -112,41 +128,47 @@ body::before {
 }
 
 .command-wrap {
+  --corner-color: var(--line-bright);
   display: flex; flex-direction: column; justify-content: center; align-items: center;
-  border: 2px solid var(--line-bright); padding: 14px 16px; text-align: center;
+  border: 1px solid var(--line-bright); padding: var(--sp-4) var(--sp-3); text-align: center;
   background: var(--panel); position: relative; overflow: visible; transition: border-color 0.5s;
   flex-shrink: 0;
 }
-.corner { position: absolute; width: 14px; height: 14px; border: 1px solid var(--text-dim); }
-.tl { top: 4px; left: 4px; border-right: 0; border-bottom: 0; }
-.tr { top: 4px; right: 4px; border-left: 0; border-bottom: 0; }
-.bl { bottom: 4px; left: 4px; border-right: 0; border-top: 0; }
-.br { bottom: 4px; right: 4px; border-left: 0; border-top: 0; }
+.corner { position: absolute; width: 20px; height: 20px; border: 2px solid var(--corner-color); }
+.tl { top: 6px; left: 6px; border-right: 0; border-bottom: 0; }
+.tr { top: 6px; right: 6px; border-left: 0; border-bottom: 0; }
+.bl { bottom: 6px; left: 6px; border-right: 0; border-top: 0; }
+.br { bottom: 6px; right: 6px; border-left: 0; border-top: 0; }
 
-.cmd-meta { font-size: 9px; color: var(--text-dim); margin-bottom: 10px; letter-spacing: 2px; }
-.cmd-text { font-size: 16px; font-weight: 700; margin-bottom: 10px; transition: color 0.5s; max-width: 100%; line-height: 1.3; }
-.cmd-rationale { font-size: 10px; color: var(--text-mid); line-height: 1.6; max-width: 100%; margin-bottom: 18px; letter-spacing: 0.5px; }
-.cmd-briefing { font-size: 11px; color: var(--text-dim); line-height: 1.7; max-width: 100%; margin-bottom: 14px; letter-spacing: 0.3px; border-left: 1px solid var(--text-dim); padding-left: 10px; }
+.cmd-meta { font-size: var(--fs-11); color: var(--text-dim); margin-bottom: var(--sp-2); letter-spacing: 2px; }
+.cmd-text { font-size: var(--fs-34); font-weight: 700; margin-bottom: var(--sp-2); transition: color 0.5s; max-width: 100%; line-height: 1.25; }
+.cmd-rationale { font-size: var(--fs-16); color: var(--text-mid); line-height: 1.6; max-width: 100%; margin-bottom: var(--sp-3); letter-spacing: 0.5px; }
+.cmd-briefing { font-size: var(--fs-13); color: var(--text-dim); line-height: 1.7; max-width: 100%; margin-bottom: var(--sp-2); letter-spacing: 0.3px; border-left: 1px solid var(--text-dim); padding-left: 10px; }
 
-.btn-execute {
-  background: var(--text-main); color: var(--bg); border: none; padding: 12px 20px;
-  font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 3px;
-  cursor: pointer; box-shadow: 4px 4px 0 var(--accent-amber);
+.btn-brushed {
+  position: relative; border: none; cursor: pointer;
+  padding: 18px 34px;
+  font-family: var(--font-mono); font-size: var(--fs-15); font-weight: 700; letter-spacing: 4px;
+  color: oklch(0.15 0.01 240);
+  background: repeating-linear-gradient(180deg, oklch(0.96 0 0) 0px, oklch(0.96 0 0) 2px, oklch(0.90 0 0) 2px, oklch(0.90 0 0) 4px);
+  box-shadow: 0 4px 0 0 var(--btn-ledge, var(--accent-amber)), 0 4px 12px 0 oklch(0 0 0 / 0.5);
   transition: transform 0.08s, box-shadow 0.08s;
+  text-transform: uppercase;
 }
-.btn-execute:hover { transform: translate(2px,2px); box-shadow: 2px 2px 0 var(--accent-amber); }
-.btn-execute:active { transform: translate(4px,4px); box-shadow: none; }
+.btn-brushed:hover { transform: translateY(1px); box-shadow: 0 3px 0 0 var(--btn-ledge, var(--accent-amber)), 0 3px 10px 0 oklch(0 0 0 / 0.5); }
+.btn-brushed:active { transform: translateY(4px); box-shadow: 0 0 0 0 var(--btn-ledge, var(--accent-amber)); }
+.btn-execute { }
 .btn-execute.done { background: var(--line-bright); color: var(--text-dim); box-shadow: none; cursor: not-allowed; transform: none; }
 
-.optimal-label { color: var(--accent-green); font-weight: 700; letter-spacing: 3px; font-size: 11px; animation: breathe 3s infinite; }
+.optimal-label { color: var(--accent-green); font-weight: 700; letter-spacing: 3px; font-size: var(--fs-13); animation: breathe 3s infinite; }
 @keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 .weekly-grid { width: 100%; display: flex; flex-direction: column; gap: 8px; margin: 10px 0 8px; }
-.weekly-row { display: flex; align-items: baseline; gap: 10px; font-size: 9px; letter-spacing: 1px; }
+.weekly-row { display: flex; align-items: baseline; gap: 10px; font-size: var(--fs-12); letter-spacing: 1px; }
 .weekly-label { color: var(--text-dim); min-width: 90px; flex-shrink: 0; }
 .weekly-val { color: var(--text-main); font-weight: 700; min-width: 80px; }
 .weekly-trend { color: var(--text-dim); }
-.weekly-caveat { color: var(--text-dim); font-size: 8px; opacity: 0.6; }
+.weekly-caveat { color: var(--text-dim); font-size: var(--fs-11); opacity: 0.6; }
 
 .sys-log {
   flex: 1;
@@ -159,30 +181,37 @@ body::before {
   gap: 2px;
   min-height: 100px;
 }
-.log-line { font-size: 9px; color: var(--text-dim); display: flex; gap: 12px; animation: slideIn 0.25s ease; }
+.log-line { font-size: var(--fs-13); color: var(--text-dim); display: flex; gap: 12px; animation: slideIn 0.25s ease; }
 @keyframes slideIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
-.log-time { color: var(--accent-amber); min-width: 80px; flex-shrink: 0; }
-.log-roche { color: var(--accent-blue); }
-.log-cursor { display: inline-block; width: 6px; height: 9px; background: var(--accent-amber); animation: blink-cursor 1s step-end infinite; margin-left: 2px; vertical-align: middle; }
+.log-time { color: var(--accent-amber); min-width: 90px; flex-shrink: 0; }
+.log-roche { color: var(--accent-cyan); }
+.log-cursor { display: inline-block; width: 6px; height: 9px; background: var(--accent-cyan); animation: blink-cursor 1s step-end infinite; margin-left: 2px; vertical-align: middle; }
 @keyframes blink-cursor { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
 
 .auth-overlay {
   position: fixed; inset: 0; background: var(--bg); z-index: 10000;
-  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px;
-  font-family: 'Space Mono', 'Courier New', Courier, monospace;
+  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: var(--sp-3);
+  font-family: var(--font-mono);
   padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom); box-sizing: border-box; overflow: hidden;
 }
-.auth-title { font-size: 13px; color: var(--accent-amber); letter-spacing: 4px; font-weight: 700; }
-.auth-input {
-  background: transparent; border: 1px solid var(--line-bright); color: var(--accent-green);
-  font-family: var(--font-mono); font-size: 14px; padding: 10px; text-align: center;
-  letter-spacing: 4px; width: 80vw; max-width: 300px; outline: none; transition: border-color 0.2s;
+.auth-header-row { display: flex; align-items: center; gap: 10px; color: var(--accent-cyan); white-space: nowrap; }
+.auth-title { font-size: var(--fs-19); color: var(--accent-cyan); letter-spacing: 3px; font-weight: 700; }
+.auth-input-box {
+  --corner-color: var(--accent-cyan);
+  position: relative; border: 1px solid var(--line-bright);
+  min-height: 55px; display: flex; align-items: center; justify-content: center;
+  width: 80vw; max-width: 400px; padding: var(--sp-2) var(--sp-3);
 }
-.auth-input:focus { border-color: var(--accent-green); }
-.auth-hint { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; }
-.auth-decrypt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 3px; font-weight: 700; padding: 12px; background: var(--text-main); color: var(--bg); border: none; cursor: pointer; box-shadow: 3px 3px 0 var(--accent-amber); margin-top: 8px; text-transform: uppercase; width: 80vw; max-width: 300px; }
-.auth-error { font-size: 9px; color: var(--accent-red); letter-spacing: 2px; animation: fadeIn 0.2s ease; }
+.auth-placeholder { color: var(--text-dim); letter-spacing: 4px; font-size: var(--fs-16); }
+.auth-masked { color: var(--accent-green); letter-spacing: 4px; font-size: var(--fs-19); font-weight: 700; display: flex; align-items: center; font-variant-numeric: tabular-nums; }
+.auth-input-hidden {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  background: transparent; border: none; outline: none; opacity: 0;
+  font-family: var(--font-mono); font-size: 16px; cursor: text;
+}
+.auth-hint { font-size: var(--fs-12); color: var(--text-dim); letter-spacing: 2px; }
+.auth-error { font-size: var(--fs-12); color: var(--accent-red); letter-spacing: 2px; animation: fadeIn 0.2s ease; }
 `;
 
 const MASTER_KEY = "v1";
@@ -244,7 +273,7 @@ function trendGlyph(history) {
 // stale: dims tile + shifts source line to amber
 function Metric({ label, val, unit, color, meta, age, stale, source }) {
   const sourceLabel = source === SOURCE_GEN4 ? "OURA LIVE" : source === SOURCE_GEN3 ? "GEN3 BLE" : null;
-  const sourceColor = stale ? "var(--accent-amber)" : source === SOURCE_GEN3 ? "cyan" : "var(--accent-blue)";
+  const sourceColor = stale ? "var(--accent-amber)" : "var(--accent-cyan)";
   return (
     <div className={`tel-block${stale ? " tel-stale" : ""}`}>
       <div className="tel-label">{label}</div>
@@ -264,7 +293,7 @@ function GlucosePanel({ reading, entryOpen, inputVal, meta, age, stale, onTap, o
   const hasReading = reading !== null;
   const isElevated = hasReading && reading > THRESHOLDS.glucose;
   const color = !hasReading ? "var(--accent-amber)" : isElevated ? "var(--accent-red)" : "var(--accent-green)";
-  const sourceColor = stale ? "var(--accent-amber)" : "var(--accent-blue)";
+  const sourceColor = stale ? "var(--accent-amber)" : "var(--accent-cyan)";
 
   return (
     <div
@@ -624,7 +653,7 @@ export default function MethuselahFinal() {
 
   const gen3Live = gen3Bridge?.timestamp && !isStale(gen3Bridge.timestamp);
   const gen3Present = !!gen3Bridge?.timestamp;
-  const badgeColor = gen3Live ? "var(--accent-blue)" : gen3Present ? "var(--accent-amber)" : "var(--text-dim)";
+  const badgeColor = gen3Live ? "var(--accent-cyan)" : gen3Present ? "var(--accent-amber)" : "var(--text-dim)";
   const badgeLabel = gen3Live ? "OURA LIVE" : gen3Present ? "OURA" : "OFFLINE";
 
   return (
@@ -633,22 +662,38 @@ export default function MethuselahFinal() {
 
       {locked ? (
         <div className="auth-overlay">
-          <div className="auth-title">METHUSELAH // ACCESS REQUIRED</div>
-          <input
-            className="auth-input"
-            type="password"
-            value={input}
-            onChange={e => { setInput(e.target.value); setAuthError(false); }}
-            onKeyDown={e => {
-              if (e.key !== "Enter") return;
-              if (input === MASTER_KEY) unlock();
-              else { setAuthError(true); setInput(""); }
-            }}
-            placeholder="********"
-          />
+          <div className="auth-header-row">
+            <div className="blink" style={{ background: "var(--accent-cyan)", width: 7, height: 7 }} />
+            <div className="auth-title">METHUSELAH // ACCESS REQUIRED</div>
+          </div>
+          <div className="auth-input-box">
+            <div className="corner tl" /><div className="corner tr" />
+            <div className="corner bl" /><div className="corner br" />
+            {input.length === 0 ? (
+              <span className="auth-placeholder">MASTER KEY</span>
+            ) : (
+              <span className="auth-masked">
+                {"*".repeat(input.length)}
+                <span className="log-cursor" />
+              </span>
+            )}
+            <input
+              className="auth-input-hidden"
+              type="password"
+              value={input}
+              autoFocus
+              onChange={e => { setInput(e.target.value); setAuthError(false); }}
+              onKeyDown={e => {
+                if (e.key !== "Enter") return;
+                if (input === MASTER_KEY) unlock();
+                else { setAuthError(true); setInput(""); }
+              }}
+            />
+          </div>
           <div className="auth-hint">INPUT MASTER KEY → PRESS RETURN</div>
           <button
-            className="auth-decrypt"
+            className="btn-brushed"
+            style={{ width: "80vw", maxWidth: 400 }}
             onClick={() => {
               if (input === MASTER_KEY) unlock();
               else { setAuthError(true); setInput(""); }
@@ -656,7 +701,7 @@ export default function MethuselahFinal() {
           >
             ENTER
           </button>
-          {authError && <div className="auth-error">⚠ ACCESS DENIED // INVALID KEY</div>}
+          {authError && <div className="auth-error">ACCESS DENIED // KEY REJECTED</div>}
         </div>
       ) : (
         <div className="shell" style={{ minHeight: "100vh", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -721,7 +766,14 @@ export default function MethuselahFinal() {
             />
           </div>
 
-          <div className="command-wrap" style={{ borderColor: execState === "satisfied" ? "#00ff66" : bri.color }}>
+          <div
+            className="command-wrap"
+            style={{
+              borderColor: execState === "satisfied" ? "var(--accent-green)" : bri.color,
+              "--corner-color": execState === "satisfied" ? "var(--accent-green)" : bri.color,
+              "--btn-ledge": execState === "satisfied" ? "var(--accent-green)" : bri.color,
+            }}
+          >
             <div className="corner tl" /><div className="corner tr" />
             <div className="corner bl" /><div className="corner br" />
             <div className="cmd-meta">{logic.level.toUpperCase()} // {clock}</div>
@@ -741,7 +793,7 @@ export default function MethuselahFinal() {
                 {logic.level === "awaiting" ? (
                   <div className="tel-tap-hint">NO DATA — RUN DAEMON OR MORNING PULL</div>
                 ) : logic.level !== "optimal" ? (
-                  <button className="btn-execute" onClick={handleExecute}>
+                  <button className="btn-execute btn-brushed" onClick={handleExecute}>
                     EXECUTE PROTOCOL
                   </button>
                 ) : (
@@ -751,7 +803,7 @@ export default function MethuselahFinal() {
             ) : execState === "active" ? (
               <>
                 <div className="cmd-text" style={{ color: logic.color }}>PROTOCOL ACTIVE.</div>
-                <button className="btn-execute" onClick={handleComplete}>
+                <button className="btn-execute btn-brushed" onClick={handleComplete}>
                   PROTOCOL COMPLETE
                 </button>
               </>
@@ -786,7 +838,7 @@ export default function MethuselahFinal() {
             {gen3Bridge && (
               <div className="log-line">
                 <span className="log-time">[{new Date(gen3Bridge.timestamp).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}]</span>
-                <span style={{ color: "cyan" }}>
+                <span style={{ color: "var(--accent-cyan)" }}>
                   {`GEN3 INTERCEPT: ${gen3Bridge.classifier} // ` +
                    `RHR ${gen3Bridge.vectors.rhr_bpm != null ? gen3Bridge.vectors.rhr_bpm.toFixed(1) + ' BPM' : 'N/A'} // ` +
                    `IBI_HR ${gen3Bridge.vectors.ibi_hr_bpm != null ? gen3Bridge.vectors.ibi_hr_bpm.toFixed(1) + ' BPM' : 'N/A'} // ` +
