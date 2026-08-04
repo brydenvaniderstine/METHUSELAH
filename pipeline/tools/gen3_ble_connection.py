@@ -10,6 +10,7 @@ working code.
 """
 import asyncio
 import struct
+import time
 from bleak import BleakClient, BleakScanner
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
@@ -135,6 +136,32 @@ async def open_connection(disconnected_callback=None):
     if not any(p == bytes.fromhex("2f022e00") for p in received):
         await client.disconnect()
         raise ConnectError(f"Auth failed: {[p.hex() for p in received]}")
+
+    # 2026-08-04: sync-time write, opcode 0x12 -- ring clock (UTC unix secs +
+    # timezone-half-hours byte). This project's own logs have NEVER once
+    # shown a "Time sync" (0x42) event across every daemon night on record,
+    # and this handshake never sent one -- meaning the ring has likely never
+    # been told the current time by this pipeline. Reverse-engineered from
+    # the official Android app's connect state machine (open_oura project,
+    # verified live against a real Ring 3 Horizon -- same generation as
+    # ours): SYNC_TIMESTAMPS fires on every connection, immediately after
+    # auth and before anything else, including before enabling
+    # notifications. Wire format and byte order confirmed against that
+    # project's actual Packet::encode() (`[tag, len, payload..]`), not just
+    # its prose docs. Timezone byte hardcoded to 0 to match their own real,
+    # working client call (oura-link/src/client.rs) rather than inventing a
+    # signed-offset convention neither project has tested.
+    #
+    # Hypothesis under test: the ring's sleep-summary (0x4C) finalization
+    # may depend on having an accurate internal clock to know when to close
+    # out and finalize a night's bout -- which would explain why 0x4C has
+    # behaved as a stale, never-cleanly-finalized backlog across this
+    # project's entire history. Unconfirmed -- needs a real night to judge,
+    # not assumed correct just because the write succeeds.
+    received.clear()
+    sync_time_payload = struct.pack("<Q", int(time.time())) + b"\x00"
+    await wr(client, bytes([0x12, len(sync_time_payload)]) + sync_time_payload)
+    await asyncio.sleep(0.3)
 
     received.clear()
     await wr(client, b"\x16\x01\x02")
