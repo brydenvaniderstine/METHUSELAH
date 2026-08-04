@@ -401,6 +401,33 @@ async def main():
                 await asyncio.sleep(2)
                 continue
 
+            # 2026-08-04: 0x11 diagnostic decode. This project has always
+            # treated 0x11 as a content-free end-of-transfer ack with
+            # "garbage boot_ts bytes" (see parse_event's caller-side
+            # EVENT_TAGS-membership filters) -- because parse_event()
+            # applies the generic tag|length|4-byte-boot_ts|payload layout
+            # to it, which is the WRONG layout for this specific tag.
+            # open_oura's reverse-engineering (EventBatchSummary::parse,
+            # cross-checked live against real hardware) gives 0x11's real
+            # structure: byte[2]=events_received, byte[3]=
+            # sleep_analysis_progress, bytes[4:8]=bytes_left (u32 LE). What
+            # our own code was reading as a nonsensical "boot_ts" was
+            # actually these real fields misinterpreted. Decoded here
+            # read-only, purely for visibility into whether the ring's
+            # sleep-analysis subsystem is even running -- does not touch
+            # parse_event(), the checkpoint/dedup logic, or anything
+            # boot_ts-based, all of which already correctly exclude 0x11
+            # from EVENT_TAGS and are left exactly as-is.
+            for pkt in raw:
+                if len(pkt) >= 8 and pkt[0] == 0x11:
+                    events_received = pkt[2]
+                    sleep_analysis_progress = pkt[3]
+                    bytes_left = int.from_bytes(pkt[4:8], "little")
+                    print(f"[{time.strftime('%H:%M:%S')}] [SLEEP-ANALYSIS] "
+                          f"progress={sleep_analysis_progress} "
+                          f"events_received={events_received} "
+                          f"bytes_left={bytes_left}")
+
             parsed = [p for p in (parse_event(pkt) for pkt in raw) if p]
             cycle += 1
 

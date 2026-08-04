@@ -176,7 +176,20 @@ async def open_connection(disconnected_callback=None):
     for param in [0x02, 0x04, 0x0b, 0x0d, 0x03, 0x0b, 0x10]:
         await wr(client, bytes([0x2f, 0x02, 0x20, param]))
         await asyncio.sleep(0.2)
-    await wr(client, b"\x28\x01\x00")
+    # 2026-08-04: force=1, not force=0. Per open_oura's reverse-engineering
+    # of the official app (verified against real Ring 3 Horizon hardware,
+    # same generation as ours): opcode 0x28 is not a passive status check --
+    # it's a REQUEST asking the ring to actively run sleep analysis now,
+    # after which sleep_phase/sleep_summary events (0x4b/0x4e/0x5a,
+    # 0x49/0x4c/0x4f/0x58 -- our own exact tag numbers, independently
+    # confirmed) appear in history. Their own cheatsheet notes force=1 was
+    # tested successfully on real hardware; we'd only ever sent force=0.
+    # Response tag 0x29 -- not currently in EVENT_TAGS/parsed, so its
+    # content isn't visible yet; worth adding if this doesn't move the
+    # needle and more diagnosis is needed. Bundled with the same night's
+    # sync-time change (see commit bff19e7) at Bryden's explicit choice,
+    # accepting that a fix tonight won't tell us which of the two did it.
+    await wr(client, b"\x28\x01\x01")
     await asyncio.sleep(0.5)
 
     return client, received

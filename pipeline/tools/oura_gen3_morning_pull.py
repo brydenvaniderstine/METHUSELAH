@@ -179,7 +179,10 @@ async def main():
         for param in [0x02, 0x04, 0x0b, 0x0d, 0x03, 0x0b, 0x10]:
             await wr(client, bytes([0x2f, 0x02, 0x20, param]))
             await asyncio.sleep(0.2)
-        await wr(client, b"\x28\x01\x00")
+        # force=1 -- see gen3_ble_connection.py's matching change (2026-08-04)
+        # for the full open_oura-sourced rationale: 0x28 actively requests
+        # the ring run sleep analysis rather than just checking status.
+        await wr(client, b"\x28\x01\x01")
         await asyncio.sleep(0.5)
         print(f"Setup complete. ({len(received)} packets)")
         received.clear()
