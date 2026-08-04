@@ -5,10 +5,24 @@ from bleak import BleakClient
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
-import sys as _sys, os as _os
+# 2026-08-01: this script's own mystery crash (exit code 1, no traceback
+# anywhere) was almost certainly a real exception whose output never made
+# it to disk -- stdout/stderr redirected via shell '>>' is fully
+# block-buffered, so an abrupt process death (a CoreBluetooth connect()
+# hang getting killed, a signal, etc.) can lose everything still sitting
+# in that buffer. Line-buffering flushes after every newline so a future
+# failure is actually diagnosable instead of silent.
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
+import sys as _sys, os as _os, glob as _glob
 _sys.path.insert(0, _os.path.dirname(__file__))
 _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..'))
-from gen3_ble_connection import scan_for_ring
+from gen3_ble_connection import scan_for_ring, open_connection, request_history
+from recompute_bridge_from_daemon import (
+    parse_daemon_log, load_bout_checkpoint, save_bout_checkpoint,
+)
+from sleep_duration_estimate import estimate_sleep_duration
 from decoders import (
     decode_sleep_period_info_2,
     decode_hrv_event,
@@ -110,6 +124,67 @@ def parse_event(data: bytes):
     return {"tag": tag, "tag_name": EVENT_TAGS.get(tag, f"UNKNOWN (0x{tag:02x})"),
             "length": length, "boot_ts": ts_boot, "payload": payload}
 
+# --- Reconnect-cycle experiment (2026-07-29, PROVISIONAL, UNVALIDATED) ----
+# The last two real mornings both declined sleep_duration_estimate_hrs
+# because the final 0x4C/Bedtime-period bout only ever had 1 sample --
+# MIN_BOUT_SAMPLES=3 requires 3+ (sleep_duration_estimate.py). A prior
+# investigation (known_issues.md, 2026-07-20, "Finding 3") found 79% of real
+# 0x4C firings land within ~20-220 ticks of a preceding BLE reconnect --
+# causation was explicitly NOT established either direction, and 6/29
+# firings that session had no nearby reconnect at all. This was a bet on
+# that correlation, not a confirmed mechanism.
+#
+# DISABLED 2026-08-03 (set to 0): the extra connections were implicated in
+# at least 2-3 real morning-pull crashes (BleakDeviceNotFoundError, right
+# after the daemon's own disconnect -- more connection attempts in that
+# fragile post-disconnect window means more exposure to it), with no
+# confirmed benefit -- the byte-identical-retransmission finding
+# (known_issues.md-adjacent, 2026-08-02: the same exact Sleep summary (2)/
+# Bedtime period packets replayed unchanged across two separate real
+# nights) points at 0x4C firing being tied to the ring's own firmware
+# timing, not BLE reconnects at all. A more promising, lower-risk lead is
+# already in flight instead: the ring's battery died and got recharged
+# 2026-08-02, resetting its boot_ts (a real reboot) -- if that turns out to
+# unstick the sleep-summary subsystem on its own, extra reconnects were
+# never the right lever. Set back above 0 only if that reboot theory is
+# ruled out AND there's a specific new reason to retry this bet.
+EXTRA_RECONNECT_CYCLES = 0          # in addition to the main pull below
+RECONNECT_PAUSE_SECONDS = 10        # matches the documented CoreBluetooth
+                                     # post-disconnect release buffer used
+                                     # elsewhere in this pipeline
+
+
+async def _extra_reconnect_pulls():
+    """Run EXTRA_RECONNECT_CYCLES throwaway connect/auth/request-history/
+    disconnect cycles. Returns the combined raw notify packets across all
+    cycles (may overlap heavily with each other and with the main pull's
+    own request -- caller is responsible for dedup). Never raises: a
+    failed extra cycle is logged and skipped, since this experiment must
+    never block or break the real pull that follows it."""
+    combined = []
+    for cycle_num in range(1, EXTRA_RECONNECT_CYCLES + 1):
+        print(f"  [reconnect-experiment cycle {cycle_num}/{EXTRA_RECONNECT_CYCLES}] connecting...")
+        client = None
+        try:
+            client, cycle_received = await open_connection()
+            cycle_packets = await request_history(client, cycle_received, since_boot_ts=0, wait_seconds=6)
+            print(f"  [reconnect-experiment cycle {cycle_num}/{EXTRA_RECONNECT_CYCLES}] "
+                  f"{len(cycle_packets)} packets")
+            combined.extend(cycle_packets)
+        except Exception as e:
+            print(f"  [reconnect-experiment cycle {cycle_num}/{EXTRA_RECONNECT_CYCLES}] "
+                  f"failed ({e}) -- skipping this cycle.")
+        finally:
+            if client is not None:
+                try:
+                    await client.disconnect()
+                except Exception:
+                    pass
+        if cycle_num < EXTRA_RECONNECT_CYCLES:
+            await asyncio.sleep(RECONNECT_PAUSE_SECONDS)
+    return combined
+
+
 _HANDOFF_LOG = _os.path.join(_os.path.dirname(__file__), '..', 'logs', 'morning_pull_handoff.log')
 
 
@@ -138,6 +213,13 @@ async def main():
                      f"ring not found.")
         return
     _log_handoff(f"Ring found after {_scan_elapsed:.1f}s — connecting.")
+
+    print(f"\n=== Reconnect-cycle experiment: {EXTRA_RECONNECT_CYCLES} extra cycle(s) "
+          f"before the main pull (PROVISIONAL — see module docstring) ===")
+    extra_raw = await _extra_reconnect_pulls()
+    print(f"=== Reconnect-cycle experiment done: {len(extra_raw)} raw packets collected "
+          f"(pre-dedup) ===\n")
+
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Ring detected — connecting...")
     async with BleakClient(ADDR, timeout=30) as client:
         print("Connected.")
@@ -189,9 +271,25 @@ async def main():
         print("Requesting full available history (boot_ts=0)...")
         await wr(client, b"\x10\x09" + b"\x00\x00\x00\x00" + b"\xff\xff\xff\xff\xff")
         await asyncio.sleep(6)
-        print(f"\n=== RAW: {len(received)} packets received ===\n")
-        parsed = [parse_event(p) for p in received]
-        parsed = [p for p in parsed if p]
+        print(f"\n=== RAW: {len(received)} packets received (main pull) ===\n")
+        main_parsed = [parse_event(p) for p in received]
+        main_parsed = [p for p in main_parsed if p]
+
+        # Merge in the reconnect-cycle experiment's packets, deduping exact-
+        # identical (tag, boot_ts, payload) entries -- since_boot_ts=0 is
+        # requested fresh on every cycle, so most packets are expected to
+        # repeat across cycles unless the ring emitted something genuinely
+        # new in between (which is the whole hypothesis under test here).
+        extra_parsed = [parse_event(p) for p in extra_raw]
+        extra_parsed = [p for p in extra_parsed if p]
+        seen_keys = {(p["tag"], p["boot_ts"], p["payload"]) for p in main_parsed}
+        merged_extra = [p for p in extra_parsed
+                         if (p["tag"], p["boot_ts"], p["payload"]) not in seen_keys]
+        print(f"=== Reconnect-cycle experiment contributed {len(merged_extra)} unique "
+              f"NEW event(s) not already in the main pull "
+              f"({len(extra_parsed)} extra packets seen, {len(extra_parsed) - len(merged_extra)} were duplicates) ===\n")
+        parsed = sorted(main_parsed + merged_extra, key=lambda p: p["boot_ts"])
+
         if not parsed:
             print("No events parsed.")
             return
@@ -425,6 +523,50 @@ async def main():
                     print(f"  [{tag_hex}] boot_ts={p['boot_ts']:>10}  DECODE FAIL: {e}")
         if not ss_found:
             print("  No sleep summary events found in this pull.")
+
+        # --- Reconnect-cycle experiment: bout-aware re-estimate on MERGED --
+        # (tonight's full daemon log + this pull's own parsed events, which
+        # already include the extra reconnect cycles above) data, using the
+        # SAME decline-gated logic recompute_bridge_from_daemon.py runs
+        # against the daemon log alone. Feeds sleep_duration_estimate_hrs/
+        # info only (see EXTRA_RECONNECT_CYCLES docstring above for why this
+        # deliberately does not touch sleep_duration_hrs). PROVISIONAL.
+        print(f"\n=== RECONNECT-EXPERIMENT: bout-aware estimate on merged "
+              f"(daemon log + this pull) data ===")
+        merged_estimate_hrs, merged_estimate_info = None, None
+        try:
+            daemon_dir = _os.path.join(_os.path.dirname(__file__), '..', 'data',
+                                        'raw_pulls', 'gen3_daemon')
+            daemon_logs = sorted(_glob.glob(_os.path.join(daemon_dir, 'gen3_daemon_*.txt')))
+            if not daemon_logs:
+                print("  No daemon log found tonight -- estimating from this pull's own "
+                      "data only (no outer-ceiling check).")
+                merged_entries = parsed
+                session_span_hrs = None
+            else:
+                daemon_log_path = daemon_logs[-1]
+                header, daemon_entries = parse_daemon_log(daemon_log_path)
+                print(f"  Daemon log: {_os.path.basename(daemon_log_path)} "
+                      f"({len(daemon_entries)} entries)")
+                merged_entries = sorted(daemon_entries + parsed, key=lambda e: e["boot_ts"])
+                session_span_hrs = None
+                if header.get('start'):
+                    start_epoch = time.mktime(time.strptime(header['start'], '%Y-%m-%d %H:%M:%S'))
+                    session_span_hrs = (time.time() - start_epoch) / 3600
+                    print(f"  Real span (daemon start -> now, including this pull): "
+                          f"{session_span_hrs:.2f}h")
+            prior_bout_totals = load_bout_checkpoint()
+            result = estimate_sleep_duration(
+                merged_entries, session_span_hrs=session_span_hrs,
+                prior_bout_totals=prior_bout_totals)
+            merged_estimate_hrs = result["sleep_duration_estimate_hrs"]
+            merged_estimate_info = {"reason": result["reason"], "confidence": result["confidence"]}
+            save_bout_checkpoint(prior_bout_totals, merged_entries)
+            print(f"  sleep_duration_estimate_hrs: {merged_estimate_hrs}  ({result['reason']})")
+        except Exception as e:
+            print(f"  Reconnect-experiment re-estimate failed: {e} -- leaving "
+                  f"sleep_duration_estimate_hrs untouched (existing bridge value, if any, "
+                  f"is preserved by merge_with_existing_bridge below).")
 
         print(f"\n=== SLEEP PHASE DATA DECODE (0x5A) — 2-bit per epoch, stage 1=LIGHT confirmed ===")
         phase_packets = {}
@@ -727,6 +869,8 @@ async def main():
             hrv_ms=hrv_rmssd_ms,
             sleep_duration_hrs=sleep_duration_bridge,
             sleep_stages=sleep_stages_bridge,
+            sleep_duration_estimate_hrs=merged_estimate_hrs,
+            sleep_duration_estimate_info=merged_estimate_info,
         )
 
         # Backfill any field this narrow pull found no data for (e.g. no 0x4C
@@ -748,4 +892,30 @@ async def main():
         else:
             print(f"[BRIDGE] Local data built but not pushed (downgrade protection active).")
 
-asyncio.run(main())
+try:
+    asyncio.run(main())
+except Exception:
+    # 2026-07-31: a real morning crashed with exit code 1 and NO traceback
+    # anywhere in daemon_launchd.log/daemon_launchd_err.log -- almost
+    # certainly the documented macOS/CoreBluetooth connect()-hang/timeout
+    # issue (gen3_ble_connection.py's scan_for_ring docstring), most likely
+    # made MORE likely by the reconnect-cycle experiment above adding 2
+    # extra connections in this same short window. No data was lost that
+    # night -- the daemon's own POST-RUN recompute (oura_gen3_ble_daemon.py)
+    # already writes and pushes the night's real bridge data BEFORE this
+    # script even fires, so this script's job is a best-effort ENHANCEMENT
+    # on top of already-saved data, not the only copy of it. Given that,
+    # this catches everything at the top level so a hang/crash here:
+    #   (a) always prints a full traceback (unlike whatever silently ate
+    #       it that night -- possibly lost buffered output from an abrupt
+    #       kill), so a future failure is actually diagnosable, and
+    #   (b) exits 0, not 1 -- matching the existing "never fail the pull
+    #       over a push error" best-effort precedent a few lines up
+    #       (push_bridge_json), extended here to the whole pull: a failed
+    #       best-effort enhancement is not a real failure worth flagging
+    #       as one in morning_pull_handoff.log.
+    import traceback
+    print("[MORNING PULL] Uncaught exception -- this pull did not complete. "
+          "The daemon's own POST-RUN recompute already ran before this script "
+          "fired, so the night's real data is not lost. Full traceback:")
+    traceback.print_exc()
