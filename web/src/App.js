@@ -32,9 +32,9 @@ const CSS = `
   /* fibonacci/golden type scale, large steps clamped for mobile */
   --fs-11: 11px; --fs-12: 12px; --fs-13: 13px; --fs-14: 14px; --fs-15: 15px; --fs-16: 16px;
   --fs-19: clamp(14px, 4vw, 19px);
-  --fs-21: clamp(15px, 4vw, 21px);
-  --fs-34: clamp(20px, 6vw, 34px);
-  --fs-55: clamp(28px, 9vw, 55px);
+  --fs-21: clamp(12px, 3vw, 14px);
+  --fs-34: clamp(16px, 4vw, 22px);
+  --fs-55: clamp(24px, 6vw, 34px);
 }
 
 html, body, #root {
