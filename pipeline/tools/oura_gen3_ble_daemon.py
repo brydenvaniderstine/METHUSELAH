@@ -52,6 +52,16 @@ import sys as _sys
 import time
 from collections import Counter
 
+# 2026-08-01: a full night's output (scan attempts, cycle logs, everything)
+# was lost when this process was killed -- stdout redirected to a file via
+# shell '>>' is fully block-buffered by default, so print() sits in memory
+# until the buffer fills or the process exits normally, and a SIGTERM
+# (exactly how the watchdog restarts this script, and how a person stops
+# it) skips that flush. Line-buffering forces a flush after every newline
+# so a kill can never lose more than the current line.
+_sys.stdout.reconfigure(line_buffering=True)
+_sys.stderr.reconfigure(line_buffering=True)
+
 _sys.path.insert(0, _os.path.dirname(__file__))
 _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..'))
 
@@ -93,6 +103,188 @@ EVENT_TAGS = {
 }
 SLEEP_TAGS = {0x6A, 0x5D, 0x6F, 0x75}
 ACTIVITY_TAGS = {0x7E, 0x7F}
+
+# --- Live wake detection (2026-08-01, replaces guessing a fixed end time) --
+# A fixed --duration requires knowing the wake time in advance, which broke
+# on an irregular schedule (a weekend sleep-in needed a manually recomputed
+# duration + manual relaunch the same night -- see that session's
+# conversation). This ends the session based on detecting real, sustained
+# movement instead, while the ring stays on the wrist the whole time (it is
+# not designed to be removed except for charging every ~2 days, so a
+# WEAR-EVENT-based "ring came off" signal was considered and rejected).
+#
+# Signal: same two tags sleep_duration_estimate.py's _find_wake_signal()
+# already uses and calibrated -- "Motion event" and "Real step feature (1)"
+# fire at ~13/min even in the middle of confirmed sleep (background
+# telemetry), so a single occurrence means nothing; only a SUSTAINED run
+# (SUSTAINED_MIN_EVENTS consecutive events each within SUSTAINED_MAX_GAP_TICKS
+# of the last) is a real signal. Reusing that module's exact calibrated
+# constants rather than re-deriving new ones.
+#
+# Confirmation, not instant action: a real wake-up and a ~1 minute bathroom
+# trip look IDENTICAL at the moment a sustained burst starts -- both are
+# real walking. The only thing that tells them apart is what happens next.
+# So a qualifying burst only starts a CANDIDATE: if activity goes quiet
+# again (no activity-tag event at all for QUIET_DISQUALIFY_MINUTES) before
+# WAKE_CONFIRM_MINUTES of real wall-clock time have passed, the candidate
+# is discarded (looks like a brief trip back to sleep) and detection resets
+# to watch for the next one. Only a candidate that survives the full
+# confirmation window without ever going quiet that long is treated as a
+# real, final wake-up.
+ACTIVITY_TAG_NAMES_FOR_WAKE = {"Motion event", "Real step feature (1)"}
+WAKE_SUSTAINED_MIN_EVENTS = 5
+WAKE_SUSTAINED_MAX_GAP_TICKS = 400
+WAKE_QUIET_DISQUALIFY_MINUTES = 10
+WAKE_CONFIRM_MINUTES = 15
+# Don't even start watching for a wake candidate until this many real hours
+# into the session -- otherwise normal pre-bed activity (getting ready,
+# walking around) in the first hour would immediately look like "waking up"
+# and end the session almost as soon as it started.
+WAKE_DETECTION_MIN_SESSION_HOURS = 3
+
+# 2026-08-03: a real night (08-02/03) ended the whole session at 01:21am --
+# only 3h15m in -- because a candidate burst survived the full confirmation
+# window without a quiet gap. The pull classifier itself still called those
+# same minutes SLEEP WINDOW/MIXED WINDOW, never ACTIVE WINDOW: this was very
+# likely real but restless in-bed movement (tossing/turning), not actually
+# getting up. Motion event/Real step feature are FFT-classified spectral
+# tags, not literal step counts (see oura_gen3_morning_pull.py's own
+# decode-section header) -- sleep_duration_estimate.py's docstring already
+# warned both fire as background telemetry even in the middle of confirmed
+# sleep, which is exactly what this looks like in hindsight. Real step
+# COUNTS come from a different tag, "Motion period" (0x6B, decode_motion_
+# period's step_count field) -- genuine walking produces these; rolling
+# over in bed does not. Now required in addition to the existing
+# time-based confirmation: a candidate can start and stay pending on
+# activity-tag bursts alone (unchanged), but cannot CONFIRM until real
+# steps have also accumulated during that same window, whenever the
+# confirm-minutes timer is reached (see WakeDetector.process_cycle).
+WAKE_MIN_REAL_STEPS = 10
+
+# 2026-08-04: two real nights (08-02/03, 08-03/04) both confirmed a wake-up
+# at ~1:19-1:21am off a routine washroom trip (confirmed real, not
+# hypothetical -- Bryden: "get up to use the washroom around 1:00 to 1:20
+# and then go back to bed"; the second occurrence cleared WAKE_MIN_REAL_STEPS
+# with 1,664 real steps). The trip itself is substantial enough to clear the
+# existing 15-min bar on its own, so raising that bar (or excluding a
+# specific clock window) would only dodge this exact case, not the general
+# problem: any vigorous nighttime trip can look identical to a real wake-up
+# for its first 15 minutes. The only thing that actually tells them apart is
+# what happens AFTER -- a real wake-up keeps going; a washroom trip goes
+# quiet again once back in bed. Confirmation is now two-stage: the existing
+# 15-min/real-steps bar only provisionally confirms and starts a second
+# WAKE_VERIFY_MINUTES clock; the existing quiet-gap check (unchanged) keeps
+# running through this second stage too, and a quiet gap at any point still
+# discards the whole candidate. Only surviving the full provisional +
+# verify window without ever going quiet counts as a real, final wake-up.
+# Trade-off accepted knowingly: a real morning where activity happens to go
+# quiet for 10+ min shortly after getting up (sitting with coffee, at a
+# desk) would also get discarded and have to restart detection from a fresh
+# burst, delaying the real end-of-session further -- accepted because
+# losing a whole night's data to a false positive is far worse than the
+# session running long.
+WAKE_VERIFY_MINUTES = 20
+
+
+class WakeDetector:
+    """Live, real-time detector for "the wearer is actually awake and moving
+    around" -- see the WAKE_* constants' docstring above for the full
+    reasoning. Pure state machine, no I/O of its own: process_cycle() takes
+    a plain list of boot_ts values and an injectable clock, so this can be
+    unit-tested directly against synthetic bathroom-trip / real-wake-up
+    event sequences without any real BLE hardware or file I/O.
+
+    Two-stage confirmation (see WAKE_VERIFY_MINUTES docstring above): the
+    original 15-min/real-steps bar now only provisionally confirms and
+    starts a second verify-window clock; the same quiet-gap check keeps
+    running through that second stage, so a candidate that goes quiet at
+    any point -- during the original window OR the verify window -- still
+    discards back to watching. Final confirmation requires surviving both
+    windows back to back without ever going quiet that long."""
+
+    def __init__(self, min_session_hours=WAKE_DETECTION_MIN_SESSION_HOURS,
+                 sustained_min_events=WAKE_SUSTAINED_MIN_EVENTS,
+                 sustained_max_gap_ticks=WAKE_SUSTAINED_MAX_GAP_TICKS,
+                 quiet_disqualify_minutes=WAKE_QUIET_DISQUALIFY_MINUTES,
+                 confirm_minutes=WAKE_CONFIRM_MINUTES,
+                 min_real_steps=WAKE_MIN_REAL_STEPS,
+                 verify_minutes=WAKE_VERIFY_MINUTES):
+        self.min_session_hours = min_session_hours
+        self.sustained_min_events = sustained_min_events
+        self.sustained_max_gap_ticks = sustained_max_gap_ticks
+        self.quiet_disqualify_minutes = quiet_disqualify_minutes
+        self.confirm_minutes = confirm_minutes
+        self.min_real_steps = min_real_steps
+        self.verify_minutes = verify_minutes
+        self.streak = 0
+        self.streak_last_ts = None
+        self.candidate_since = None
+        self.verify_since = None
+        self.last_activity_wall_time = None
+        self.real_steps_since_candidate = 0
+        self.confirmed = False
+        self.last_event_note = None  # "candidate_started" / "candidate_discarded" / "awaiting_steps" / "provisional_confirm" / "verifying" / "confirmed" / None
+
+    def process_cycle(self, activity_boot_ts_list, real_steps_this_cycle, now, session_start_time):
+        """activity_boot_ts_list: this cycle's ACTIVITY_TAG_NAMES_FOR_WAKE
+        event boot_ts values (any order). real_steps_this_cycle: sum of
+        real step counts (0x6B "Motion period" step_count) this cycle --
+        genuine walking produces these, restless in-bed movement does not,
+        which is what the activity-tag burst alone cannot tell apart (see
+        WAKE_MIN_REAL_STEPS docstring above). now/session_start_time: real
+        time.time() values (injectable for tests). Returns self.confirmed."""
+        self.last_event_note = None
+        if (now - session_start_time) / 3600 < self.min_session_hours:
+            return self.confirmed
+
+        for ts in sorted(activity_boot_ts_list):
+            if (self.streak_last_ts is not None and
+                    (ts - self.streak_last_ts) <= self.sustained_max_gap_ticks):
+                self.streak += 1
+            else:
+                self.streak = 1
+            self.streak_last_ts = ts
+            if self.streak >= self.sustained_min_events and self.candidate_since is None:
+                self.candidate_since = now
+                self.verify_since = None
+                self.last_activity_wall_time = now
+                self.real_steps_since_candidate = 0
+                self.last_event_note = "candidate_started"
+
+        if activity_boot_ts_list:
+            self.last_activity_wall_time = now
+
+        if self.candidate_since is not None:
+            if real_steps_this_cycle:
+                self.real_steps_since_candidate += real_steps_this_cycle
+
+            quiet_for_min = (now - self.last_activity_wall_time) / 60
+            if quiet_for_min >= self.quiet_disqualify_minutes:
+                self.candidate_since = None
+                self.verify_since = None
+                self.streak = 0
+                self.streak_last_ts = None
+                self.real_steps_since_candidate = 0
+                self.last_event_note = "candidate_discarded"
+            elif self.verify_since is not None:
+                if (now - self.verify_since) / 60 >= self.verify_minutes:
+                    self.confirmed = True
+                    self.last_event_note = "confirmed"
+                else:
+                    self.last_event_note = "verifying"
+            elif (now - self.candidate_since) / 60 >= self.confirm_minutes:
+                if self.real_steps_since_candidate >= self.min_real_steps:
+                    self.verify_since = now
+                    self.last_event_note = "provisional_confirm"
+                else:
+                    # Time's up but no real walking seen yet -- stay pending
+                    # rather than confirm OR discard; keep watching each
+                    # cycle for either real steps (confirms) or a long
+                    # enough quiet gap (discards).
+                    self.last_event_note = "awaiting_steps"
+
+        return self.confirmed
+
 
 # 0x6A/0x5D/0x6F/0x75 are continuous background-sensor tags -- they fire
 # whenever the ring has skin contact, not only during sleep (confirmed
@@ -281,6 +473,13 @@ async def main():
     # before -- this is purely additive.
     explicit_log_path = _sys.argv[3] if len(_sys.argv) > 3 else None
     explicit_end_epoch = float(_sys.argv[4]) if len(_sys.argv) > 4 else None
+    # Original session start (not this restart's launch time) -- passed
+    # through unchanged across every watchdog restart so wake-detection
+    # below measures real elapsed session time, not a clock that resets
+    # every time the watchdog relaunches this script. Falls back to "now"
+    # for a manual/standalone launch with no 5th arg.
+    explicit_session_start_epoch = float(_sys.argv[5]) if len(_sys.argv) > 5 else None
+    session_start_time = explicit_session_start_epoch if explicit_session_start_epoch is not None else time.time()
     morning_pull_threshold_hrs = 4  # fire safety-net morning pull if less than this captured
 
     repo_root = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', '..')
@@ -313,6 +512,10 @@ async def main():
     recent_tags: set = set()    # tags seen in the last two cycles; used to classify disconnects
     disconnected = asyncio.Event()
 
+    # Live wake-detection (see WAKE_* constants + WakeDetector above).
+    wake_detector = WakeDetector()
+    wake_confirmed = False
+
     def on_disconnect(_client):
         disconnected.set()
 
@@ -333,7 +536,7 @@ async def main():
 
         client = None
         cycle = 0
-        while time.time() < end_time:
+        while time.time() < end_time and not wake_confirmed:
             if client is None:
                 # Scan first: BleakClient.connect() on macOS does not respect its
                 # timeout= for bonded peripherals — CoreBluetooth queues the request
@@ -430,6 +633,47 @@ async def main():
 
             parsed = [p for p in (parse_event(pkt) for pkt in raw) if p]
             cycle += 1
+
+            # --- Live wake detection (see WAKE_* constants + WakeDetector) --
+            cycle_activity_ts = [p["boot_ts"] for p in parsed if p["tag_name"] in ACTIVITY_TAG_NAMES_FOR_WAKE]
+            cycle_real_steps = 0
+            for p in parsed:
+                if p["tag_name"] == "Motion period":
+                    try:
+                        cycle_real_steps += decode_motion_period(p["payload"])["step_count"]
+                    except (ValueError, KeyError):
+                        pass
+            wake_confirmed = wake_detector.process_cycle(
+                cycle_activity_ts, cycle_real_steps, time.time(), session_start_time)
+            if wake_detector.last_event_note == "candidate_started":
+                print(f"[{time.strftime('%H:%M:%S')}] [WAKE-DETECT] Candidate wake burst "
+                      f"started -- confirming over the next {WAKE_CONFIRM_MINUTES} min "
+                      f"before treating as a real wake-up (vs. e.g. a brief bathroom trip "
+                      f"or restless in-bed movement).")
+            elif wake_detector.last_event_note == "candidate_discarded":
+                print(f"[{time.strftime('%H:%M:%S')}] [WAKE-DETECT] Candidate discarded -- "
+                      f"quiet again, looks like a brief wake (not the real one). "
+                      f"Back to watching.")
+            elif wake_detector.last_event_note == "awaiting_steps":
+                print(f"[{time.strftime('%H:%M:%S')}] [WAKE-DETECT] Confirmation window "
+                      f"elapsed but no real steps seen yet ({wake_detector.real_steps_since_candidate} "
+                      f"so far, need {WAKE_MIN_REAL_STEPS}) -- likely still just restless "
+                      f"movement, not actually up. Still watching.")
+            elif wake_detector.last_event_note == "provisional_confirm":
+                print(f"[{time.strftime('%H:%M:%S')}] [WAKE-DETECT] Provisionally confirmed "
+                      f"({WAKE_CONFIRM_MINUTES} min of activity + "
+                      f"{wake_detector.real_steps_since_candidate} real steps) -- verifying "
+                      f"for a further {WAKE_VERIFY_MINUTES} min before ending the session, "
+                      f"in case this is a washroom trip that's about to go quiet again.")
+            elif wake_detector.last_event_note == "verifying":
+                print(f"[{time.strftime('%H:%M:%S')}] [WAKE-DETECT] Still verifying -- "
+                      f"activity hasn't gone quiet yet, holding the session open.")
+            elif wake_detector.last_event_note == "confirmed":
+                print(f"[{time.strftime('%H:%M:%S')}] [WAKE-DETECT] Confirmed real wake-up "
+                      f"({WAKE_CONFIRM_MINUTES} min initial + {WAKE_VERIFY_MINUTES} min "
+                      f"verify, {wake_detector.real_steps_since_candidate} real steps total, "
+                      f"never quiet that long) -- wrapping up the session now instead of "
+                      f"waiting for the {duration_hr}h ceiling.")
 
             # Rolling two-cycle tag window for disconnect classification (Task 3).
             # 0x53 in this window means a wear-state change preceded the drop.

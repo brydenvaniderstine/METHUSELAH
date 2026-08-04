@@ -71,6 +71,20 @@ import subprocess
 import sys
 import time
 
+# 2026-08-01: a full night's worth of this script's own status prints
+# (scan attempts, restart-detection messages) was lost -- stdout redirected
+# to a file via shell '>>' is fully block-buffered by default, so print()
+# output sits in memory and is never written to disk until the buffer fills
+# or the process exits normally. A SIGTERM (which is exactly how this
+# watchdog kills its own daemon subprocess, and how a person stops the
+# watchdog itself) skips that normal-exit flush, silently discarding
+# whatever was still buffered. Line-buffering forces a flush after every
+# newline, so killing the process can never lose more than the current
+# line -- essential for a supervisor whose whole job is producing the
+# post-mortem evidence for exactly this kind of night.
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 DAEMON_SCRIPT = os.path.join(TOOLS_DIR, "oura_gen3_ble_daemon.py")
 
@@ -107,17 +121,24 @@ def is_stale(last_activity_epoch, now_epoch, stale_minutes=STALE_MINUTES):
     return (now_epoch - last_activity_epoch) >= stale_minutes * 60
 
 
-def launch_daemon(poll_seconds, duration_hr, log_path, end_time):
+def launch_daemon(poll_seconds, duration_hr, log_path, end_time, session_start_time):
     """Inherits the parent's stdout/stderr (no PIPE) -- capturing output
     without continuously draining it would fill the OS pipe buffer and
     block the child's own print() calls once full, which would be a
     self-inflicted version of the exact silent-hang failure mode this
     watchdog exists to catch. The existing `nohup ... > logfile 2>&1 &`
     launch pattern already redirects at the shell level; inheriting here
-    preserves that unchanged."""
+    preserves that unchanged.
+
+    session_start_time: the ORIGINAL session's start (not this particular
+    restart's launch time) -- passed through unchanged across every
+    restart so the daemon's wake-detection can measure "how long has this
+    whole night's session really been running" instead of resetting that
+    clock on every watchdog restart (see oura_gen3_ble_daemon.py,
+    WAKE_DETECTION_MIN_SESSION_HOURS)."""
     return subprocess.Popen([
         sys.executable, DAEMON_SCRIPT,
-        str(poll_seconds), str(duration_hr), log_path, str(end_time),
+        str(poll_seconds), str(duration_hr), log_path, str(end_time), str(session_start_time),
     ])
 
 
@@ -166,7 +187,8 @@ def run(poll_seconds, duration_hr, log_path=None, end_time=None,
 
     restart_count = 0
     rapid_exits = 0
-    proc = launch_daemon(poll_seconds, duration_hr, log_path, end_time)
+    session_start_time = time.time()
+    proc = launch_daemon(poll_seconds, duration_hr, log_path, end_time, session_start_time)
     launch_time = time.time()
 
     try:
@@ -175,6 +197,22 @@ def run(poll_seconds, duration_hr, log_path=None, end_time=None,
 
             exit_code = proc.poll()
             if exit_code is not None:
+                if exit_code == 0:
+                    # 2026-08-01: a clean (0) exit is always a deliberate,
+                    # intentional stop -- either the nominal-end branch below,
+                    # or (new) the daemon confirming a real wake-up early via
+                    # its own live wake-detection (see oura_gen3_ble_daemon.py).
+                    # Only a NONZERO exit code before nominal end means a real
+                    # crash that should be relaunched -- checking exit_code
+                    # here (not just timing) is what lets an early-but-clean
+                    # stop be treated as real completion instead of triggering
+                    # a spurious relaunch.
+                    print(f"[WATCHDOG {time.strftime('%H:%M:%S')}] Daemon exited "
+                          f"cleanly (code 0) -- treating as a real, deliberate "
+                          f"completion (nominal end reached, or a confirmed "
+                          f"wake-up ended the session early) rather than a "
+                          f"crash. Session complete.")
+                    return restart_count
                 if time.time() >= end_time - 5:
                     print(f"[WATCHDOG {time.strftime('%H:%M:%S')}] Daemon exited "
                           f"(code {exit_code}) at/after nominal end time -- "
@@ -182,8 +220,8 @@ def run(poll_seconds, duration_hr, log_path=None, end_time=None,
                     return restart_count
                 elapsed_since_launch = time.time() - launch_time
                 print(f"[WATCHDOG {time.strftime('%H:%M:%S')}] Daemon exited early "
-                      f"(code {exit_code}, {elapsed_since_launch:.0f}s after its own "
-                      f"launch) before nominal end -- relaunching.")
+                      f"(code {exit_code} != 0, {elapsed_since_launch:.0f}s after its "
+                      f"own launch) before nominal end -- relaunching.")
                 if elapsed_since_launch < RAPID_EXIT_WINDOW_SECONDS:
                     rapid_exits += 1
                     if rapid_exits >= MAX_CONSECUTIVE_RAPID_EXITS:
@@ -195,7 +233,7 @@ def run(poll_seconds, duration_hr, log_path=None, end_time=None,
                 else:
                     rapid_exits = 0
                 time.sleep(POST_KILL_RELEASE_BUFFER_SECONDS)
-                proc = launch_daemon(poll_seconds, duration_hr, log_path, end_time)
+                proc = launch_daemon(poll_seconds, duration_hr, log_path, end_time, session_start_time)
                 launch_time = time.time()
                 restart_count += 1
                 continue
@@ -210,7 +248,7 @@ def run(poll_seconds, duration_hr, log_path=None, end_time=None,
                       f"(restart #{restart_count + 1}).")
                 kill_process(proc, "daemon")
                 time.sleep(POST_KILL_RELEASE_BUFFER_SECONDS)
-                proc = launch_daemon(poll_seconds, duration_hr, log_path, end_time)
+                proc = launch_daemon(poll_seconds, duration_hr, log_path, end_time, session_start_time)
                 launch_time = time.time()
                 restart_count += 1
                 rapid_exits = 0
