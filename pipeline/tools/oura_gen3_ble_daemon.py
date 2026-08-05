@@ -104,6 +104,30 @@ EVENT_TAGS = {
 SLEEP_TAGS = {0x6A, 0x5D, 0x6F, 0x75}
 ACTIVITY_TAGS = {0x7E, 0x7F}
 
+# 0x6B (Motion period) b[0] ("step_count") is NOT a reliable literal step
+# count at rest: confirmed 2026-07-22 against all 1,151 real 0x6B packets
+# across 3 full overnight logs (gen3_daemon_20260719/20/21) that at rest it
+# behaves as a wrapping idle counter -- 70-75% of consecutive packets step by
+# exactly +1, wrapping every ~16 counts -- and NEVER once reads 0 (real
+# range 1-63 across all three nights). It only becomes a genuine per-window
+# step signal during real ambulatory motion: the one controlled ground-truth
+# walk experiment on record (2026-07-07, ~500 real steps) measured b[0] at
+# 98-101 per window. There is a clean, real gap (64-97) with zero
+# observations on either side across all real data collected so far.
+# MIN_REAL_STEP_COUNT sits inside that gap (17 above the confirmed rest
+# ceiling, 18 below the confirmed walk floor) -- comfortably clear of a
+# "1 stray step" or "2+" threshold, which real data shows would fire on
+# almost every cycle (rest-state b[0] is virtually never 0) and would have
+# misclassified real, confirmed sleep as active. Must be compared against
+# the MAX single-packet value in a cycle, not a cycle-level sum -- summing
+# multiple rest-noise packets in one poll cycle can itself exceed 80 (real
+# examples on record: [63, 32] sums to 95, [45, 14, 63] sums to 122) purely
+# from cycle-grouping, with no real packet in the pair anywhere near the
+# real walk floor. Shared by classify() below and WakeDetector (moved up
+# here 2026-08-05 so WakeDetector's default constructor arg can reference
+# it -- see the WAKE_MIN_REAL_STEPS retirement note below).
+MIN_REAL_STEP_COUNT = 80
+
 # --- Live wake detection (2026-08-01, replaces guessing a fixed end time) --
 # A fixed --duration requires knowing the wake time in advance, which broke
 # on an irregular schedule (a weekend sleep-in needed a manually recomputed
@@ -159,7 +183,23 @@ WAKE_DETECTION_MIN_SESSION_HOURS = 3
 # activity-tag bursts alone (unchanged), but cannot CONFIRM until real
 # steps have also accumulated during that same window, whenever the
 # confirm-minutes timer is reached (see WakeDetector.process_cycle).
-WAKE_MIN_REAL_STEPS = 10
+#
+# 2026-08-05: the above was implemented wrong and never actually gated
+# anything. Two more real nights (08-03/04, 08-04/05) both confirmed a
+# wake-up off a routine washroom trip Bryden explicitly confirmed as brief
+# ("woke up to use the washroom around 1am then went back to bed"), the
+# second one surviving the newly-added two-stage verify window too (35 min,
+# 3,040 "real steps"). Root cause: this file's own MIN_REAL_STEP_COUNT
+# comment (see ACTIVITY_TAGS above) already documented that 0x6B step_count
+# is a wrapping idle counter that's NEVER 0 at rest and must be compared as
+# a per-cycle MAX, never summed -- "summing multiple rest-noise packets in
+# one poll cycle can itself exceed 80". WakeDetector did exactly that
+# forbidden sum, across every cycle for the entire candidate window (see old
+# real_steps_since_candidate), so WAKE_MIN_REAL_STEPS=10 was cleared by rest
+# noise alone within 1-2 poll cycles, before any real walking could happen.
+# classify() below never had this bug -- it already used MIN_REAL_STEP_COUNT
+# (80) against a per-cycle max. WAKE_MIN_REAL_STEPS is retired; WakeDetector
+# now reuses MIN_REAL_STEP_COUNT against a per-cycle max the same way.
 
 # 2026-08-04: two real nights (08-02/03, 08-03/04) both confirmed a wake-up
 # at ~1:19-1:21am off a routine washroom trip (confirmed real, not
@@ -207,7 +247,7 @@ class WakeDetector:
                  sustained_max_gap_ticks=WAKE_SUSTAINED_MAX_GAP_TICKS,
                  quiet_disqualify_minutes=WAKE_QUIET_DISQUALIFY_MINUTES,
                  confirm_minutes=WAKE_CONFIRM_MINUTES,
-                 min_real_steps=WAKE_MIN_REAL_STEPS,
+                 min_real_steps=MIN_REAL_STEP_COUNT,
                  verify_minutes=WAKE_VERIFY_MINUTES):
         self.min_session_hours = min_session_hours
         self.sustained_min_events = sustained_min_events
@@ -221,17 +261,20 @@ class WakeDetector:
         self.candidate_since = None
         self.verify_since = None
         self.last_activity_wall_time = None
-        self.real_steps_since_candidate = 0
+        self.max_real_step_seen = 0
         self.confirmed = False
         self.last_event_note = None  # "candidate_started" / "candidate_discarded" / "awaiting_steps" / "provisional_confirm" / "verifying" / "confirmed" / None
 
     def process_cycle(self, activity_boot_ts_list, real_steps_this_cycle, now, session_start_time):
         """activity_boot_ts_list: this cycle's ACTIVITY_TAG_NAMES_FOR_WAKE
-        event boot_ts values (any order). real_steps_this_cycle: sum of
-        real step counts (0x6B "Motion period" step_count) this cycle --
-        genuine walking produces these, restless in-bed movement does not,
-        which is what the activity-tag burst alone cannot tell apart (see
-        WAKE_MIN_REAL_STEPS docstring above). now/session_start_time: real
+        event boot_ts values (any order). real_steps_this_cycle: the MAX
+        single 0x6B "Motion period" step_count packet value seen this cycle
+        (0/None if no Motion period packet this cycle) -- NOT a sum; see
+        MIN_REAL_STEP_COUNT's comment above ACTIVITY_TAGS for why summing is
+        wrong (it's a wrapping idle counter, never 0 at rest -- a cycle-level
+        or multi-cycle sum clears any reasonable threshold from noise alone).
+        A cycle counts as real walking only if this max clears
+        MIN_REAL_STEP_COUNT on its own. now/session_start_time: real
         time.time() values (injectable for tests). Returns self.confirmed."""
         self.last_event_note = None
         if (now - session_start_time) / 3600 < self.min_session_hours:
@@ -248,15 +291,15 @@ class WakeDetector:
                 self.candidate_since = now
                 self.verify_since = None
                 self.last_activity_wall_time = now
-                self.real_steps_since_candidate = 0
+                self.max_real_step_seen = 0
                 self.last_event_note = "candidate_started"
 
         if activity_boot_ts_list:
             self.last_activity_wall_time = now
 
         if self.candidate_since is not None:
-            if real_steps_this_cycle:
-                self.real_steps_since_candidate += real_steps_this_cycle
+            if real_steps_this_cycle and real_steps_this_cycle > self.max_real_step_seen:
+                self.max_real_step_seen = real_steps_this_cycle
 
             quiet_for_min = (now - self.last_activity_wall_time) / 60
             if quiet_for_min >= self.quiet_disqualify_minutes:
@@ -264,7 +307,7 @@ class WakeDetector:
                 self.verify_since = None
                 self.streak = 0
                 self.streak_last_ts = None
-                self.real_steps_since_candidate = 0
+                self.max_real_step_seen = 0
                 self.last_event_note = "candidate_discarded"
             elif self.verify_since is not None:
                 if (now - self.verify_since) / 60 >= self.verify_minutes:
@@ -273,7 +316,7 @@ class WakeDetector:
                 else:
                     self.last_event_note = "verifying"
             elif (now - self.candidate_since) / 60 >= self.confirm_minutes:
-                if self.real_steps_since_candidate >= self.min_real_steps:
+                if self.max_real_step_seen >= self.min_real_steps:
                     self.verify_since = now
                     self.last_event_note = "provisional_confirm"
                 else:
@@ -301,27 +344,8 @@ class WakeDetector:
 # daytime stillness being read as sleep.
 PLAUSIBLE_SLEEP_HOURS = set(range(20, 24)) | set(range(0, 9))  # 20:00-08:59 local
 
-# 0x6B (Motion period) b[0] ("step_count") is NOT a reliable literal step
-# count at rest: confirmed 2026-07-22 against all 1,151 real 0x6B packets
-# across 3 full overnight logs (gen3_daemon_20260719/20/21) that at rest it
-# behaves as a wrapping idle counter -- 70-75% of consecutive packets step by
-# exactly +1, wrapping every ~16 counts -- and NEVER once reads 0 (real
-# range 1-63 across all three nights). It only becomes a genuine per-window
-# step signal during real ambulatory motion: the one controlled ground-truth
-# walk experiment on record (2026-07-07, ~500 real steps) measured b[0] at
-# 98-101 per window. There is a clean, real gap (64-97) with zero
-# observations on either side across all real data collected so far.
-# MIN_REAL_STEP_COUNT sits inside that gap (17 above the confirmed rest
-# ceiling, 18 below the confirmed walk floor) -- comfortably clear of a
-# "1 stray step" or "2+" threshold, which real data shows would fire on
-# almost every cycle (rest-state b[0] is virtually never 0) and would have
-# misclassified real, confirmed sleep as active. Must be compared against
-# the MAX single-packet value in a cycle, not a cycle-level sum -- summing
-# multiple rest-noise packets in one poll cycle can itself exceed 80 (real
-# examples on record: [63, 32] sums to 95, [45, 14, 63] sums to 122) purely
-# from cycle-grouping, with no real packet in the pair anywhere near the
-# real walk floor.
-MIN_REAL_STEP_COUNT = 80
+# MIN_REAL_STEP_COUNT is defined earlier in this file, right after
+# ACTIVITY_TAGS -- see that comment for the full real-data justification.
 
 
 def classify(tags_seen, motion_count, charging_seen=False, local_hour=None, step_count=None):
@@ -636,11 +660,14 @@ async def main():
 
             # --- Live wake detection (see WAKE_* constants + WakeDetector) --
             cycle_activity_ts = [p["boot_ts"] for p in parsed if p["tag_name"] in ACTIVITY_TAG_NAMES_FOR_WAKE]
+            # MAX single-packet value this cycle, not a sum -- see
+            # MIN_REAL_STEP_COUNT's comment above ACTIVITY_TAGS.
             cycle_real_steps = 0
             for p in parsed:
                 if p["tag_name"] == "Motion period":
                     try:
-                        cycle_real_steps += decode_motion_period(p["payload"])["step_count"]
+                        step_count = decode_motion_period(p["payload"])["step_count"]
+                        cycle_real_steps = max(cycle_real_steps, step_count)
                     except (ValueError, KeyError):
                         pass
             wake_confirmed = wake_detector.process_cycle(
@@ -656,13 +683,13 @@ async def main():
                       f"Back to watching.")
             elif wake_detector.last_event_note == "awaiting_steps":
                 print(f"[{time.strftime('%H:%M:%S')}] [WAKE-DETECT] Confirmation window "
-                      f"elapsed but no real steps seen yet ({wake_detector.real_steps_since_candidate} "
-                      f"so far, need {WAKE_MIN_REAL_STEPS}) -- likely still just restless "
-                      f"movement, not actually up. Still watching.")
+                      f"elapsed but no real walking seen yet (max single-packet reading "
+                      f"{wake_detector.max_real_step_seen} so far, need {MIN_REAL_STEP_COUNT}) "
+                      f"-- likely still just restless movement, not actually up. Still watching.")
             elif wake_detector.last_event_note == "provisional_confirm":
                 print(f"[{time.strftime('%H:%M:%S')}] [WAKE-DETECT] Provisionally confirmed "
-                      f"({WAKE_CONFIRM_MINUTES} min of activity + "
-                      f"{wake_detector.real_steps_since_candidate} real steps) -- verifying "
+                      f"({WAKE_CONFIRM_MINUTES} min of activity, max real-walking reading "
+                      f"{wake_detector.max_real_step_seen}) -- verifying "
                       f"for a further {WAKE_VERIFY_MINUTES} min before ending the session, "
                       f"in case this is a washroom trip that's about to go quiet again.")
             elif wake_detector.last_event_note == "verifying":
@@ -671,7 +698,7 @@ async def main():
             elif wake_detector.last_event_note == "confirmed":
                 print(f"[{time.strftime('%H:%M:%S')}] [WAKE-DETECT] Confirmed real wake-up "
                       f"({WAKE_CONFIRM_MINUTES} min initial + {WAKE_VERIFY_MINUTES} min "
-                      f"verify, {wake_detector.real_steps_since_candidate} real steps total, "
+                      f"verify, max real-walking reading {wake_detector.max_real_step_seen}, "
                       f"never quiet that long) -- wrapping up the session now instead of "
                       f"waiting for the {duration_hr}h ceiling.")
 

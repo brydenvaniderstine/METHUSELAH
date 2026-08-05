@@ -8006,3 +8006,64 @@ trusting any epoch-to-boot_ts anchoring again.
 deltas and backward-jump checks, `pipeline/tools/track_b_condition1_crossref.py`
 (kept in repo, not deleted — decode/contingency logic is sound, only the
 time-anchoring step is unresolved).*
+
+## 2026-08-05 — Wake-detection "real steps" gate was never real: summed a rest-noise counter instead of maxing it, falsifying the 2026-08-04 two-stage fix
+
+**Context:** three consecutive real nights (08-02/03, 08-03/04, 08-04/05) all
+ended the daemon session around 1-1:45am via `WakeDetector` confirming a
+"real wake-up." Bryden confirmed directly, both times asked: a routine brief
+washroom trip, back to bed within minutes, not an extended wake. The
+2026-08-04 two-stage confirmation fix (`WAKE_VERIFY_MINUTES`, commit
+`194ca1f`) was built specifically to survive this exact case and still
+confirmed on 08-04/05 anyway, surviving the full 35-min two-stage window with
+"3,040 real steps total."
+
+**Root cause, found by reading the daemon's own already-existing, already-
+validated documentation:** `oura_gen3_ble_daemon.py`'s own comment on
+`MIN_REAL_STEP_COUNT` (present since 2026-07-22, well before the wake-
+detection feature existed) already establishes that 0x6B "Motion period"
+`step_count` is a wrapping idle counter that is **never 0 at rest** and
+**must be compared as a per-cycle MAX, never summed** -- "summing multiple
+rest-noise packets in one poll cycle can itself exceed 80." `classify()`
+(used for SLEEP/ACTIVE WINDOW labeling) already followed this correctly.
+`WakeDetector` did not: it summed every 0x6B packet's `step_count` per cycle
+*and* accumulated that sum across every cycle for the life of the candidate
+(15-35+ min), against a threshold (`WAKE_MIN_REAL_STEPS = 10`) calibrated for
+a completely different, and wrong, quantity. The two-stage timing fix
+couldn't have helped, because the signal it gated on was never real.
+
+**Verified against real data, not just static review:** replayed all 332
+real "Motion period" packets from `gen3_daemon_20260804_220001.txt` (the
+08-04/05 night) through the actual decoder. Maximum single-packet
+`step_count` across the *entire night*: **63** -- never once reached the
+documented real-walk range (80-101), even during the real washroom trip
+itself. Zero packets qualified as real walking under the correct (per-packet
+max >= `MIN_REAL_STEP_COUNT`) definition. Confirms the "3,040 real steps"
+figure was 100% rest-noise accumulation, and that under the fix below,
+`provisional_confirm` could never have fired that night -- the session would
+have correctly kept running instead of ending at 01:46.
+
+**Fix:** `oura_gen3_ble_daemon.py` -- `WakeDetector` now tracks
+`max_real_step_seen` (the running max across cycles) instead of summing;
+the live poll loop computes the MAX single-packet `step_count` per cycle
+(`cycle_real_steps = max(...)`, was `+=`) instead of a per-cycle sum;
+`WAKE_MIN_REAL_STEPS` is retired in favor of reusing `MIN_REAL_STEP_COUNT`
+(80) directly, the same threshold `classify()` already uses. `commands.js`/
+bridge/thresholds unaffected -- this is pipeline-only.
+
+**Still open / not addressed by this fix:** the *quiet-gap* half of
+`WakeDetector` (`WAKE_QUIET_DISQUALIFY_MINUTES`) resets on any
+`ACTIVITY_TAG_NAMES_FOR_WAKE` event (Motion event / Real step feature (1)),
+a signal this same file already documents as firing as background noise even
+during confirmed sleep. Not yet checked whether a genuine 10+ min gap in
+that signal exists on a normal night -- if not, a future false positive
+could still occur through the quiet-gap path alone, independent of the
+real-steps fix above. Flagged for the next session reviewing a real
+overnight run; not reopened/investigated further this session.
+
+*Logged 2026-08-05. Sources: real `oura_gen3_ble_daemon.py` diff and its own
+2026-07-22-dated `MIN_REAL_STEP_COUNT` comment; real
+`gen3_daemon_20260804_220001.txt` (332 real Motion period packets, decoded
+via the actual `decode_motion_period`); real `daemon_launchd.log` WAKE-DETECT
+timeline for 08-02/03, 08-03/04, 08-04/05; Bryden's direct real-time
+confirmation of the 08-04/05 washroom trip.*
