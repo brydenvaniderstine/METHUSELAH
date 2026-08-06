@@ -167,6 +167,28 @@ body::before {
 .log-cursor { display: inline-block; width: 6px; height: 9px; background: var(--accent-amber); animation: blink-cursor 1s step-end infinite; margin-left: 2px; vertical-align: middle; }
 @keyframes blink-cursor { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
 
+.telemetry-toggle {
+  display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+  padding: 6px 4px; font-size: 9px; letter-spacing: 1px; color: var(--text-dim);
+  cursor: pointer; user-select: none; flex-shrink: 0;
+}
+.telemetry-toggle:hover { color: var(--text-mid); }
+.telemetry-toggle .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent-blue); box-shadow: 0 0 4px var(--accent-blue);
+}
+.telemetry-panel {
+  border: 1px solid var(--line-bright); background: var(--panel);
+  margin-bottom: 6px; flex-shrink: 0;
+}
+.telemetry-inner { padding: 10px 14px; font-size: 9px; color: var(--text-mid); }
+.telemetry-header { color: var(--text-main); letter-spacing: 1px; margin-bottom: 8px; }
+.telemetry-divider { border-top: 1px solid var(--line-bright); margin: 8px 0; }
+.telemetry-raw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; }
+.telemetry-raw-grid .label { color: var(--text-dim); }
+.telemetry-raw-grid .value { color: var(--accent-amber); }
+.telemetry-stages { margin-top: 8px; color: var(--text-dim); letter-spacing: 0.3px; }
+
 .auth-overlay {
   position: fixed; inset: 0; background: var(--bg); z-index: 10000;
   display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px;
@@ -312,6 +334,48 @@ function GlucosePanel({ reading, entryOpen, inputVal, meta, age, stale, onTap, o
   );
 }
 
+// Collapsible raw-telemetry breakdown -- same GEN3 INTERCEPT fields the
+// sys-log line already carries, reformatted into a legible label/value
+// grid instead of one long `//`-separated line. No new data, no new
+// primary tile -- just surfacing already-decoded fields more readably.
+function RawTelemetryPanel({ bridge, open, onToggle }) {
+  const v = bridge.vectors;
+  const stages = v.sleep_stages;
+  const time = new Date(bridge.timestamp).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return (
+    <>
+      <div className="telemetry-toggle" onClick={onToggle}>
+        <span className="dot" />
+        <span>{open ? "▾" : "▸"} SHOW RAW TELEMETRY</span>
+      </div>
+      {open && (
+        <div className="telemetry-panel">
+          <div className="telemetry-inner">
+            <div className="telemetry-header">RAW TELEMETRY // GEN3 INTERCEPT · {bridge.classifier} · [{time}]</div>
+            <div className="telemetry-divider" />
+            <div className="telemetry-raw-grid">
+              <div><span className="label">RHR ......... </span><span className="value">{v.rhr_bpm != null ? v.rhr_bpm.toFixed(1) + " BPM" : "N/A"}</span></div>
+              <div><span className="label">BATTERY ..... </span><span className="value">{v.battery_pct != null ? v.battery_pct + "%" : "N/A"}</span></div>
+              <div><span className="label">IBI_HR ...... </span><span className="value">{v.ibi_hr_bpm != null ? v.ibi_hr_bpm.toFixed(1) + " BPM" : "N/A"}</span></div>
+              <div><span className="label">TEMP ........ </span><span className="value">{v.sleep_temp_c != null ? v.sleep_temp_c + "°C" : "N/A"}</span></div>
+              <div><span className="label">SPO2 ........ </span><span className="value">{v.spo2_avg_pct != null ? v.spo2_avg_pct + "%" : "N/A"}</span></div>
+              <div><span className="label">STEPS ....... </span><span className="value">{v.step_count != null ? v.step_count : "N/A"}</span></div>
+            </div>
+            {stages != null && (
+              <>
+                <div className="telemetry-divider" />
+                <div className="telemetry-stages">
+                  SLEEP STAGES: WAKE {stages.wake_min}M · LIGHT {stages.light_min}M · REM {stages.rem_min}M · DEEP {stages.deep_min}M
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // calculateBRI moved to engine/index.js — imported above
 
 export default function MethuselahFinal() {
@@ -334,6 +398,7 @@ export default function MethuselahFinal() {
   const [glucoseInput,    setGlucoseInput]    = useState("");
   const [execState,       setExecState]       = useState("idle");
   const [briefingOpen,    setBriefingOpen]    = useState(false);
+  const [rawTelemetryOpen, setRawTelemetryOpen] = useState(false);
   const [gen3Bridge,      setGen3Bridge]      = useState(null);
   const [logs,            setLogs]            = useState([{ time: ts(), msg: "BIOLOGICAL SYSTEMS ONLINE // STANDING BY", type: "" }]);
   const logRef = useRef(null);
@@ -782,24 +847,15 @@ export default function MethuselahFinal() {
             )}
           </div>
 
+          {gen3Bridge && (
+            <RawTelemetryPanel
+              bridge={gen3Bridge}
+              open={rawTelemetryOpen}
+              onToggle={() => setRawTelemetryOpen(o => !o)}
+            />
+          )}
+
           <div className="sys-log" ref={logRef}>
-            {gen3Bridge && (
-              <div className="log-line">
-                <span className="log-time">[{new Date(gen3Bridge.timestamp).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })}]</span>
-                <span style={{ color: "cyan" }}>
-                  {`GEN3 INTERCEPT: ${gen3Bridge.classifier} // ` +
-                   `RHR ${gen3Bridge.vectors.rhr_bpm != null ? gen3Bridge.vectors.rhr_bpm.toFixed(1) + ' BPM' : 'N/A'} // ` +
-                   `IBI_HR ${gen3Bridge.vectors.ibi_hr_bpm != null ? gen3Bridge.vectors.ibi_hr_bpm.toFixed(1) + ' BPM' : 'N/A'} // ` +
-                   `SPO2 ${gen3Bridge.vectors.spo2_avg_pct != null ? gen3Bridge.vectors.spo2_avg_pct + '%' : 'N/A'} // ` +
-                   `STEPS ${gen3Bridge.vectors.step_count != null ? gen3Bridge.vectors.step_count : 'N/A'} // ` +
-                   `TEMP ${gen3Bridge.vectors.sleep_temp_c != null ? gen3Bridge.vectors.sleep_temp_c + '°C' : 'N/A'} // ` +
-                   `BATTERY ${gen3Bridge.vectors.battery_pct != null ? gen3Bridge.vectors.battery_pct + '%' : 'N/A'}` +
-                   (gen3Bridge.vectors.sleep_stages != null
-                     ? ` // STAGES W${gen3Bridge.vectors.sleep_stages.wake_min}m L${gen3Bridge.vectors.sleep_stages.light_min}m R${gen3Bridge.vectors.sleep_stages.rem_min}m D${gen3Bridge.vectors.sleep_stages.deep_min}m`
-                     : '')}
-                </span>
-              </div>
-            )}
             {logs.map((l, i) => (
               <div key={i} className="log-line">
                 <span className="log-time">[{l.time}]</span>
