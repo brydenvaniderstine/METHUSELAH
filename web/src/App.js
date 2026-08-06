@@ -338,20 +338,24 @@ function GlucosePanel({ reading, entryOpen, inputVal, meta, age, stale, onTap, o
 // sys-log line already carries, reformatted into a legible label/value
 // grid instead of one long `//`-separated line. No new data, no new
 // primary tile -- just surfacing already-decoded fields more readably.
-function RawTelemetryPanel({ bridge, open, onToggle }) {
+function RawTelemetryPanel({ bridge, open, onToggle, stale }) {
   const v = bridge.vectors;
   const stages = v.sleep_stages;
   const time = new Date(bridge.timestamp).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const dotColor = stale ? "var(--accent-amber)" : "var(--accent-blue)";
   return (
     <>
       <div className="telemetry-toggle" onClick={onToggle}>
-        <span className="dot" />
-        <span>{open ? "▾" : "▸"} SHOW RAW TELEMETRY</span>
+        <span className="dot" style={{ background: dotColor, boxShadow: `0 0 4px ${dotColor}` }} />
+        <span>{open ? "▾" : "▸"} {open ? "HIDE" : "SHOW"} RAW TELEMETRY</span>
       </div>
       {open && (
-        <div className="telemetry-panel">
+        <div className={`telemetry-panel${stale ? " tel-stale" : ""}`}>
           <div className="telemetry-inner">
-            <div className="telemetry-header">RAW TELEMETRY // GEN3 INTERCEPT · {bridge.classifier} · [{time}]</div>
+            <div className="telemetry-header">
+              RAW TELEMETRY // GEN3 INTERCEPT · {bridge.classifier} · [{time}]
+              {stale && <span style={{ color: "var(--accent-amber)" }}> [FLAG: STALE]</span>}
+            </div>
             <div className="telemetry-divider" />
             <div className="telemetry-raw-grid">
               <div><span className="label">RHR ......... </span><span className="value">{v.rhr_bpm != null ? v.rhr_bpm.toFixed(1) + " BPM" : "N/A"}</span></div>
@@ -852,6 +856,7 @@ export default function MethuselahFinal() {
               bridge={gen3Bridge}
               open={rawTelemetryOpen}
               onToggle={() => setRawTelemetryOpen(o => !o)}
+              stale={isStale(gen3Bridge.timestamp)}
             />
           )}
 
