@@ -8193,3 +8193,57 @@ source (`launch_daemon`/`run()`), `oura_gen3_ble_daemon.py` current source
 (`WakeDetector.__init__`, `process_cycle`), isolated Python roundtrip test
 against the actual `load_wake_state`/`save_wake_state`/`WakeDetector.
 process_cycle` (not simulated/reimplemented).*
+
+## 2026-08-08 (session 2, part 2) — INVESTIGATED, NOT FIXED: WakeDetector's quiet-gap disqualify path likely rarely fires overnight (ambient Motion event noise), but no confirmed real incident traces to it -- logged, not chased further
+
+**Question:** the 2026-08-05 entry above (sum-vs-max real-steps fix) flagged
+a second, separate, unchecked risk in the same class: `WAKE_QUIET_
+DISQUALIFY_MINUTES` (10min) resets on *any* `ACTIVITY_TAG_NAMES_FOR_WAKE`
+event (`Motion event` or `Real step feature (1)`), and this file's own
+`0x53` docstring already documents that class of signal firing as
+background noise even during confirmed sleep. Does a genuine 10+ min
+quiet gap ever actually occur overnight, or could ambient noise alone
+prevent the quiet-gap check from ever discarding a stale candidate?
+
+**Real data checked:** parsed every `DIGEST` block (~10-23 min real
+wall-clock windows, tag tallies) from `daemon_launchd.log` across all 3
+real nights with digest coverage (08-05/06, 08-06/07, 08-07/08). Cross-
+checked the lowest-count window (08-05/06, 04:45:07-05:08:17, `Motion
+event`=1, `Real step feature (1)`=0) against the daemon's own live
+classifier output for those same cycles — confirmed genuine `SLEEP WINDOW`
+throughout, not daytime. **`Motion event` count is never exactly zero in
+any real sleep-hours digest window on record** (range: 1 to several
+thousand); `Real step feature (1)` does go silent for hours at a time, but
+`process_cycle` treats either tag as activity, so `Motion event` alone
+would keep refreshing `last_activity_wall_time` every cycle. By contrast,
+a real **daytime** candidate today (started 10:38:04) *did* discard
+cleanly via this exact quiet-gap path at 11:11:32 — daytime stillness
+apparently does produce genuine multi-minute silence that overnight sleep's
+higher ambient noise floor does not.
+
+**Inconclusive by construction, not by lack of effort:** exact per-event
+gap measurement would need boot_ts-to-real-time conversion, which is a
+already-documented unresolved problem in this project (three conflicting
+tick-rate estimates on record, 2026-07-26 entry). Only ~10-23min bucketed
+counts are available from real wall-clock-timestamped data, so a real gap
+under 10-23 min inside a "count=1" window can't be ruled in or out
+precisely.
+
+**Decision: log, don't chase further right now.** Unlike the sum-vs-max
+bug (3 confirmed real false-positive nights before its fix), this
+weakness has caused **zero confirmed real incidents** — no false
+wake-confirm has ever been traced to it, and mechanically it can't cause
+one on its own: `WakeDetector`'s actual confirm gate is still real steps
+`>=MIN_REAL_STEP_COUNT` (already correctly fixed 08-05), so a weak
+quiet-gap check at worst lets a stale candidate linger open longer than
+ideal -- it doesn't independently produce a false confirm. Real but
+low-severity and non-recurring; revisit if a real night ever produces
+evidence of actual harm (e.g., a candidate staying open implausibly long
+across an unrelated later real activity burst).
+
+*Logged 2026-08-08. Sources: real `daemon_launchd.log` DIGEST blocks
+(08-05/06, 08-06/07, 08-07/08 nights) parsed directly, cross-referenced
+against the same log's real per-cycle classifier output
+(`[HH:MM:SS] cycle N: ... (SLEEP WINDOW)`), today's real 10:38:04-11:11:32
+daytime candidate/discard cycle, `oura_gen3_ble_daemon.py` current source
+(`ACTIVITY_TAG_NAMES_FOR_WAKE`, `process_cycle`'s quiet-gap branch).*
