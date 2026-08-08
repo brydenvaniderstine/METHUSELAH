@@ -44,6 +44,25 @@ substitute (confirmed unsafe -- see that entry's Finding C):
    session." Does not change whether/what the function declines or
    estimates -- confirmed by the regression check in the commit that added
    this (same 3 real nights, same numeric outcomes).
+
+Third addition, 2026-08-07: freshness enforcement (Condition 3 below). Real
+gap found the same day: because (2) above was explicitly diagnostic-only,
+a final bout that was 100% stale carryover -- identical numbers repeated
+across multiple nights because the ring's firmware never finalized anything
+new -- could still pass every structural check (enough samples, monotonic,
+a wake signal, under the session-span ceiling) and get reported as if it
+were a real reading for that night. It never has yet in practice (a
+same-night non-monotonic sample or oversized tail has always also fired
+first), but nothing structurally prevented it, and Bryden's own proposal
+that day ("just sum the stage minutes, we have real numbers") was the
+direct trigger for finding this -- the arithmetic was always fine; the
+missing piece was confirming the numbers being summed were actually from
+that night. Now enforced for real: the final bout's last known total must
+have grown past whatever was already checkpointed for that same bout_start
+before this session began. Only checked when a checkpoint exists at all
+(prior_bout_totals is not None) -- an unchanged bout with no checkpoint to
+compare against still can't be judged, so behaves exactly as before (no
+new decline).
 """
 
 import struct
@@ -257,10 +276,14 @@ def estimate_sleep_duration(entries, session_span_hrs=None, prior_bout_totals=No
     Decline conditions are checked first (see module docstring) -- any one
     of them returns sleep_duration_estimate_hrs=None with a specific reason.
     Conditions 1 and 2 are structural (checked directly on the final bout's
-    samples); condition 4 (no wake signal at all) is checked before
-    condition 3 (tail too large) since the tail can't be computed without
-    first finding a signal to measure it against. Condition 5 (outer
-    ceiling) is checked last, after a candidate number exists.
+    samples). Condition 3 (freshness -- final bout must have grown past its
+    prior-session checkpoint) runs next, as soon as its last total is known,
+    since a stale bout disqualifies the estimate regardless of what the
+    remaining checks would say. Condition 5 (no wake signal at all) is
+    checked before condition 4 (tail too large) since the tail can't be
+    computed without first finding a signal to measure it against.
+    Condition 6 (outer ceiling) is checked last, after a candidate number
+    exists.
 
     session_span_hrs: optional real, caller-supplied wall-clock span of the
     connected daemon session (real logged start timestamp -> real observed
@@ -327,7 +350,29 @@ def estimate_sleep_duration(entries, session_span_hrs=None, prior_bout_totals=No
 
     last_boot_ts, last_total_min = samples[-1]
 
-    # Condition 4 -- a wake/activity anchor must exist at all.
+    # Condition 3 -- freshness: the final bout must have grown past whatever
+    # was already checkpointed for this same bout_start before this session
+    # began. Only enforced when a checkpoint actually exists (prior_bout_totals
+    # is not None) -- see module docstring, 2026-08-07 addition. A bout with
+    # no matching prior entry is new by definition and passes untouched.
+    if prior_bout_totals is not None:
+        prior_total = prior_bout_totals.get(final_bout["bout_start"])
+        if prior_total is not None and last_total_min <= prior_total:
+            return {
+                "sleep_duration_estimate_hrs": None,
+                "reason": (f"Final bout is stale carryover: last total "
+                           f"{last_total_min:.1f}min has not grown past the "
+                           f"{prior_total:.1f}min already checkpointed for "
+                           f"this same bout before this session began -- "
+                           f"not tonight's data."
+                           f"{_freshness_note(freshness)}"),
+                "confidence": {"final_bout_samples": len(samples),
+                               "final_bout_total_min": round(last_total_min, 1),
+                               "prior_checkpoint_min": round(prior_total, 1),
+                               **freshness_counts},
+            }
+
+    # Condition 5 -- a wake/activity anchor must exist at all.
     wake_ts = _find_wake_signal(entries, last_boot_ts)
     if wake_ts is None:
         return {
@@ -344,7 +389,7 @@ def estimate_sleep_duration(entries, session_span_hrs=None, prior_bout_totals=No
     tail_ticks = wake_ts - last_boot_ts
     tail_min = tail_ticks / TICK_RATE_PER_MIN
 
-    # Condition 3 -- uncovered tail sanity cap.
+    # Condition 4 -- uncovered tail sanity cap.
     if tail_min > TAIL_CAP_MINUTES:
         return {
             "sleep_duration_estimate_hrs": None,
@@ -362,7 +407,7 @@ def estimate_sleep_duration(entries, session_span_hrs=None, prior_bout_totals=No
 
     raw_total_min = last_total_min + tail_min
 
-    # Condition 5 -- outer ceiling: a real, connected daemon session cannot
+    # Condition 6 -- outer ceiling: a real, connected daemon session cannot
     # produce more sleep-classified minutes than it was connected for. This
     # is the gap that let the already-fixed 92.0-HRS bug (known_issues.md,
     # 2026-07-21 session 4) reach production through a different code path
