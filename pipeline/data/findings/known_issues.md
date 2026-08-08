@@ -8133,3 +8133,63 @@ counts, `SLEEP-ANALYSIS`/`bytes_left` line ranges cross-referenced against
 current source (`last_boot_ts`/`since` logic, lines ~487-524, 607),
 `open_oura` (`Th0rgal/open_oura`, re-cloned fresh this session per its
 ephemeral-clone note) `docs/sync-orchestration.md`.*
+
+## 2026-08-08 (session 2) — FIXED: watchdog-restart silently dropped WakeDetector's in-progress candidate state, no resolution log line at all
+
+**Context:** flagged but not yet logged as of the morning's `handoff.md` —
+a real, already-observed finding, not hypothetical. A wake-detect candidate
+opened at 09:41:21 (08-08) never resolved (no "confirmed" or "discarded"
+line) before a 10:37:25 watchdog stall-restart, and a fresh candidate
+started cold right after with zero memory of the previous one.
+
+**Root cause, confirmed in code:** `gen3_daemon_watchdog.py` recovers from
+a stalled/deadlocked daemon by killing the subprocess and launching a
+brand-new `python3 oura_gen3_ble_daemon.py` process (`launch_daemon()`,
+`subprocess.Popen`). `WakeDetector()` is instantiated fresh in `main()`
+every time, in-memory only, with no persistence — so any in-progress
+candidate (`streak`, `candidate_since`, `verify_since`,
+`max_real_step_seen`) that existed in the killed process is gone the
+instant it's SIGTERM'd/SIGKILL'd, with no log trace at all. This is a
+distinct gap from `last_boot_ts` continuity, which the daemon already
+handles correctly across restarts (`_last_real_boot_ts_in_log`,
+`is_resume`) — wake-detection just never got the same treatment.
+
+**Fix:** added `wake_state_path()`/`load_wake_state()`/`save_wake_state()`
+(mirrors the `SYNC_CURSOR_PATH` pattern added earlier this session),
+persisting the candidate-relevant fields to `<log_path>.wake_state.json`
+after every `process_cycle()` call. Scoped to one night by keying the file
+to `log_path` itself (already per-night-timestamped), so a brand-new night
+can never accidentally inherit a stale candidate from a previous one — only
+an in-session resume (`is_resume=True`, same `log_path`) restores it. All
+persisted fields are wall-clock `time.time()` epoch values, so restoring
+them after a real restart gap is correct by construction: the actual
+downtime during the restart counts toward the candidate's quiet-gap/
+confirm/verify windows exactly as if the process had never died, rather
+than needing separate special-casing for "time spent restarting."
+`main()` now also prints an explicit `[WAKE-DETECT]` line on every resume
+stating whether a candidate was restored (with its `candidate_since` and
+`max_real_step_seen`) or confirms none was in progress — closes the
+"silently vanishes, no resolution line at all" visibility gap even if a
+future bug reintroduces state loss.
+
+**Verified:** `py_compile` clean. Isolated roundtrip test (no real
+hardware, no live daemon touched — today's already-running 08-07/08
+session was left untouched throughout, same as the sync-cursor change):
+save → fresh `WakeDetector()` → restore → confirmed a candidate discards
+correctly if the *real* elapsed gap (including simulated restart downtime)
+exceeds `quiet_disqualify_minutes`, and survives correctly if the gap is
+short — the exact two real-world outcomes this fix needs to get right.
+**Not yet observed against a real watchdog restart** — needs a real night
+where a stall-restart happens to land mid-candidate to fully confirm the
+fix. Bundled in the same commit as the cross-night sync-cursor experiment
+above but touches an entirely independent code path (session-end timing,
+not what's requested from the ring) — the two changes can't confound each
+other's evaluation.
+
+*Logged 2026-08-08. Sources: real `daemon_launchd.log` WAKE-DETECT timeline
+(09:41:21 candidate, 10:37:25 stall-restart, fresh candidate immediately
+after — already noted in `handoff.md`), `gen3_daemon_watchdog.py` current
+source (`launch_daemon`/`run()`), `oura_gen3_ble_daemon.py` current source
+(`WakeDetector.__init__`, `process_cycle`), isolated Python roundtrip test
+against the actual `load_wake_state`/`save_wake_state`/`WakeDetector.
+process_cycle` (not simulated/reimplemented).*

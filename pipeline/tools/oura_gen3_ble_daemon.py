@@ -518,6 +518,46 @@ def save_sync_cursor(boot_ts):
         _json.dump({'last_boot_ts': boot_ts, 'saved_at': time.strftime('%Y-%m-%dT%H:%M:%S')}, f, indent=2)
 
 
+# 2026-08-08: WakeDetector candidate-state persistence, across a watchdog
+# restart WITHIN one night. Real finding (known_issues.md, not yet logged
+# there as of this comment -- see handoff.md 2026-08-08): a stall-restart
+# killing the daemon subprocess mid-candidate silently drops WakeDetector()
+# (in-memory only, recreated fresh in main()) with no "confirmed" or
+# "discarded" line at all -- confirmed on a real night (09:41:21 candidate
+# never resolved before a 10:37:25 stall-restart; a new candidate started
+# cold right after). All persisted fields are wall-clock time.time() epoch
+# values, so restoring them after a real restart gap is correct by
+# construction -- the elapsed downtime itself counts toward the candidate's
+# quiet-gap/confirm/verify windows exactly as if the process had never died.
+# Scoped to ONE night by keying the file to log_path (which is itself
+# timestamped per night) -- a brand new night can never collide with a
+# leftover file from a previous one.
+WAKE_STATE_FIELDS = (
+    'streak', 'streak_last_ts', 'candidate_since', 'verify_since',
+    'last_activity_wall_time', 'max_real_step_seen',
+)
+
+
+def wake_state_path(log_path):
+    return log_path + '.wake_state.json'
+
+
+def load_wake_state(log_path):
+    path = wake_state_path(log_path)
+    if not _os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            return _json.load(f)
+    except (ValueError, OSError):
+        return None
+
+
+def save_wake_state(log_path, detector):
+    with open(wake_state_path(log_path), 'w') as f:
+        _json.dump({field: getattr(detector, field) for field in WAKE_STATE_FIELDS}, f)
+
+
 async def main():
     poll_seconds = float(_sys.argv[1]) if len(_sys.argv) > 1 else 5
     duration_hr = float(_sys.argv[2]) if len(_sys.argv) > 2 else 8
@@ -585,6 +625,12 @@ async def main():
     # Live wake-detection (see WAKE_* constants + WakeDetector above).
     wake_detector = WakeDetector()
     wake_confirmed = False
+    restored_wake_state = None
+    if is_resume:
+        restored_wake_state = load_wake_state(log_path)
+        if restored_wake_state:
+            for field, value in restored_wake_state.items():
+                setattr(wake_detector, field, value)
 
     def on_disconnect(_client):
         disconnected.set()
@@ -593,6 +639,15 @@ async def main():
         print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] RESUMING existing session (watchdog "
               f"restart or manual resume): {log_path}, seeded last_boot_ts={last_boot_ts}, "
               f"original session end={time.strftime('%H:%M:%S', time.localtime(end_time))}")
+        if restored_wake_state and restored_wake_state.get('candidate_since') is not None:
+            print(f"[{time.strftime('%H:%M:%S')}] [WAKE-DETECT] Restored an in-progress "
+                  f"candidate across the restart (candidate_since="
+                  f"{time.strftime('%H:%M:%S', time.localtime(restored_wake_state['candidate_since']))}, "
+                  f"max_real_step_seen={restored_wake_state['max_real_step_seen']}) -- "
+                  f"continuing it instead of silently dropping it.")
+        else:
+            print(f"[{time.strftime('%H:%M:%S')}] [WAKE-DETECT] No in-progress candidate to "
+                  f"restore (was already idle before the restart).")
     else:
         print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Starting Gen3 BLE daemon: "
               f"poll every {poll_seconds}s, for up to {duration_hr}h. Ctrl+C to stop.")
@@ -731,6 +786,7 @@ async def main():
                         pass
             wake_confirmed = wake_detector.process_cycle(
                 cycle_activity_ts, cycle_real_steps, time.time(), session_start_time)
+            save_wake_state(log_path, wake_detector)
             if wake_detector.last_event_note == "candidate_started":
                 print(f"[{time.strftime('%H:%M:%S')}] [WAKE-DETECT] Candidate wake burst "
                       f"started -- confirming over the next {WAKE_CONFIRM_MINUTES} min "
