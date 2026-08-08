@@ -8067,3 +8067,69 @@ overnight run; not reopened/investigated further this session.
 via the actual `decode_motion_period`); real `daemon_launchd.log` WAKE-DETECT
 timeline for 08-02/03, 08-03/04, 08-04/05; Bryden's direct real-time
 confirmation of the 08-04/05 washroom trip.*
+
+## 2026-08-08 — FALSIFIED: 08-04 protocol fixes (time-sync, force=1) work as designed but do NOT unblock 0x4C finalization; leading new hypothesis is the never-advanced `since_boot_ts` cursor, not the protocol handshake
+
+**Context:** [[methuselah_0x4c_protocol_fixes_2026-08-04]] (commits `bff19e7`
+ring time-sync, `672fcdb` force=1 sleep-analysis request) were both pending
+real-night validation as of 2026-08-04. Four real nights have since run
+(08-04/05 through 08-07/08).
+
+**Verified against real data (not the handoff's summary — independently
+re-run this session):** `Time sync` (0x42) events now fire for real, every
+night since 08-05/06 (`grep -c "Time sync"` on the raw daemon logs: 10, 9,
+26 occurrences respectively — zero on every log before the fix). The force=1
+request is also confirmably doing something: `[SLEEP-ANALYSIS] progress=`
+in `daemon_launchd.log` moves (seen ranging 6-73) and `bytes_left` counts
+down to a real, sustained 0 multiple times per night (e.g. 08-05/06,
+05:28:05-05:33:26). Both protocol-level changes are real and functioning,
+not silently no-ops.
+
+**But `recompute_bridge_from_daemon.py` run directly against all four real
+post-fix logs still reports 0 new bouts, 100% carryover, every single
+night:**
+
+| Night | Bouts observed | New | Decline reason |
+|---|---|---|---|
+| 08-04/05 | 11 | 0 | stale carryover, no growth past checkpoint |
+| 08-05/06 | 22 | 0 | final bout non-monotonic (450.0→449.5min) |
+| 08-06/07 | 20 | 0 | final bout non-monotonic (450.0→449.5min) |
+| 08-07/08 | 31 | 0 | final bout non-monotonic (635.5→635.0min) |
+
+This falsifies "ring clock inaccuracy + passive force=0 status check" as a
+*complete* explanation for non-finalization — both suspected causes are
+confirmably fixed and functioning, yet the symptom is unchanged. Carryover
+bout count is also growing night over night (11→22→20→31), consistent with
+the existing "0x4C is a multi-night backlog buffer" finding (07-22 entry
+above) — the ring is retaining, not rotating, its history.
+
+**New lead, from `open_oura`'s `docs/sync-orchestration.md` (re-cloned this
+session, official-app decompile, not this project's own code):** the real
+Oura app persists an ever-advancing sync cursor (`nextEventToSync`) across
+*every* connection and always requests history starting from it — never
+from scratch. This project's own `since = last_boot_ts + 1 if last_boot_ts
+else 0` already replicates that pattern correctly *within* one night
+(watchdog resumes seed `last_boot_ts` from the log's last real entry,
+confirmed at `oura_gen3_ble_daemon.py:524`), but **every new night
+deliberately resets `last_boot_ts = 0`** — confirmed unchanged since the
+07-22 root-cause entry above — requesting the ring's *entire* retained
+history buffer from scratch every single night, never a cursor advanced
+across nights. The 07-22 fix used this same root cause to build client-side
+dedup (`bout_checkpoint.json`) but never changed the actual BLE request
+behavior itself; whether the ring's firmware gates fresh-summary
+finalization on the client ever advancing its request cursor past
+already-seen data has never been tested as an independent variable.
+
+**Not yet implemented or tested.** Flagged as the next concrete hypothesis,
+not applied — needs a real overnight run and, per this project's
+one-hypothesis-at-a-time discipline, should not be bundled with any other
+unconfirmed change.
+
+*Logged 2026-08-08. Sources: real `daemon_launchd.log` (`Time sync` grep
+counts, `SLEEP-ANALYSIS`/`bytes_left` line ranges cross-referenced against
+`Logging to:` markers to attribute lines to specific nights),
+`recompute_bridge_from_daemon.py` run directly against all four real
+`gen3_daemon_2026080[4-7]*.txt` logs this session, `oura_gen3_ble_daemon.py`
+current source (`last_boot_ts`/`since` logic, lines ~487-524, 607),
+`open_oura` (`Th0rgal/open_oura`, re-cloned fresh this session per its
+ephemeral-clone note) `docs/sync-orchestration.md`.*

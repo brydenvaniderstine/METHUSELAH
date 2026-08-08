@@ -13,3 +13,4 @@ data/raw_pulls/
 pipeline/data/logs/*.log
 pipeline/data/bridge/gen3_latest.json
 pipeline/data/bridge/bout_checkpoint.json
+pipeline/data/bridge/last_synced_boot_ts.json

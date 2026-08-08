@@ -46,6 +46,7 @@ Stop any time with Ctrl+C -- already-logged data and the last bridge push
 are preserved.
 """
 import asyncio
+import json as _json
 import os as _os
 import re as _re
 import sys as _sys
@@ -484,6 +485,39 @@ def _last_real_boot_ts_in_log(log_path):
     return max_ts
 
 
+# 2026-08-08: cross-NIGHT sync cursor -- experimental, testing the
+# "since_boot_ts=0 every night" hypothesis in known_issues.md (0x4C never
+# finalizing a fresh bout). _last_real_boot_ts_in_log above already makes a
+# watchdog-restarted process resume mid-night correctly; this extends the
+# same idea ACROSS nights, mirroring open_oura's decompiled Android-app
+# behavior (docs/sync-orchestration.md: a persisted `nextEventToSync`
+# cursor, never a from-scratch re-fetch). Separate from bout_checkpoint.json
+# (which only labels bouts NEW vs carryover after the fact and never
+# changed what we ask the ring for) -- this changes the actual BLE request.
+SYNC_CURSOR_PATH = _os.path.join(
+    _os.path.dirname(__file__), '..', 'data', 'bridge', 'last_synced_boot_ts.json')
+
+
+def load_sync_cursor():
+    """Highest boot_ts confirmed captured as of the end of any prior
+    session, or 0 if no checkpoint exists yet / it's unreadable. Only used
+    to seed a BRAND NEW night's first request (see main()) -- an in-session
+    watchdog resume still uses _last_real_boot_ts_in_log, unchanged."""
+    if not _os.path.exists(SYNC_CURSOR_PATH):
+        return 0
+    try:
+        with open(SYNC_CURSOR_PATH) as f:
+            return int(_json.load(f).get('last_boot_ts', 0))
+    except (ValueError, OSError, TypeError):
+        return 0
+
+
+def save_sync_cursor(boot_ts):
+    _os.makedirs(_os.path.dirname(SYNC_CURSOR_PATH), exist_ok=True)
+    with open(SYNC_CURSOR_PATH, 'w') as f:
+        _json.dump({'last_boot_ts': boot_ts, 'saved_at': time.strftime('%Y-%m-%dT%H:%M:%S')}, f, indent=2)
+
+
 async def main():
     poll_seconds = float(_sys.argv[1]) if len(_sys.argv) > 1 else 5
     duration_hr = float(_sys.argv[2]) if len(_sys.argv) > 2 else 8
@@ -521,7 +555,19 @@ async def main():
 
     digest_every = max(1, round(600 / poll_seconds))  # ~every 10 minutes
     tag_tally_since_digest = Counter()
-    last_boot_ts = _last_real_boot_ts_in_log(log_path) if is_resume else 0
+    if is_resume:
+        last_boot_ts = _last_real_boot_ts_in_log(log_path)
+        cross_night_cursor_pending = False
+    else:
+        # 2026-08-08: seed a brand new night from the cross-night sync
+        # cursor instead of always 0 -- see SYNC_CURSOR_PATH above. If the
+        # ring rebooted since the checkpoint was saved, its boot_ts axis
+        # reset and this stale-high value would make the first request
+        # silently return nothing; cross_night_cursor_pending flags that
+        # case so the first poll can retry with since_boot_ts=0 once
+        # instead of being mistaken for "ring genuinely has no new data."
+        last_boot_ts = load_sync_cursor()
+        cross_night_cursor_pending = last_boot_ts != 0
     total_events_logged = 0
     # All IBI packet lists across all cycles, for nightly RMSSD. On a watchdog
     # resume this starts empty like everywhere else in this function -- a
@@ -606,6 +652,19 @@ async def main():
                 # per cycle boundary without this.
                 since = last_boot_ts + 1 if last_boot_ts else 0
                 raw = await request_history(client, received, since_boot_ts=since)
+                if cross_night_cursor_pending and not raw:
+                    # First poll of a new night, seeded from the persisted
+                    # cross-night cursor, came back empty. Can't tell from an
+                    # empty response alone whether the ring genuinely has
+                    # nothing new or whether it rebooted since the cursor was
+                    # saved (its boot_ts axis would have reset, making this
+                    # since_boot_ts meaningless) -- retry once with a full
+                    # since_boot_ts=0 fetch before trusting an empty result.
+                    print(f"[{time.strftime('%H:%M:%S')}] First poll using cross-night "
+                          f"cursor (since_boot_ts={since}) returned nothing -- retrying "
+                          f"with a full since_boot_ts=0 fetch in case the ring rebooted.")
+                    raw = await request_history(client, received, since_boot_ts=0)
+                cross_night_cursor_pending = False
             except Exception as e:
                 print(f"[{time.strftime('%H:%M:%S')}] Poll failed: {e} — will reconnect.")
                 disconnected.set()
@@ -726,6 +785,13 @@ async def main():
                         last_boot_ts = 0
                     else:
                         last_boot_ts = new_max
+                    # Persist across nights (not just in-memory for this
+                    # process) -- see SYNC_CURSOR_PATH above. Cheap enough to
+                    # write every cycle that has real EVENT_TAGS data; a
+                    # reboot-triggered reset to 0 is persisted too, so a
+                    # rebooted ring doesn't keep getting seeded from a stale
+                    # pre-reboot value on the next restart either.
+                    save_sync_cursor(last_boot_ts)
 
                 for p in parsed:
                     logf.write(f"[{p['tag_name']}] boot_ts={p['boot_ts']} payload={p['payload'].hex()}\n")
