@@ -656,7 +656,8 @@ export default function MethuselahFinal() {
     rhr: logic.vectors.rhr.value,
     sleepDurationHrs: logic.vectors.sleepDurationHrs.value,
   };
-  const sleepIsEstimate = logic.vectors.sleepDurationHrs.isEstimate === true;
+  const sleepEstimateMethod = logic.vectors.sleepDurationHrs.estimateMethod ?? null;
+  const sleepIsEstimate = sleepEstimateMethod !== null;
 
   useEffect(() => { setBriefingOpen(false); }, [logic.level]);
 
@@ -791,7 +792,7 @@ export default function MethuselahFinal() {
             <Metric
               label="SLEEP DURATION"
               val={sleepDurationHrs !== null ? `${sleepIsEstimate ? "~" : ""}${sleepDurationHrs.toFixed(1)}` : "--"}
-              unit={sleepIsEstimate ? "hrs (est.)" : "hrs"}
+              unit={sleepEstimateMethod === "stage_sum" ? "hrs (stage sum)" : sleepEstimateMethod === "bout_tail" ? "hrs (est.)" : "hrs"}
               color={sleepDurationHrs === null ? "var(--text-dim)" : sleepDurationHrs < THRESHOLDS.sleepDurationCritical ? "var(--accent-red)" : sleepDurationHrs < THRESHOLDS.sleepDurationWarn ? "var(--accent-amber)" : "var(--accent-green)"}
               meta={sleepMeta}
               age={formatAge(sleepTs)}

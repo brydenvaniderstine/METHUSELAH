@@ -14,7 +14,12 @@ rem_min, deep_min, source_tag}.  (gen3_bridge.py:41-42)
 
 from __future__ import annotations
 
-MIN_TIB_MIN = 120.0     # under 2h in bed: not a night
+MIN_TIB_MIN = 420.0     # under 7h in bed: could be a partial/reset bout fragment,
+                        # not a real night -- raised 2026-08-09 when this field was
+                        # wired into the Sleep Duration tile with command authority
+                        # (STAGE_SUM_FALLBACK_ENABLED). At 120 (2h), a partial bout
+                        # summing to 5-6h would sail through and could fire a false
+                        # INITIATE SLEEP PROTOCOL on a night that was actually fine.
 MAX_TIB_MIN = 960.0     # over 16h in bed: register is broken, not a long sleep
 
 

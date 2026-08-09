@@ -29,6 +29,15 @@ export const SOURCE_GEN4 = "gen4_api";
 export const SOURCE_GEN3 = "gen3_ble";
 export const SOURCE_MANUAL = "manual";
 
+// Kill switch, 2026-08-09: owner's explicit, informed override of the
+// multi-night validation gate for sleep_duration_stage_sum_hrs (see
+// pipeline/tools/tst_from_stages.py) -- accepted risk is a partial/reset
+// 0x4C bout firing a false INITIATE SLEEP PROTOCOL command and feeding
+// calculateBRI() on one confirmed night. Set to false to revert the Sleep
+// Duration tile to a dash with no other code change -- flip this constant,
+// nothing else, on a bad morning.
+export const STAGE_SUM_FALLBACK_ENABLED = true;
+
 function isFresh(timestamp) {
   if (!timestamp) return false;
   const age = Date.now() - new Date(timestamp).getTime();
@@ -72,22 +81,32 @@ export function resolveVectors(gen4, gen3, manual = {}) {
     hrv: resolveVector(gen4Fresh?.hrv ?? null, gen3Fresh?.vectors?.hrv_ms ?? null, null),
 
     // Gen4: total_sleep_duration from Oura API. Gen3: sleep_duration_hrs (0x4C,
-    // authoritative) if present, else sleep_duration_estimate_hrs (same tool's
-    // provisional final-bout + uncovered-tail estimate) so a good overnight
-    // estimate isn't stranded behind the strict field almost never populating.
-    // isEstimate tells the tile to label the value, never to hide it.
+    // authoritative) if present, else sleep_duration_estimate_hrs (bout-tail
+    // estimate), else -- if STAGE_SUM_FALLBACK_ENABLED -- sleep_duration_
+    // stage_sum_hrs (light+rem+deep sum, robust to stage-subdivision error but
+    // NOT to a partial/reset bout; see tst_from_stages.py). estimateMethod
+    // tells the tile which one it's showing (null = strict, never hidden).
     sleepDurationHrs: (() => {
       const strict = resolveVector(
         gen4Fresh?.totalSleepHrs ?? null,
         gen3Fresh?.vectors?.sleep_duration_hrs ?? null,
         null
       );
-      if (strict.value != null) return { ...strict, isEstimate: false };
-      const estimateHrs = gen3Fresh?.vectors?.sleep_duration_estimate_hrs ?? null;
-      if (estimateHrs != null) {
-        return { value: estimateHrs, source: SOURCE_GEN3, ready: true, isEstimate: true };
+      if (strict.value != null) return { ...strict, estimateMethod: null };
+
+      const boutTailHrs = gen3Fresh?.vectors?.sleep_duration_estimate_hrs ?? null;
+      if (boutTailHrs != null) {
+        return { value: boutTailHrs, source: SOURCE_GEN3, ready: true, estimateMethod: "bout_tail" };
       }
-      return { ...strict, isEstimate: false };
+
+      if (STAGE_SUM_FALLBACK_ENABLED) {
+        const stageSumHrs = gen3Fresh?.vectors?.sleep_duration_stage_sum_hrs ?? null;
+        if (stageSumHrs != null) {
+          return { value: stageSumHrs, source: SOURCE_GEN3, ready: true, estimateMethod: "stage_sum" };
+        }
+      }
+
+      return { ...strict, estimateMethod: null };
     })(),
 
     // No wearable source on either generation
