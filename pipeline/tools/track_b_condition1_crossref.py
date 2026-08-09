@@ -80,15 +80,22 @@ def main():
     header, entries = parse_daemon_log(DAEMON_FILE)
     print(f"Daemon started: {header['start']}, nominal duration={header['duration_h']}h")
 
-    import time
-    start_epoch = time.mktime(time.strptime(header['start'], '%Y-%m-%d %H:%M:%S'))
-    end_epoch = os.path.getmtime(DAEMON_FILE)
-    session_span_hrs = (end_epoch - start_epoch) / 3600
-    meaningful = [e['boot_ts'] for e in entries if e['tag_name'] in VALID_TAG_NAMES]
-    span_ticks = max(meaningful) - min(meaningful)
-    tick_rate = span_ticks / (session_span_hrs * 3600)
-    print(f"Real session span: {session_span_hrs:.3f}h  ->  tick_rate = {tick_rate:.3f} ticks/sec "
-          f"(derived from this file's own header+mtime, not the fallback constant)\n")
+    # 2026-08-09: the whole-log header/mtime method below (244.1 ticks/sec on
+    # this file) is one of the three disputed candidates this condition was
+    # blocked on -- superseded by a real calibration anchor found this
+    # session: "Time sync" (0x42) events (firing since 08-05/06) carry an
+    # 8-byte LE unix timestamp in their payload alongside their own boot_ts.
+    # 41 such (boot_ts, real_unix_time) pairs across 08-02 through 08-09
+    # (608,012 real seconds) give an end-to-end rate of 9.999946 ticks/sec,
+    # with every large-span pairwise check landing at 9.9999-10.0002 -- not
+    # this file's own derivation (it predates 08-05, has no Time-sync data),
+    # but the same physical clock, and self-consistent to 5 decimal places
+    # across a full week. Using the confirmed constant instead of re-deriving
+    # the same disputed whole-log figure this script used to compute.
+    tick_rate = 10.0
+    print(f"tick_rate = {tick_rate} ticks/sec (confirmed via 0x42 Time-sync payload "
+          f"unix-timestamp anchors, 08-02 through 08-09, not this file's own "
+          f"header/mtime span -- see known_issues.md 2026-08-09)\n")
 
     # ---- 0x6A timeline ----
     sixa = []
