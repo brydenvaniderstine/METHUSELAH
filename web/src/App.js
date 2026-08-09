@@ -371,6 +371,16 @@ function RawTelemetryPanel({ bridge, open, onToggle, stale }) {
                 <div className="telemetry-stages">
                   SLEEP STAGES: WAKE {stages.wake_min}M · LIGHT {stages.light_min}M · REM {stages.rem_min}M · DEEP {stages.deep_min}M
                 </div>
+                {v.sleep_duration_stage_sum_hrs != null ? (
+                  <div className="telemetry-stages">
+                    TST (STAGE SUM, PROVISIONAL): {v.sleep_duration_stage_sum_hrs.toFixed(2)}H
+                    {v.sleep_duration_stage_sum_meta?.deep_anomaly ? " [DEEP ANOMALY LOGGED]" : ""}
+                  </div>
+                ) : (
+                  <div className="telemetry-stages">
+                    TST (STAGE SUM, PROVISIONAL): -- ({v.sleep_duration_stage_sum_meta?.reason || "n/a"})
+                  </div>
+                )}
               </>
             )}
           </div>

@@ -25,6 +25,11 @@ BIOMETRIC_VECTOR_FIELDS = (
     "spo2_avg_pct", "sleep_temp_c", "sleep_stages", "deep_sleep_pct",
 )
 
+# Fields that must never be backfilled from a prior bridge. A None here is a
+# real, correct decline (see tst_from_stages.py) -- inheriting a stale value
+# would defeat the whole point of the decline. See merge_with_existing_bridge().
+NO_BACKFILL_FIELDS = ("sleep_duration_stage_sum_hrs", "sleep_duration_stage_sum_meta")
+
 
 def build_bridge_data(pull_class, pull_file, priority_event_count,
                        hr_avgs=None, ibi_hr_bpm=None, temps=None,
@@ -53,7 +58,7 @@ def build_bridge_data(pull_class, pull_file, priority_event_count,
     black box. Backend/bridge-only for now -- not surfaced on the
     dashboard.
     """
-    return {
+    bridge = {
         "source": "gen3_ble",
         "timestamp": datetime.now().isoformat(),
         "pull_file": pull_file,
@@ -75,6 +80,23 @@ def build_bridge_data(pull_class, pull_file, priority_event_count,
         },
         "raw_sample_count": priority_event_count,
     }
+
+    # PROVISIONAL, second and independent-of-subdivision estimate from the same
+    # sleep_stages breakdown above -- see pipeline/tools/tst_from_stages.py.
+    # Writes only sleep_duration_stage_sum_hrs/_meta; sleep_duration_hrs above is
+    # untouched. Wrapped so a bug here can never blank the rest of the push.
+    try:
+        from tst_from_stages import compute_tst_from_stages
+        # compute_tst_from_stages expects bridge["sleep_stages"] at its own top
+        # level (see its docstring) -- the real bridge nests it one level down,
+        # at bridge["vectors"]["sleep_stages"], so pass the vectors dict itself.
+        stage_sum_hrs, stage_sum_meta = compute_tst_from_stages(bridge["vectors"])
+    except Exception as ex:
+        stage_sum_hrs, stage_sum_meta = None, {"ok": False, "reason": "exception", "error": str(ex)}
+    bridge["vectors"]["sleep_duration_stage_sum_hrs"] = stage_sum_hrs
+    bridge["vectors"]["sleep_duration_stage_sum_meta"] = stage_sum_meta
+
+    return bridge
 
 
 def merge_with_existing_bridge(bridge_data, repo_root):
@@ -115,6 +137,11 @@ def merge_with_existing_bridge(bridge_data, repo_root):
 
     backfilled_any = False
     for key, value in new_vectors.items():
+        if key in NO_BACKFILL_FIELDS:
+            # A decline here writes None on purpose (see tst_from_stages.py) --
+            # backfilling it from a prior night would silently show yesterday's
+            # provisional number as today's, worse than a dash. Never inherited.
+            continue
         if value is None and existing_vectors.get(key) is not None:
             new_vectors[key] = existing_vectors[key]
             backfilled_any = True
