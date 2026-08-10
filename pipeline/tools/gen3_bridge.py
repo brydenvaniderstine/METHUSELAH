@@ -146,6 +146,24 @@ def merge_with_existing_bridge(bridge_data, repo_root):
             new_vectors[key] = existing_vectors[key]
             backfilled_any = True
 
+    # 2026-08-10: build_bridge_data() computes sleep_duration_stage_sum_hrs from
+    # THIS pull's own sleep_stages, before sleep_stages itself gets backfilled
+    # above -- a cycle with no fresh 0x4C firing (i.e. most daytime cycles)
+    # always declined missing_stages here even when sleep_stages just got
+    # backfilled to a real value two lines up. Recompute fresh against
+    # whatever sleep_stages ends up being post-backfill, rather than trusting
+    # the pre-merge decline. Still not backfilled directly (NO_BACKFILL_FIELDS
+    # above) -- always freshly derived, so it can never carry forward a stale
+    # number computed from a different sleep_stages snapshot than the one
+    # actually present now.
+    try:
+        from tst_from_stages import compute_tst_from_stages
+        stage_sum_hrs, stage_sum_meta = compute_tst_from_stages(new_vectors)
+    except Exception as ex:
+        stage_sum_hrs, stage_sum_meta = None, {"ok": False, "reason": "exception", "error": str(ex)}
+    new_vectors["sleep_duration_stage_sum_hrs"] = stage_sum_hrs
+    new_vectors["sleep_duration_stage_sum_meta"] = stage_sum_meta
+
     # Freshness honesty: a pull that preserved biometrics but measured none of
     # its own is only as fresh as the bridge it preserved them from. Carry the
     # older timestamp forward so a stale reading can never be displayed as live.
