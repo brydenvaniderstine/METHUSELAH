@@ -33,6 +33,104 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
+**Date:** 2026-08-09/10 (session — confirmed boot_ts tick rate independently; implemented
+the sidelined TST stage-sum estimator for real, then gave it full command authority on the
+owner's explicit override of his own validation gate ("Door B"); found and fixed a real
+bug the next morning; first low-end validation night landed and tracked against the
+owner's own account)
+
+- **Boot_ts tick rate confirmed at 10.0/sec**, independent of the three previously
+  disputed candidates (244.1 / 14.279 / ~104), via real unix timestamps embedded in
+  `Time sync` (0x42) payloads — 41 anchor points, 08-02 through 08-09, converging to
+  9.999946 ticks/sec end-to-end. Re-running Track B condition #1 with the corrected rate
+  did **not** close it — transition alignment still ~0.8%, same below-chance signature as
+  before. Rules out "wrong tick rate"; the real blocker is now the epoch-anchoring method
+  itself. Commit `8b1abf5`. Full detail: `known_issues.md` 2026-08-09.
+- **`tst_from_stages.py` implemented** (light+rem+deep sum, robust to stage-subdivision
+  error, not claiming independence from the bout-tail estimate — both read the same 0x4C
+  struct fields). Wired into `gen3_bridge.py` as `sleep_duration_stage_sum_hrs`/`_meta`
+  only; `sleep_duration_hrs` untouched; merge-exclusion added. Commit `3074762`.
+- **Door B — owner's explicit, informed override**, same day: wired into
+  `engine/sources.js` as a third `sleepDurationHrs` fallback tier behind
+  `STAGE_SUM_FALLBACK_ENABLED` (kill switch — `false` + redeploy reverts the tile to a
+  dash, no other change needed). This gives the field full command authority: a reading
+  under 7h now fires `INITIATE SLEEP PROTOCOL` and feeds `calculateBRI()`. Mitigation:
+  `MIN_TIB_MIN` raised 120→420 (7h) to stop a partial/reset bout fragment from reaching
+  the tile. Verified end-to-end (a low value really does fire the command, not just
+  resolve a number). Commit `5c4f8d3`.
+- **Real bug found and fixed the next morning:** the stage-sum field went stale-null on
+  any cycle without a fresh 0x4C firing that same 5s window (most of the day), even
+  though `sleep_stages` itself sat correctly backfilled right next to it in the same
+  JSON — confirmed live before fixing. Fixed by recomputing after
+  `merge_with_existing_bridge()`'s backfill, against whatever `sleep_stages` ends up
+  being, never backfilled directly. Commit `3e626b1`.
+- **First real low-end test, same morning:** the 08-09/10 night structurally differed
+  from every night since 07-26 — 2 new 0x4C bouts finalized, only 1 carryover (every
+  prior night: 0 new). Stage sum landed at **5.26h (5h16m)**, the first reading under the
+  7h warn threshold — `SLEEP PROTOCOL` fired live for real. Independently checked against
+  the owner's own account (awake at 22:00 daemon start, asleep after 23:00, woke 05:20,
+  ≥2 real bathroom trips correlating with 6 watchdog restarts that night) — 123min of
+  classified wake time is consistent with that account, not an obvious fragment. Owner's
+  verdict: "5.3 hours sleep is acceptable for now as an ongoing refinement" — first
+  tracked point in the 7-morning validation log. Full detail: `known_issues.md`
+  2026-08-09/10.
+- Daemon stopped early on request (SIGINT to the watchdog PID, not the daemon directly —
+  the watchdog's own documented `KeyboardInterrupt` path kills the daemon subprocess
+  cleanly without treating it as a stall needing a restart). Confirmed clean via log:
+  `[WATCHDOG] Stopped by user -- terminating current daemon subprocess.`
+
+---
+
+**Date:** 2026-08-08 (session — reviewed a proposed second, independent Total-Sleep-Time
+estimator from a chat/screenshot upload; found it arithmetically correct but SIDELINED,
+not implemented, pending open items and tonight's separately-queued daemon items)
+
+- ⚠️ **Staleness flag:** this file had not been updated since 2026-07-26 despite
+  `known_issues.md` showing real, dated entries through 2026-08-08 (Track B condition #5
+  closed at 25/25 nights; a WakeDetector quiet-gap investigation on 08-08). Whoever picks
+  this up next should treat the 12-day gap (07-27 through 08-07) below as **not
+  reconstructed here** — read `known_issues.md` directly for what actually happened in
+  that window rather than assuming this file's silence means nothing happened.
+- **What was reviewed:** owner pasted (chat only — no file written to the repo) a proposed
+  `pipeline/tools/tst_from_stages.py` plus a wiring snippet into `gen3_bridge.py`'s
+  `build_bridge_data()`. It sums decoded sleep-stage minutes (wake/light/rem/deep) into a
+  TST estimate, hard-gated (TIB/TST bounds, efficiency band, deep-fraction cap, snapshot
+  staleness), writing only to a new provisional field `sleep_duration_stage_sum_hrs`
+  (+`_meta`) — `sleep_duration_hrs` deliberately left untouched, matching the existing
+  0x4C-authoritative rule.
+- **Verified by hand, not just read:** all 9 of the author's decline-logic test cases
+  check out (observed night: TIB=635min, TST=542min → 9.03h/9h02m, efficiency 0.8535,
+  deep 0.1024, matches claimed output exactly). No arithmetic bugs found.
+- **Real conflict flagged, unresolved — this is the load-bearing open question:** the
+  estimator draws on the sleep-stage decoders (0x61/0x09, 0x5A stage labeling), which the
+  `methuselah` skill's data-trust tiering places on **DISCARD — "do not chase, do not
+  build."** The code's own docstring says as much. Hard-decline gating and a
+  provisional-only field reduce the practical risk of a bad number reaching a tile, but
+  don't resolve whether this counts as a legitimate narrow exception (TST cross-check,
+  not a stage-% claim) or a re-opening of that closed chase. Owner has not yet decided.
+- **Three technical items also flagged, not yet closed in the pasted code:**
+  1. `stage_age_min` is used in the wiring snippet but never shown defined in
+     `gen3_bridge.py` — if it isn't already real, that's a `NameError` that would crash
+     `build_bridge_data()` and blank the *entire* nightly bridge push, not just this field.
+  2. Bridge key names (`sleep_wake_min` etc.) are inferred from a UI display string, not
+     grepped against actual decoder/bridge source. Low risk if wrong (safe
+     `missing_stage_fields` decline, not silently wrong data) but still unverified.
+  3. `merge_with_existing_bridge()` has no exclusion yet for the new field — risk of a
+     stale backfilled value silently overwriting a correct `None` decline, defeating the
+     field's own point.
+- **Decision: sidelined, nothing implemented.** No file was added to the repo this
+  session — the full source exists only in this chat transcript. Owner chose to hold this
+  until after tonight's separately-queued items (owner's own, not detailed in this
+  session) are reviewed tomorrow. Revisit gate: (a) owner consciously accepts or rejects
+  the DISCARD-tier conflict above, AND (b) the three technical items are closed, AND (c)
+  the wiring call is wrapped in try/except so a failure in this path can't take down the
+  whole bridge write.
+- Full review detail (all 9 test-case checks, threshold-by-threshold reasoning) exists
+  only in this session's chat — not reproduced in `known_issues.md`, since nothing was
+  actually implemented or tested against real data this session.
+
+---
+
 **Date:** 2026-07-26 (session 6 — investigated + fixed a RECURRENCE of the bridge-overwrite bug: the 2026-07-25 20:33 ACTIVE WINDOW pull nulled fresh RHR/IBI_HR/SPO2/TEMP. Same failure class as the 2026-07-19 overwrite.)
 
 - **What happened (reproduced, not inferred):** the last real bridge write was
@@ -509,6 +607,21 @@ B condition #1, tuned sleep-duration thresholds:**
 ---
 
 ## Next session priority
+
+0. **RESOLVED/SUPERSEDED — the two items formerly here** (review tonight's 08-08 queued
+   items; revisit the sidelined `tst_from_stages.py`) are both done. See the 2026-08-09/10
+   "Last session summary" entry above and `known_issues.md` same date: the estimator is
+   implemented, live, and has full command authority (Door B). Do not re-litigate the
+   DISCARD-tier conflict from scratch — it was resolved by reframing (sum is robust to
+   subdivision error, not by claiming tag independence), not by conceding the original
+   argument was right.
+0. **ONGOING — the 7-morning stage-sum validation log.** Owner is logging real bed/wake
+   times against the tile. First point (08-09/10 night, 5.26h) tracked plausibly against
+   the owner's own account. Check in on this each session rather than assuming it's been
+   dropped just because the tile already shows a number — the owner's own framing was
+   "if it tracks within 45 minutes, you've earned the right to argue for command
+   authority. If it scatters, you killed it in a week." `STAGE_SUM_FALLBACK_ENABLED` in
+   `engine/sources.js` is the kill switch if it scatters.
 
 ⚠️ **PULL BEFORE MOVING** — ring must be within Bluetooth range of Mac when shortcut fires.
 ⚠️ **Repo moved 2026-07-26**: `~/Desktop/METHUSELAH` → `~/methuselah`. Any older note

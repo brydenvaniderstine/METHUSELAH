@@ -8247,3 +8247,98 @@ against the same log's real per-cycle classifier output
 (`[HH:MM:SS] cycle N: ... (SLEEP WINDOW)`), today's real 10:38:04-11:11:32
 daytime candidate/discard cycle, `oura_gen3_ble_daemon.py` current source
 (`ACTIVITY_TAG_NAMES_FOR_WAKE`, `process_cycle`'s quiet-gap branch).*
+
+---
+
+## 2026-08-09 — Boot_ts tick rate confirmed at 10.0/sec via 0x42 Time-sync payload; Track B condition #1 re-attempted, still open (new blocker identified)
+
+`Time sync` (0x42) events (firing since 08-05/06 per the ring-time-sync
+handshake fix, `bff19e7`) carry a real 8-byte LE unix timestamp in their
+payload alongside their own `boot_ts` — a calibration anchor independent of
+all three previously disputed candidates (244.1, 14.279, ~104 ticks/sec).
+41 such `(boot_ts, unix_time)` pairs across 08-02 through 08-09 (608,012 real
+seconds) converge on **9.999946 ticks/sec end-to-end**, every large-span
+pairwise check landing at 9.9999–10.0002. Confirmed correct.
+
+Re-ran `track_b_condition1_crossref.py` with the corrected rate: condition #1
+still does **not** close. Transition-level alignment is 0.8% (4/519), the
+same below-chance signature the original wrong-rate attempt produced. This
+rules out "wrong tick rate" as the blocker — the real blocker is now the
+epoch-anchoring method itself (the assumption that an 0x5A burst's last
+epoch aligns exactly with its firing `boot_ts`, no latency offset). Not yet
+investigated further.
+
+*Sources: real `Time sync` payloads across 4 raw daemon logs (08-05 through
+08-09), `track_b_condition1_crossref.py` re-run against
+`gen3_daemon_20260719_212709.txt`. Both changes committed
+(`8b1abf5`).*
+
+## 2026-08-09/10 — tst_from_stages.py implemented, then given full command authority ("Door B"); one real bug found in the wiring; first real low-end validation night landed and was independently confirmed against the owner's own account
+
+**Implementation:** the 08-08 sidelined TST estimator was built for real
+(`pipeline/tools/tst_from_stages.py` — TST = light+rem+deep, deliberately
+robust to stage-subdivision error rather than claiming independence from
+the bout-tail estimate, since both read the same 0x4C struct fields).
+Wired into `gen3_bridge.py` writing only `sleep_duration_stage_sum_hrs`/
+`_meta`; `sleep_duration_hrs` untouched; `merge_with_existing_bridge()`
+given a `NO_BACKFILL_FIELDS` exclusion so a decline can't inherit a stale
+prior value. Verified against real data and a synthetic merge test before
+shipping (commit `3074762`).
+
+**Door B — owner's explicit, informed override of his own multi-night
+validation gate**, same day: wired into `engine/sources.js`'s
+`resolveVectors()` as a third fallback tier (after `sleep_duration_hrs`,
+`sleep_duration_estimate_hrs`), gated by `STAGE_SUM_FALLBACK_ENABLED` (kill
+switch). This gives the field full command authority — a reading under
+`THRESHOLDS.sleepDurationWarn` (7h) fires `INITIATE SLEEP PROTOCOL` and
+feeds `calculateBRI()`. Owner's own words on the accepted risk: "a
+stage-sum reading under 7h fires INITIATE SLEEP PROTOCOL... on one
+confirmed night, off a register known to reset mid-night." Mitigation:
+`tst_from_stages.py`'s `MIN_TIB_MIN` raised from 120 to 420 (7h) specifically
+to stop a partial/reset bout fragment (e.g. 5-6h) from reaching the tile.
+Verified end-to-end via a real Node test against `engine/sources.js` +
+`engine/index.js`: confirmed a low value actually fires `evaluate()`'s
+command, not just resolves a number (commit `5c4f8d3`).
+
+**Real bug found the next morning, fixed before it mattered:**
+`build_bridge_data()` computes `sleep_duration_stage_sum_hrs` from that
+pull's *own* `sleep_stages`, before `merge_with_existing_bridge()` backfills
+`sleep_stages` from a prior bridge. Any daytime cycle with no fresh 0x4C
+firing in its own 5s window declined `missing_stages` even though
+`sleep_stages` itself sat correctly backfilled two lines later in the same
+JSON — confirmed live (05:21 push, 2026-08-10). Fixed by recomputing
+`sleep_duration_stage_sum_hrs`/`_meta` *after* the backfill loop, against
+whatever `sleep_stages` ends up being — never backfilled directly, always
+freshly re-derived. Verified against three cases (the real bug, a
+permanently-missing night, a genuinely-bad fresh fragment) before shipping
+(commit `3e626b1`).
+
+**First real low-end test, same morning:** the 08-09/10 night's `0x4C`
+data structurally differed from every prior night since 07-26 — for the
+first time, **2 new bouts finalized, only 1 carryover** (every prior night:
+0 new, all carryover). Stage sum: wake 123min · light 199min · rem 80min ·
+deep 36.5min → TIB 438.5min (7h19m, barely clearing the new 420min floor),
+TST 315.5min (5h16m, **5.26h — first real reading under the 7h warn
+threshold**). `evaluate()` fired `SLEEP PROTOCOL` for real, live, for the
+first time via this path (confirmed via direct Node test with the real
+resolved values).
+
+**Independently confirmed against the owner's own account, not just
+accepted:** owner was awake when the daemon started at 22:00, fell asleep
+after 23:00, woke at 05:20 — a real ~6h20m sleep-onset-to-wake window, on a
+night with at least 2 real bathroom trips (owner's own account, offered as
+the explanation for 6 watchdog restarts overnight — real disconnects
+correlating with real getting-up, not just BLE flakiness). 123min of
+`0x4C`-classified wake time is consistent with ~60min of pre-sleep
+wakefulness (23:00 sleep onset minus 22:00 daemon start) plus two
+bathroom-trip interruptions — not obviously a fragment/reset artifact.
+Owner's verdict: "5.3 hours sleep is acceptable for now as an ongoing
+refinement" — first data point in the 7-morning validation log, and it
+tracked plausibly. Six more mornings (or fewer, per the owner's own "you've
+earned the right to argue for command authority" / "you killed it in a
+week" framing) will actually decide this.
+
+*Sources: real `gen3_daemon_20260809_220000.txt` (45,367 raw samples, 6
+watchdog restarts), live bridge JSON before and after the merge fix, direct
+Node execution against `engine/sources.js`/`engine/index.js` with the real
+resolved values, owner's own account of last night in chat.*
