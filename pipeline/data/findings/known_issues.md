@@ -8342,3 +8342,54 @@ week" framing) will actually decide this.
 watchdog restarts), live bridge JSON before and after the merge fix, direct
 Node execution against `engine/sources.js`/`engine/index.js` with the real
 resolved values, owner's own account of last night in chat.*
+
+---
+
+## 2026-08-10/11 — NEW, more serious gap found: live daemon never populates sleep_stages itself; a two-night-old stage-sum rode a fresh timestamp all night under Door B command authority
+
+**What happened:** checked the live bridge before touching anything this
+morning — `sleep_duration_stage_sum_hrs: 5.26`, byte-identical to the
+08-09/10 night's numbers (same `wake 123.0/light 199.0/rem 80.0/deep 36.5`,
+same efficiency, same `hhmm`), even though `pull_file` and `timestamp`
+pointed at tonight's (08-10/11) session. Independently recomputed against
+*only* tonight's raw log (445,402 samples, 322 real 0x4C-related lines) and
+got genuinely different numbers (`wake 101.0/light 247.0/rem 86.0/deep 17.0`
+→ 5.83h) — confirming the live tile had been serving the wrong night's data,
+not a stale-but-honest repeat.
+
+**Root cause, confirmed via grep, not inferred:** `oura_gen3_ble_daemon.py`
+never passes a `sleep_stages` argument to `build_bridge_data()` anywhere —
+zero references in the file. Unlike HRV (accumulated live every cycle via
+`ibi_packets_all`), `sleep_stages` is 100% dependent on
+`recompute_bridge_from_daemon.py` being run and pushed. Until that happens
+each morning, `merge_with_existing_bridge()` correctly backfills
+`sleep_stages` (and, since yesterday's fix, correctly *recomputes*
+`sleep_duration_stage_sum_hrs` from it) from whatever the last recompute
+push happened to contain — which can be an arbitrary number of nights old.
+Because HRV/RHR/etc. *do* get fresh readings every live cycle, the whole
+bridge's shared timestamp stays looking fresh, so nothing visually
+distinguished "tonight's real number" from "however-old backfilled number
+riding a fresh timestamp." This is the same class of gap flagged and
+deferred back on 2026-07-26 ("mixed fresh/preserved pulls... flagged for a
+future session, per-vector timestamps or accept as known-narrow") — except
+now, with Door B's command authority live, it's not a cosmetic display
+question anymore: a multi-night-old stage-sum reading could fire
+`INITIATE SLEEP PROTOCOL` while looking exactly as fresh as a real one.
+**Not fixed yet — flagged for a decision, not patched around quietly.**
+Two candidate fixes, neither applied: (a) make the daemon decode 0x4C live
+each cycle, matching HRV's existing accumulation pattern; (b) add
+per-vector freshness tracking so a backfilled `sleep_stages` can't inherit
+a sibling vector's fresh timestamp.
+
+**Second validation point, corrected data:** real 08-10/11 night — TIB
+451min (7h31m, lines up almost exactly with 22:00 daemon start to the
+5:30am alarm), TST 350min (**5h50m, 5.83h**), efficiency 77.6%, deep
+fraction 4.9% (anomaly logged, same as the first two nights). Owner's own
+account: woke twice for the washroom overnight. 101min of classified wake
+time is plausible against two real awakenings plus ordinary pre-sleep
+settling time, though not independently verified to the minute.
+
+*Sources: live bridge JSON read before any correction, independent
+recompute against `gen3_daemon_20260810_220000.txt` alone (445,402 samples),
+`grep -n "sleep_stages" oura_gen3_ble_daemon.py` (zero hits), corrected
+recompute pushed live, owner's account of last night in chat.*
