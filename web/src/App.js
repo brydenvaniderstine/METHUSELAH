@@ -665,7 +665,12 @@ export default function MethuselahFinal() {
   const gen3Ts  = gen3Bridge?.timestamp ?? null;
   const hrvTs   = logic.vectors.hrv.source   === SOURCE_GEN3 ? gen3Ts : null;
   const rhrTs   = logic.vectors.rhr.source   === SOURCE_GEN3 ? gen3Ts : null;
-  const sleepTs = logic.vectors.sleepDurationHrs.source === SOURCE_GEN3 ? gen3Ts : null;
+  // Prefer the sleep-data-specific timestamp (real freshness of the 0x4C
+  // decode this value came from) over the bridge's general timestamp (which
+  // reflects HRV/RHR refreshing live every cycle, not sleep data at all) --
+  // falls back to the old behavior if a bridge predates this field.
+  const sleepTs = logic.vectors.sleepDurationHrs.measuredAt
+    ?? (logic.vectors.sleepDurationHrs.source === SOURCE_GEN3 ? gen3Ts : null);
 
   // Trend + avg per vector (histories come from state, seeded from localStorage on mount)
   const hrvAvg   = avgOf(hrvHist);

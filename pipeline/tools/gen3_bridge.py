@@ -58,9 +58,24 @@ def build_bridge_data(pull_class, pull_file, priority_event_count,
     black box. Backend/bridge-only for now -- not surfaced on the
     dashboard.
     """
+    # 2026-08-11: sleep_stages (and everything derived from it -- the bout-tail
+    # estimate, the stage-sum) is only ever fresh when THIS call actually
+    # decoded a real 0x4C cluster (recompute_bridge_from_daemon.py,
+    # oura_gen3_morning_pull.py). The live daemon's own per-cycle push never
+    # passes sleep_stages at all (confirmed by grep -- zero references), so it
+    # has always ridden the shared `timestamp` above, which DOES refresh every
+    # cycle via HRV/RHR. That let a backfilled sleep_stages from days-old data
+    # look exactly as fresh as a real one -- harmless before Door B, not
+    # harmless now that sleep_duration_stage_sum_hrs has command authority.
+    # sleep_data_ts tracks sleep data's own real freshness, independent of the
+    # rest of the bridge. See merge_with_existing_bridge() for how it survives
+    # a cycle with no fresh sleep_stages of its own.
+    sleep_data_ts = datetime.now().isoformat() if sleep_stages is not None else None
+
     bridge = {
         "source": "gen3_ble",
         "timestamp": datetime.now().isoformat(),
+        "sleep_data_ts": sleep_data_ts,
         "pull_file": pull_file,
         "classifier": pull_class,
         "vectors": {
@@ -145,6 +160,15 @@ def merge_with_existing_bridge(bridge_data, repo_root):
         if value is None and existing_vectors.get(key) is not None:
             new_vectors[key] = existing_vectors[key]
             backfilled_any = True
+
+    # sleep_data_ts backfill: same shape as the loop above, but it's a
+    # top-level key (sits next to "timestamp", not inside "vectors") since it
+    # describes the whole sleep-duration family, not one field. A pull with no
+    # fresh sleep_stages of its own (i.e. the live daemon, always) must inherit
+    # the existing bridge's real sleep_data_ts rather than getting a fresh one
+    # written moments ago by build_bridge_data() for data that wasn't fresh.
+    if bridge_data.get("sleep_data_ts") is None and existing.get("sleep_data_ts") is not None:
+        bridge_data["sleep_data_ts"] = existing["sleep_data_ts"]
 
     # 2026-08-10: build_bridge_data() computes sleep_duration_stage_sum_hrs from
     # THIS pull's own sleep_stages, before sleep_stages itself gets backfilled

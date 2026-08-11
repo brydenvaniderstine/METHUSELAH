@@ -86,27 +86,36 @@ export function resolveVectors(gen4, gen3, manual = {}) {
     // stage_sum_hrs (light+rem+deep sum, robust to stage-subdivision error but
     // NOT to a partial/reset bout; see tst_from_stages.py). estimateMethod
     // tells the tile which one it's showing (null = strict, never hidden).
+    // measuredAt: all three tiers ultimately come from the same 0x4C decode
+    // step, which only ever runs in an offline recompute, never live in the
+    // daemon's own per-cycle push -- see gen3_bridge.py's sleep_data_ts.
+    // Attaching it here (instead of the tile falling back to the bridge's
+    // general timestamp) is what makes a days-old sleep reading correctly
+    // show as stale even while HRV/RHR are refreshing live every cycle.
     sleepDurationHrs: (() => {
+      const measuredAt = gen3Fresh?.sleep_data_ts ?? null;
       const strict = resolveVector(
         gen4Fresh?.totalSleepHrs ?? null,
         gen3Fresh?.vectors?.sleep_duration_hrs ?? null,
         null
       );
-      if (strict.value != null) return { ...strict, estimateMethod: null };
+      if (strict.value != null) {
+        return { ...strict, estimateMethod: null, measuredAt: strict.source === SOURCE_GEN3 ? measuredAt : null };
+      }
 
       const boutTailHrs = gen3Fresh?.vectors?.sleep_duration_estimate_hrs ?? null;
       if (boutTailHrs != null) {
-        return { value: boutTailHrs, source: SOURCE_GEN3, ready: true, estimateMethod: "bout_tail" };
+        return { value: boutTailHrs, source: SOURCE_GEN3, ready: true, estimateMethod: "bout_tail", measuredAt };
       }
 
       if (STAGE_SUM_FALLBACK_ENABLED) {
         const stageSumHrs = gen3Fresh?.vectors?.sleep_duration_stage_sum_hrs ?? null;
         if (stageSumHrs != null) {
-          return { value: stageSumHrs, source: SOURCE_GEN3, ready: true, estimateMethod: "stage_sum" };
+          return { value: stageSumHrs, source: SOURCE_GEN3, ready: true, estimateMethod: "stage_sum", measuredAt };
         }
       }
 
-      return { ...strict, estimateMethod: null };
+      return { ...strict, estimateMethod: null, measuredAt: null };
     })(),
 
     // No wearable source on either generation
