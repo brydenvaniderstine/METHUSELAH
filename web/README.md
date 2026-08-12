@@ -17,12 +17,16 @@ This directory can be removed without affecting `pipeline/`, `parsers/`, `engine
 `firmware/`. The other layers have no dependency on `web/` existing. If the frontend is
 replaced (e.g. native SwiftUI), delete this directory and build against `engine/` directly.
 
-## Current violations (flagged, not yet fixed)
-These exist because `engine/` hasn't been built yet. Fix by extracting to `engine/` — do not
-add more logic to `src/App.js` in the meantime.
+## Current violations
 
-| File | Lines | Violation | Correct home |
-|---|---|---|---|
-| `src/App.js` | 275–291 | HRV/RHR/deep-sleep thresholds + OPTIMAL/NOMINAL/SUPPRESSION scoring hardcoded in React component | `engine/thresholds.js` + `engine/scoring.js` |
-| `src/App.js` | 481–522 | Command string generation and warn-level logic inside component | `engine/commands.js` |
-| `src/App.js` | 637–655 | Status label ternaries (`< 22 ? "SUPPRESSED" : "OPTIMAL"`) inline in JSX | `engine/thresholds.js` |
+None known. The three violations previously listed here (hardcoded thresholds/scoring at
+old `src/App.js` lines 275–291, command-string generation at 481–522, status-label
+ternaries at 637–655) no longer exist — checked directly against the current file
+2026-08-11: all three call sites now use `THRESHOLDS`/`COMMANDS`/`calculateBRI()` from
+`engine/`, and a repo-wide grep for the old hardcoded patterns (`< 22`, `"SUPPRESSED"`,
+`"OPTIMAL"` as bare string literals) returns nothing. This section was stale — the
+extraction it was tracking already happened, likely when `engine/` was first built
+(`engine/` has shown "Done" in `SESSION_HANDOFF.md`'s status table since at least
+2026-07-08), and nobody had come back to update this file to match. If a real violation
+resurfaces, list it here the same way, with exact line numbers, so it can be verified the
+same way this one was closed.

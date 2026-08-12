@@ -23,7 +23,7 @@ conflict, this file takes precedence — it is version-controlled.
 
 | Layer | Status | Notes |
 |---|---|---|
-| `web/` | Done | React PWA live. Business logic not yet extracted to `engine/` — violations documented in `web/README.md`. |
+| `web/` | Done | React PWA live. Business logic fully in `engine/` — the "not yet extracted" note here was stale; verified 2026-08-11 against the actual file, all three previously-documented `web/README.md` violations no longer exist. |
 | `pipeline/` Track B | Active | 34 Gen3 pulls. 9 decoders validated, 14 partial. Decoders extracted to `pipeline/decoders/`. Walk experiment inconclusive (Oura app BLE contention). |
 | `parsers/` | Not started | Skeleton exists. No parsers built. |
 | `engine/` | Done | THRESHOLDS/COMMANDS filled and live. `sources.js` implements the Gen3/Gen4 source selector, verified live in browser 2026-07-08. `AWAITING TELEMETRY` graceful-degradation state added same session. |
