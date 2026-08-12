@@ -166,6 +166,38 @@ def kill_process(proc, label):
     proc.wait()
 
 
+def request_graceful_stop(proc, label):
+    """Ask the daemon to end its session early but cleanly, for a real
+    user-requested final stop -- NOT for a stall-restart (that path must keep
+    calling kill_process() above, unchanged; running a recompute + morning
+    pull mid-restart would be wrong, the session isn't actually ending).
+
+    2026-08-11: oura_gen3_ble_daemon.py's own "always recompute + morning
+    pull" cleanup only ran on a natural nominal-end exit -- SIGTERM (what
+    kill_process() sends) kills the interpreter immediately with no Python-
+    level cleanup at all, so every early stop skipped it, silently. The
+    daemon now catches KeyboardInterrupt around its main loop and falls
+    through to that same cleanup -- SIGINT is what triggers that in Python,
+    so this function sends SIGINT instead of SIGTERM, and waits as long as
+    the nominal-end path already waits for the very same cleanup
+    (FINAL_SEGMENT_GRACE_SECONDS), before falling back to the existing hard
+    kill_process() if it doesn't finish in time.
+    """
+    print(f"[WATCHDOG {time.strftime('%H:%M:%S')}] Sending SIGINT to {label} "
+          f"(pid {proc.pid}) -- requesting a clean early stop (recompute + "
+          f"morning pull), not an immediate kill...")
+    proc.send_signal(signal.SIGINT)
+    try:
+        proc.wait(timeout=FINAL_SEGMENT_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        print(f"[WATCHDOG {time.strftime('%H:%M:%S')}] {label} did not complete its own "
+              f"shutdown within {FINAL_SEGMENT_GRACE_SECONDS}s of SIGINT -- it is likely "
+              f"hung. Killing it directly; the night's data up to now is already safely "
+              f"on disk, but the automatic recompute/morning-pull did not run and should "
+              f"be triggered manually.")
+        kill_process(proc, label)
+
+
 def run(poll_seconds, duration_hr, log_path=None, end_time=None,
         stale_minutes=STALE_MINUTES, check_interval=CHECK_INTERVAL_SECONDS):
     """Core watchdog loop, factored out of main() so a test can pass a
@@ -275,10 +307,11 @@ def run(poll_seconds, duration_hr, log_path=None, end_time=None,
                 kill_process(proc, "final daemon segment")
         return restart_count
     except KeyboardInterrupt:
-        print(f"\n[WATCHDOG {time.strftime('%H:%M:%S')}] Stopped by user -- terminating "
-              f"current daemon subprocess. Already-logged data is preserved.")
+        print(f"\n[WATCHDOG {time.strftime('%H:%M:%S')}] Stopped by user -- requesting a "
+              f"clean early stop from the daemon (recompute + morning pull), not an "
+              f"immediate kill. Already-logged data is preserved regardless.")
         if proc.poll() is None:
-            kill_process(proc, "daemon")
+            request_graceful_stop(proc, "daemon")
         raise
 
 

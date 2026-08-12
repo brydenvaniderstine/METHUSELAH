@@ -49,6 +49,7 @@ import asyncio
 import json as _json
 import os as _os
 import re as _re
+import signal as _signal
 import sys as _sys
 import time
 from collections import Counter
@@ -578,6 +579,21 @@ async def main():
     # for a manual/standalone launch with no 5th arg.
     explicit_session_start_epoch = float(_sys.argv[5]) if len(_sys.argv) > 5 else None
     session_start_time = explicit_session_start_epoch if explicit_session_start_epoch is not None else time.time()
+
+    # 2026-08-11: a bare `try/except KeyboardInterrupt` around the main loop
+    # was tried first and does NOT reliably catch a SIGINT-raised interrupt
+    # under asyncio.run() -- live-tested against a real Terminal-spawned
+    # session: the daemon still exited via the bottom-of-file outer handler,
+    # skipping the recompute+morning-pull cleanup entirely. add_signal_handler
+    # is the documented-correct asyncio pattern: it replaces the default
+    # SIGINT disposition with a plain callback while the loop is running, so
+    # the main loop can notice a clean stop_requested flag on its own next
+    # iteration instead of relying on exception propagation timing at all.
+    stop_requested = asyncio.Event()
+    try:
+        asyncio.get_running_loop().add_signal_handler(_signal.SIGINT, stop_requested.set)
+    except NotImplementedError:
+        pass  # not available on this platform -- SIGTERM-based hard kill still works
     morning_pull_threshold_hrs = 4  # fire safety-net morning pull if less than this captured
 
     repo_root = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', '..')
@@ -661,7 +677,7 @@ async def main():
 
         client = None
         cycle = 0
-        while time.time() < end_time and not wake_confirmed:
+        while time.time() < end_time and not wake_confirmed and not stop_requested.is_set():
             if client is None:
                 # Scan first: BleakClient.connect() on macOS does not respect its
                 # timeout= for bonded peripherals — CoreBluetooth queues the request
@@ -913,6 +929,12 @@ async def main():
                 tag_tally_since_digest.clear()
 
             await asyncio.sleep(poll_seconds)
+
+        if stop_requested.is_set():
+            print(f"\n[{time.strftime('%H:%M:%S')}] Stop requested -- ending the session "
+                  f"early but continuing to the same shutdown sequence as a natural "
+                  f"nominal-end exit (recompute + morning pull), instead of dying "
+                  f"immediately mid-session.")
 
         had_live_client = client is not None
         if client is not None:
