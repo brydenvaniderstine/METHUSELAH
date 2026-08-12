@@ -223,6 +223,20 @@ function isStale(iso) {
   return Date.now() - new Date(iso).getTime() > STALE_HRS * 3600000;
 }
 
+// 2026-08-12: api/gen3-bridge.js's GET, and api/glucose.js's / api/vector-
+// history.js's GET+POST, had no protection at all -- anyone with the URL
+// could read (two of the three, also write) real personal health data
+// without ever seeing the login screen. The DASHBOARD_ACCESS_KEY login only
+// ever gated the React UI, not the data underneath it. authedFetch attaches
+// the same key the login screen already verified as a header, reusing one
+// credential rather than inventing a second. Reads sessionStorage fresh on
+// every call (not a value captured in a stale closure) since the key is
+// written once, at login, from a component far from every call site here.
+function authedFetch(url, options = {}) {
+  const key = sessionStorage.getItem("dashboardKey") || "";
+  return fetch(url, { ...options, headers: { ...(options.headers || {}), "X-Dashboard-Key": key } });
+}
+
 function getTrend(history) {
   if (!history || history.length < 2) return null;
   const cur = history[history.length - 1];
@@ -431,7 +445,7 @@ export default function MethuselahFinal() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: input }),
       });
-      if (res.ok) { unlock(); return; }
+      if (res.ok) { sessionStorage.setItem("dashboardKey", input); unlock(); return; }
       // A wrong key and a missing DASHBOARD_ACCESS_KEY (server misconfigured)
       // used to render identical text -- a real config mistake would have
       // looked exactly like a typo, with no signal pointing at the real
@@ -532,15 +546,21 @@ export default function MethuselahFinal() {
   }, []);
 
   useEffect(() => {
+    // Gated on `locked`, not just []: this fetch now requires a real key
+    // (authedFetch), which doesn't exist yet on first mount, before login.
+    // Re-running when `locked` flips to false is what makes it fetch real
+    // data the moment a valid key exists, instead of failing once on mount
+    // and only recovering up to 5 minutes later via the interval below.
+    if (locked) return;
     const fetchBridge = () =>
-      fetch('/api/gen3-bridge')
+      authedFetch('/api/gen3-bridge')
         .then(res => res.ok ? res.json() : null)
         .catch(() => null)
         .then(data => { if (data && data.source === 'gen3_ble') setGen3Bridge(data); });
     fetchBridge();
     const id = setInterval(fetchBridge, 5 * 60 * 1000); // refresh every 5 min
     return () => clearInterval(id);
-  }, []);
+  }, [locked]);
 
   // Cross-device glucose sync (2026-08-02) -- localStorage never leaves the
   // browser it was written in, so a reading entered on one device was
@@ -550,7 +570,8 @@ export default function MethuselahFinal() {
   // readBLEGlucose below push new readings back up so other devices pick
   // them up on their own next fetch.
   useEffect(() => {
-    fetch('/api/glucose')
+    if (locked) return; // see the gen3-bridge effect above for why
+    authedFetch('/api/glucose')
       .then(res => res.ok ? res.json() : null)
       .catch(() => null)
       .then(data => {
@@ -567,10 +588,10 @@ export default function MethuselahFinal() {
           localStorage.setItem("glucoseTimestamp", data.timestamp);
         }
       });
-  }, []);
+  }, [locked]);
 
   const pushGlucoseToServer = (value, timestamp) => {
-    fetch('/api/glucose', {
+    authedFetch('/api/glucose', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value, timestamp }),
@@ -587,7 +608,8 @@ export default function MethuselahFinal() {
   // "Update 7-day histories" effect below pushes each day's values back up
   // so every device converges on the same shared history.
   useEffect(() => {
-    fetch('/api/vector-history')
+    if (locked) return; // see the gen3-bridge effect above for why
+    authedFetch('/api/vector-history')
       .then(res => res.ok ? res.json() : null)
       .catch(() => null)
       .then(history => {
@@ -607,7 +629,7 @@ export default function MethuselahFinal() {
         if (fromServer.spo2.length)              { setSpo2Hist(fromServer.spo2);      localStorage.setItem("spo2History", JSON.stringify(fromServer.spo2)); }
         if (fromServer.steps.length)             { setStepHist(fromServer.steps);     localStorage.setItem("stepHistory", JSON.stringify(fromServer.steps)); }
       });
-  }, []);
+  }, [locked]);
 
   // Update 7-day histories from Gen3 bridge — once per bridge date.
   // Writes to localStorage (fast local cache) AND pushes to the shared
@@ -659,7 +681,7 @@ export default function MethuselahFinal() {
       addLog(`GEN3 STEPS 7D AVG: ${avg}/DAY // ${trend}`, "roche");
     }
     if (Object.keys(serverPayload).length > 1) {
-      fetch('/api/vector-history', {
+      authedFetch('/api/vector-history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(serverPayload),

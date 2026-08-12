@@ -7,14 +7,16 @@
 //   KV_REST_API_URL, KV_REST_API_TOKEN  — auto-injected once a KV store is
 //     created and linked to this project in the Vercel dashboard.
 //   GEN3_BRIDGE_WRITE_SECRET — a secret you choose, so only the pull script
-//     (which sends it back as a header) can write here. Anyone can still GET
-//     this data unauthenticated, same as the static file it replaces was.
+//     (which sends it back as a header) can write here.
 //
-// NOT YET LIVE-TESTED — written against the documented Upstash REST wire
-// format (POST {url}/set/{key} with the value as the raw body; GET
-// {url}/get/{key} returns { result: <stringified value> }), but there is no
-// KV store provisioned yet to verify against. Smoke-test both GET and POST
-// once the store exists, before relying on this.
+// 2026-08-12: GET used to be reachable by anyone with the URL, no auth at
+// all -- real biometric data (HRV, RHR, sleep duration). Now requires the
+// same DASHBOARD_ACCESS_KEY the login screen checks, via requireDashboardKey()
+// (see api/_authCheck.js). POST is untouched -- that's the Python pipeline
+// writing, a different actor authenticated by GEN3_BRIDGE_WRITE_SECRET, not
+// the browser, so it doesn't use this check.
+
+import { requireDashboardKey } from "./_authCheck.js";
 
 const KEY = "gen3_latest";
 
@@ -26,6 +28,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "GET") {
+    if (!requireDashboardKey(req, res)) return;
     try {
       const kvRes = await fetch(`${kvUrl}/get/${KEY}`, {
         headers: { Authorization: `Bearer ${kvToken}` },

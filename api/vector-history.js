@@ -12,6 +12,13 @@
 // gen3_latest and manual_glucose so none of the three can ever clobber
 // another.
 
+// 2026-08-12: GET and POST were both fully open, no protection at all --
+// anyone with the URL could read 7 days of HRV/RHR/sleep/SpO2/steps history,
+// or write fake entries into it. Now requires DASHBOARD_ACCESS_KEY (same one
+// the login screen checks) via requireDashboardKey() -- see api/_authCheck.js.
+
+import { requireDashboardKey } from "./_authCheck.js";
+
 const KEY = "vector_history";
 const MAX_DAYS_KEPT = 10; // only ever need the last 7 for the UI; a little headroom
 
@@ -23,6 +30,7 @@ export default async function handler(req, res) {
   if (!kvUrl || !kvToken) {
     return res.status(500).json({ error: "KV store not configured (KV_REST_API_URL/KV_REST_API_TOKEN missing)" });
   }
+  if (!requireDashboardKey(req, res)) return;
 
   if (req.method === "GET") {
     try {

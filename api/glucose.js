@@ -10,14 +10,16 @@
 // glucose) can never silently wipe this out on their next write -- the two
 // keys are independently owned and never overwrite each other.
 //
-// No write-secret here (unlike gen3-bridge.js's GEN3_BRIDGE_WRITE_SECRET):
-// that secret protects a server-side script's write path, which can keep an
-// env var genuinely private. This value is written directly from the
-// browser, where any embedded "secret" would be visible in the page's own
-// JS/network traffic anyway -- so it offers the same protection level as
-// the already-unauthenticated GET on gen3-bridge.js, not less. Value is
-// still range-validated server-side (0.5-30 mmol/L) so a malformed/garbage
-// POST can't corrupt what's stored.
+// 2026-08-12, correcting the reasoning above: it conflated a STATIC secret
+// baked into the bundle for every visitor (genuinely pointless -- that's
+// exactly the MASTER_KEY mistake fixed elsewhere this session) with a
+// session credential a browser only holds *after* proving it knows the real
+// password. Those are not the same thing, and this endpoint had neither --
+// GET and POST were both fully open, no protection at all beyond the value
+// range-check below. Now requires DASHBOARD_ACCESS_KEY (same one the login
+// screen checks) via requireDashboardKey() -- see api/_authCheck.js.
+
+import { requireDashboardKey } from "./_authCheck.js";
 
 const KEY = "manual_glucose";
 
@@ -27,6 +29,7 @@ export default async function handler(req, res) {
   if (!kvUrl || !kvToken) {
     return res.status(500).json({ error: "KV store not configured (KV_REST_API_URL/KV_REST_API_TOKEN missing)" });
   }
+  if (!requireDashboardKey(req, res)) return;
 
   if (req.method === "GET") {
     try {
