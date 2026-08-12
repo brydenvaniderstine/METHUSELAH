@@ -8393,3 +8393,79 @@ settling time, though not independently verified to the minute.
 recompute against `gen3_daemon_20260810_220000.txt` alone (445,402 samples),
 `grep -n "sleep_stages" oura_gen3_ble_daemon.py` (zero hits), corrected
 recompute pushed live, owner's account of last night in chat.*
+
+---
+
+## 2026-08-11 — RESOLVED (fixed + live-verified, not just written): early-stop path never ran the daemon's automatic recompute+morning-pull; first fix attempt was tested and found NOT to work before landing the real one
+
+**Two other fixes shipped same day, quick log:** per-vector freshness added
+(`sleep_data_ts`, `engine/sources.js`'s `measuredAt`) so sleep data no longer
+rides a fresh timestamp it doesn't own -- closes the class of bug from the
+entry above, verified against the exact bug scenario in isolation
+(commit `0004425`).
+
+**The bigger gap, found by asking why I've had to manually recompute every
+single morning this week:** `oura_gen3_ble_daemon.py`'s "always recompute +
+always fire a morning pull" cleanup sits after the main loop and only runs
+on a natural nominal-end exit. Every early stop -- the watchdog's own
+SIGTERM on a stall-restart, or a user-requested stop -- kills the
+interpreter before that code ever runs. Confirmed via code reading
+(`kill_process()` sends SIGTERM via `proc.terminate()`; the daemon installs
+no SIGTERM handler at all, so the OS default applies: immediate
+termination, no Python cleanup). This is not a new bug -- it has been true
+every morning this project's asked to stop early, including both mornings
+this week; the manual recompute+push I did each time was substituting for
+a step that structurally could not fire, not duplicating one that already
+had.
+
+**First attempt, built, then found wrong by live-testing it -- not assumed
+correct from code review:** wrapped the main while-loop + disconnect block
+in `try/except KeyboardInterrupt`, reasoning that SIGINT (unlike SIGTERM)
+should raise `KeyboardInterrupt` and get caught there, falling through to
+the existing cleanup. Required a 267-line mechanical reindentation, done via
+a verified script transform (`git diff -w` confirmed zero non-whitespace
+changes beyond the two new wrapper lines) specifically to avoid manual
+transcription risk on a block that size. **Live-tested against a real
+Terminal.app-spawned session (matching exactly how the daemon actually
+runs) and it did NOT work**: the daemon still exited via the *outer*
+handler at the bottom of the file ("Stopped by user. Already-logged data
+and the last bridge push are preserved.") -- the inner except never fired,
+cleanup never ran. `asyncio.run()` does not reliably let a bare
+`except KeyboardInterrupt` inside the running coroutine catch a SIGINT this
+way. Reverted (`git checkout --`) rather than shipped, since it demonstrably
+didn't do what it claimed.
+
+**Real fix:** `asyncio.get_running_loop().add_signal_handler(SIGINT,
+stop_requested.set)` -- the documented-correct asyncio pattern, which
+replaces the default SIGINT disposition with a plain callback while the
+loop runs. The main loop's own `while` condition now checks
+`stop_requested.is_set()` directly; no exception involved anywhere. 24-line
+diff, zero reindentation. `gen3_daemon_watchdog.py` gets a new
+`request_graceful_stop()`, used *only* by the user-stop path (`except
+KeyboardInterrupt`) -- sends SIGINT instead of SIGTERM, waits up to
+`FINAL_SEGMENT_GRACE_SECONDS` (600s, already used by the nominal-end path
+for this exact cleanup) before falling back to the existing hard
+`kill_process()`. The stall-restart path and the nominal-end fallback are
+both untouched, still plain SIGTERM -- a mid-session stall-restart must
+never trigger a recompute/morning-pull; the session isn't ending.
+
+**Verified live, twice, for real, both against an actual Terminal.app
+session (a sandboxed background test gave a false negative first --
+`kill -INT` sent from a separate shell invocation did not reliably
+interrupt even a trivial isolated `time.sleep()` in that context; the same
+signal against a real Terminal-spawned process worked exactly as expected,
+both before and after the fix):** confirmed SIGINT stops the loop after its
+already-in-flight cycle finishes (not immediately, not stuck on the next
+one), `[POST-RUN]` recompute+push fires automatically, the 10s CoreBluetooth
+wait runs, `[MORNING PULL]` fires a real BLE reconnect and completes, and
+the entire process tree exits with nothing left running -- no watchdog
+escalation to a hard kill needed either time. The test's own real (if
+throwaway) pull briefly went live via the same automatic push path being
+verified; live bridge was restored to the correct real morning data
+immediately after.
+
+*Sources: `oura_gen3_ble_daemon.py`/`gen3_daemon_watchdog.py` current +
+prior source, two live end-to-end tests via `osascript ... Terminal.app`
+(first attempt: failed, reverted; second: passed), a control test isolating
+the sandboxed-background-signal false negative, live bridge JSON before and
+after restoration. Commit `9b937bf`.*
