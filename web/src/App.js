@@ -396,7 +396,7 @@ export default function MethuselahFinal() {
 
   const [locked,          setLocked]          = useState(true);
   const [input,           setInput]           = useState("");
-  const [authError,       setAuthError]       = useState(false);
+  const [authError,       setAuthError]       = useState(null); // null | "wrong" | "config" | "network"
   const [clock,           setClock]           = useState(ts());
   const [glucoseReading,  setGlucoseReading]  = useState(null);
   const [glucoseTimestamp, setGlucoseTimestamp] = useState(() => localStorage.getItem("glucoseTimestamp") || null);
@@ -431,17 +431,22 @@ export default function MethuselahFinal() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: input }),
       });
-      if (res.ok) unlock();
-      else { setAuthError(true); setInput(""); }
+      if (res.ok) { unlock(); return; }
+      // A wrong key and a missing DASHBOARD_ACCESS_KEY (server misconfigured)
+      // used to render identical text -- a real config mistake would have
+      // looked exactly like a typo, with no signal pointing at the real
+      // cause. api/auth.js returns 401 for a wrong key, 500 for anything else.
+      setAuthError(res.status === 401 ? "wrong" : "config");
+      setInput("");
     } catch {
-      setAuthError(true);
+      setAuthError("network");
       setInput("");
     }
   };
 
   const unlock = () => {
     setLocked(false);
-    setAuthError(false);
+    setAuthError(null);
     const today = new Date().toLocaleDateString("en-CA");
     const protocolDate = localStorage.getItem("protocolExecutedDate");
     if (protocolDate === today) {
@@ -743,7 +748,7 @@ export default function MethuselahFinal() {
             className="auth-input"
             type="password"
             value={input}
-            onChange={e => { setInput(e.target.value); setAuthError(false); }}
+            onChange={e => { setInput(e.target.value); setAuthError(null); }}
             onKeyDown={e => {
               if (e.key !== "Enter") return;
               attemptUnlock();
@@ -757,7 +762,9 @@ export default function MethuselahFinal() {
           >
             ENTER
           </button>
-          {authError && <div className="auth-error">⚠ ACCESS DENIED // INVALID KEY</div>}
+          {authError === "wrong" && <div className="auth-error">⚠ ACCESS DENIED // INVALID KEY</div>}
+          {authError === "config" && <div className="auth-error">⚠ SERVER MISCONFIGURED // DASHBOARD_ACCESS_KEY NOT SET</div>}
+          {authError === "network" && <div className="auth-error">⚠ NETWORK ERROR // COULD NOT REACH SERVER</div>}
         </div>
       ) : (
         <div className="shell" style={{ minHeight: "100vh", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
