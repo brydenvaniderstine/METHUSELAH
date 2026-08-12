@@ -1,6 +1,13 @@
 # web/
 
-React PWA — methuselah.ca. Capacitor wrapper for iOS lives at `../ios/`.
+React PWA — methuselah.ca.
+
+**iOS wrapper status, corrected 2026-08-12:** `../ios/` does not exist — checked directly,
+not assumed. Capacitor is only partially set up: `capacitor.config.ts` is real and configured
+(appId `com.methuselah.app`, iOS-specific webview settings), and `@capacitor/ios` is a real
+dependency, but `@capacitor/core` and `@capacitor/cli` are not installed, so `npx cap add ios`
+wouldn't run as-is. This was started, not finished, and not currently in progress — treat the
+iOS wrapper as not built yet, not as "lives elsewhere."
 
 ## What belongs here
 - React components, pages, hooks, styles
