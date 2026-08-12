@@ -1012,6 +1012,29 @@ async def main():
                  f"See oura_gen3_morning_pull.py's own morning_pull_handoff.log entries "
                  f"above for its real scan start/outcome timestamps.")
 
+    # 2026-08-12: back up tonight's raw pull to the private methuselah-raw-
+    # data repo -- lives outside this repo entirely (pipeline/data/raw_pulls/
+    # is deliberately never committed here; this repo is public, that data
+    # is real personal biometric history). Runs last, after the morning pull,
+    # so the backup picks up whatever that just added too. Best-effort: a
+    # failure here (no network, repo missing, whatever) must never be treated
+    # as this session having failed -- the real data is still safe on disk
+    # either way, this is redundancy on top of that, not instead of it.
+    backup_script = _os.path.expanduser("~/methuselah-raw-data/sync.sh")
+    if _os.path.exists(backup_script):
+        print(f"\n[BACKUP] Syncing tonight's raw pull to the private backup repo...")
+        try:
+            backup_result = _subprocess.run([backup_script], capture_output=True, text=True, timeout=120)
+            if backup_result.returncode == 0:
+                print("[BACKUP] Synced.")
+            else:
+                print(f"[BACKUP] sync.sh exited with code {backup_result.returncode}: "
+                      f"{backup_result.stderr.strip()}")
+        except Exception as ex:
+            print(f"[BACKUP] Failed to run sync.sh: {ex}")
+    else:
+        print(f"\n[BACKUP] Skipped -- {backup_script} not found on this machine.")
+
 
 if __name__ == "__main__":
     try:
