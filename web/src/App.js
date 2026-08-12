@@ -207,7 +207,6 @@ body::before {
 .auth-error { font-size: 9px; color: var(--accent-red); letter-spacing: 2px; animation: fadeIn 0.2s ease; }
 `;
 
-const MASTER_KEY = "v1";
 const STALE_HRS = 12;
 
 function formatAge(iso) {
@@ -418,6 +417,27 @@ export default function MethuselahFinal() {
   const logRef = useRef(null);
 
   const addLog = (msg, type = "", color = null) => setLogs(prev => [{ time: ts(), msg, type, color }, ...prev].slice(0, 12));
+
+  // The actual comparison happens server-side (api/auth.js) -- this used to
+  // be `if (input === MASTER_KEY) unlock()` with MASTER_KEY hardcoded right
+  // here, which meant the real password shipped inside the public JS bundle
+  // every visitor's browser downloads. Never actually secret, just a speed
+  // bump. Now the guess is sent to the server and only a pass/fail comes
+  // back -- the real key lives only in a Vercel env var.
+  const attemptUnlock = async () => {
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: input }),
+      });
+      if (res.ok) unlock();
+      else { setAuthError(true); setInput(""); }
+    } catch {
+      setAuthError(true);
+      setInput("");
+    }
+  };
 
   const unlock = () => {
     setLocked(false);
@@ -726,18 +746,14 @@ export default function MethuselahFinal() {
             onChange={e => { setInput(e.target.value); setAuthError(false); }}
             onKeyDown={e => {
               if (e.key !== "Enter") return;
-              if (input === MASTER_KEY) unlock();
-              else { setAuthError(true); setInput(""); }
+              attemptUnlock();
             }}
             placeholder="********"
           />
           <div className="auth-hint">INPUT MASTER KEY → PRESS RETURN</div>
           <button
             className="auth-decrypt"
-            onClick={() => {
-              if (input === MASTER_KEY) unlock();
-              else { setAuthError(true); setInput(""); }
-            }}
+            onClick={attemptUnlock}
           >
             ENTER
           </button>
