@@ -1,0 +1,45 @@
+name: Tests
+
+# Runs the real, permanent test suite added 2026-08-11 on every push and PR
+# to main. Before this, all 52 tests only ran when someone remembered to run
+# them by hand -- this closes that gap, not adds new coverage.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      # Stdlib unittest only -- no pytest, no requirements.txt exists in
+      # this project and none is needed for these tests.
+      - name: Run pipeline unit tests
+        run: python3 -m unittest discover -s pipeline/tests -v
+
+  js-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+      # npm test's own "pretest" script re-syncs engine/*.js into
+      # src/engine/ first, so this can never silently test a stale copy --
+      # same guarantee verified locally before this workflow was written.
+      - name: Run engine unit tests
+        working-directory: web
+        env:
+          CI: true
+        run: npm test -- src/engine --watchAll=false

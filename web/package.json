@@ -20,6 +20,7 @@
   "scripts": {
     "prebuild": "cp ../engine/*.js src/engine/ && cp ../pipeline/data/bridge/gen3_latest.json public/gen3_latest.json 2>/dev/null || true",
     "prestart": "cp ../engine/*.js src/engine/ && cp ../pipeline/data/bridge/gen3_latest.json public/gen3_latest.json 2>/dev/null || true",
+    "pretest": "cp ../engine/*.js src/engine/",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test --env=jsdom",
