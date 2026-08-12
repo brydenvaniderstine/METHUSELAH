@@ -685,7 +685,14 @@ below still referencing the old Desktop path is historical — use `~/methuselah
    priority" item 0 above — tonight's unattended 22:00 fire is the still-open follow-up
    (this fix was verified via manual kickstart, not yet a full unattended night).
 0. **Tonight's run — daemon is ready, `asyncio.wait_for` confirmed working 2 nights in a row.** Launch with: `cd ~/Desktop/METHUSELAH && nohup python3 -u pipeline/tools/oura_gen3_ble_daemon.py > /tmp/daemon_tonight.txt 2>&1 &`. Check startup with `tail -f /tmp/daemon_tonight.txt`, close lid once authenticated. Morning: `cat /tmp/daemon_tonight.txt`. Goal: third night of 0x5A cluster to further confirm stage 0 vs stage 3 disambiguation hypothesis.
-0. **Fix `~/.zshrc` credential mismatch** — `GEN3_BRIDGE_WRITE_SECRET` in `.zshrc` is wrong/stale. Working secret is in `~/.bash_profile` (last of 3 export lines: `30157c93fc0efadc54aa1257676e1e3fd5cb27c084267c8e2dbb6e500387c80d`). Either remove the `.zshrc` export or sync it to this value. Until fixed, any bridge push from a zsh shell will get HTTP 401.
+0. ~~**Fix `~/.zshrc` credential mismatch**~~ — **RESOLVED 2026-08-12.** This entry
+   previously quoted the full live `GEN3_BRIDGE_WRITE_SECRET` value in plain text —
+   found still live in this file on the public repo (commit `f071385`, 2026-07-18,
+   ~3-4 weeks exposed) during a routine review. Rotated: both `~/.zshrc` and
+   `~/.bash_profile` now hold a new value (never quoted here — see credential
+   handling note at the top of this file). Vercel's env var must be updated to
+   match before any push succeeds again; until then, pushes correctly fail closed
+   (401), not silently.
 0. **Live end-to-end tile verification** — tile rework verified in no-data state only. First overnight daemon session will confirm Gen3-sourced HRV and Sleep Debt values appear in the correct tile slot with `● GEN3 BLE` and correct age label. Gen4 live path also needs re-verification once a new Oura token is provisioned.
 
 1. ~~Gen3 fallback fix — Vercel KV provisioning~~ — DONE 2026-07-12. See today's summary above. Fully verified live: real pull → `[BRIDGE PUSH] 200`, and `SOURCE_SELECTOR_TEST.md` Test A passed on methuselah.ca itself (CARDIAC LOAD → `● GEN3 BLE`, command panel fired off the resolved Gen3 value). No longer an open item.
