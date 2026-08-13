@@ -167,6 +167,11 @@ body::before {
 .log-cursor { display: inline-block; width: 6px; height: 9px; background: var(--accent-amber); animation: blink-cursor 1s step-end infinite; margin-left: 2px; vertical-align: middle; }
 @keyframes blink-cursor { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
 
+.history-log { border-top: 1px solid var(--line-bright); padding-top: 8px; margin-top: 8px; flex-shrink: 0; }
+.history-log-header { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; margin-bottom: 6px; }
+.history-log-line { font-size: 9px; color: var(--text-dim); display: flex; gap: 12px; padding: 1px 0; }
+.history-log-date { color: var(--accent-amber); min-width: 80px; flex-shrink: 0; }
+
 .telemetry-toggle {
   display: flex; justify-content: flex-end; align-items: center; gap: 8px;
   padding: 6px 4px; font-size: 9px; letter-spacing: 1px; color: var(--text-dim);
@@ -403,6 +408,45 @@ function RawTelemetryPanel({ bridge, open, onToggle, stale }) {
   );
 }
 
+// 2026-08-12: fills the empty space below the log with a real, already-
+// decoded week -- no new fetch, no new decode work, no new trust-tier
+// decision (same values already backing each tile's own "7d avg"). Raw
+// values only, deliberately -- no composite score, learning directly from
+// reviewing a real Oura export this session (see the CSV discussion in
+// SESSION_HANDOFF.md 2026-08-12). SpO2 and steps included here specifically
+// because the methuselah skill's own data-trust tiering places both at
+// "weekly-trend only, log-line" -- this row-per-day log is exactly that
+// surface, not the primary grid. Glucose excluded: api/glucose.js only
+// ever stores the single latest reading, no history exists to show yet.
+function WeeklyHistoryLog({ historyByDate }) {
+  const dates = Object.keys(historyByDate || {}).sort().slice(-7);
+  if (dates.length === 0) return null;
+  return (
+    <div className="history-log">
+      <div className="history-log-header">7-DAY HISTORY // RAW VALUES ONLY</div>
+      {dates.map(date => {
+        const d = historyByDate[date] || {};
+        return (
+          <div key={date} className="history-log-line">
+            <span className="history-log-date">[{date}]</span>
+            <span>
+              {d.hrv != null ? `HRV ${Math.round(d.hrv)}ms` : "HRV --"}
+              {" · "}
+              {d.rhr != null ? `RHR ${Math.round(d.rhr)}bpm` : "RHR --"}
+              {" · "}
+              {d.sleepDurationHrs != null ? `SLEEP ${d.sleepDurationHrs.toFixed(1)}h` : "SLEEP --"}
+              {" · "}
+              {d.spo2 != null ? `SPO2 ${Math.round(d.spo2)}%` : "SPO2 --"}
+              {" · "}
+              {d.steps != null ? `STEPS ${Math.round(d.steps)}` : "STEPS --"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // calculateBRI moved to engine/index.js — imported above
 
 export default function MethuselahFinal() {
@@ -421,6 +465,13 @@ export default function MethuselahFinal() {
   const [glucHist,  setGlucHist]  = useState(() => JSON.parse(localStorage.getItem("glucoseHistory") || "[]"));
   const [spo2Hist,  setSpo2Hist]  = useState(() => JSON.parse(localStorage.getItem("spo2History") || "[]"));
   const [stepHist,  setStepHist]  = useState(() => JSON.parse(localStorage.getItem("stepHistory") || "[]"));
+  // 2026-08-12: date-keyed, unlike hrvHist/rhrHist/etc above -- those are
+  // independently null-filtered per field before slicing, so they can't be
+  // reliably lined up by calendar date with each other (a day missing only
+  // HRV would silently desync hrvHist's index from rhrHist's). Kept as its
+  // own state, populated from the same fetch, purely additive -- doesn't
+  // touch the existing per-field arrays or the tiles' own trend logic.
+  const [historyByDate, setHistoryByDate] = useState({});
   const [glucoseEntryOpen, setGlucoseEntryOpen] = useState(false);
   const [glucoseInput,    setGlucoseInput]    = useState("");
   const [execState,       setExecState]       = useState("idle");
@@ -628,6 +679,7 @@ export default function MethuselahFinal() {
         if (fromServer.sleepDurationHrs.length)  { setSleepHist(fromServer.sleepDurationHrs); localStorage.setItem("sleepDurationHistory", JSON.stringify(fromServer.sleepDurationHrs)); }
         if (fromServer.spo2.length)              { setSpo2Hist(fromServer.spo2);      localStorage.setItem("spo2History", JSON.stringify(fromServer.spo2)); }
         if (fromServer.steps.length)             { setStepHist(fromServer.steps);     localStorage.setItem("stepHistory", JSON.stringify(fromServer.steps)); }
+        setHistoryByDate(history);
       });
   }, [locked]);
 
@@ -934,6 +986,8 @@ export default function MethuselahFinal() {
               </div>
             ))}
           </div>
+
+          <WeeklyHistoryLog historyByDate={historyByDate} />
         </div>
       )}
     </>
