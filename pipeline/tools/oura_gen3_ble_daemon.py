@@ -1027,13 +1027,39 @@ async def main():
             backup_result = _subprocess.run([backup_script], capture_output=True, text=True, timeout=120)
             if backup_result.returncode == 0:
                 print("[BACKUP] Synced.")
+                backup_status = "OK"
             else:
                 print(f"[BACKUP] sync.sh exited with code {backup_result.returncode}: "
                       f"{backup_result.stderr.strip()}")
+                backup_status = "FAILED"
         except Exception as ex:
             print(f"[BACKUP] Failed to run sync.sh: {ex}")
+            backup_status = "FAILED"
     else:
         print(f"\n[BACKUP] Skipped -- {backup_script} not found on this machine.")
+        backup_status = "skipped"
+
+    # 2026-08-12: a real, passive "did last night actually work" signal --
+    # not a monitoring platform, just a notification, fired as the true last
+    # step of the same cleanup sequence that now reliably runs on every real
+    # session end (early stop or natural end, since the 2026-08-11 fix).
+    # Live-verified this only works when the process is really running
+    # inside a Terminal.app window (which the real daemon always is, via the
+    # launchd plist's own osascript spawn) -- the same sandboxed-background-
+    # process caveat already found and worked around for SIGINT earlier this
+    # week applies here too; a bare subprocess call from a non-Terminal
+    # context silently produces no visible notification at all.
+    recompute_status = "OK" if _rc.returncode == 0 else "FAILED"
+    pull_status = "OK" if result.returncode == 0 else "FAILED"
+    notif_body = (f"{total_events_logged} events logged  |  Recompute: {recompute_status}  |  "
+                  f"Morning pull: {pull_status}  |  Backup: {backup_status}")
+    try:
+        _subprocess.run(
+            ["osascript", "-e", f'display notification "{notif_body}" with title "METHUSELAH"'],
+            capture_output=True, timeout=15,
+        )
+    except Exception:
+        pass  # the notification itself is a nice-to-have -- never let it be the thing that fails
 
 
 if __name__ == "__main__":
