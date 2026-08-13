@@ -20,7 +20,15 @@
 import { requireDashboardKey } from "./_authCheck.js";
 
 const KEY = "vector_history";
-const MAX_DAYS_KEPT = 10; // only ever need the last 7 for the UI; a little headroom
+// 2026-08-12: was 10 (only the UI's 7-day trend needed it) -- but this is
+// the only place processed history (HRV/RHR/sleep duration/SpO2/steps)
+// persists at all; the raw BLE data has its own separate backup, but this
+// derived, human-readable layer was silently throwing away everything past
+// 10 days, forever, unrecoverably. A year of daily entries here is ~50KB of
+// JSON; a real cap still exists (not literally unbounded) as a safety bound
+// against something pathological, not because retention itself costs
+// anything at this scale.
+const MAX_DAYS_KEPT = 36500; // 100 years -- a bound, not a real limit in practice
 
 const FIELDS = ["hrv", "rhr", "sleepDurationHrs", "spo2", "steps"];
 
