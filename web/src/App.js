@@ -192,6 +192,7 @@ body::before {
 .telemetry-raw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; }
 .telemetry-raw-grid .label { color: var(--text-dim); }
 .telemetry-raw-grid .value { color: var(--accent-amber); }
+.telemetry-tag { color: var(--text-dim); font-size: 8px; }
 .telemetry-stages { margin-top: 8px; color: var(--text-dim); letter-spacing: 0.3px; }
 
 .auth-overlay {
@@ -376,9 +377,9 @@ function RawTelemetryPanel({ bridge, open, onToggle, stale }) {
             </div>
             <div className="telemetry-divider" />
             <div className="telemetry-raw-grid">
-              <div><span className="label">RHR ......... </span><span className="value">{v.rhr_bpm != null ? v.rhr_bpm.toFixed(1) + " BPM" : "N/A"}</span></div>
+              <div><span className="label">RHR ......... </span><span className="value">{v.rhr_bpm != null ? v.rhr_bpm.toFixed(1) + " BPM" : "N/A"}</span>{v.rhr_bpm != null && <span className="telemetry-tag"> [AUTHORITATIVE]</span>}</div>
               <div><span className="label">BATTERY ..... </span><span className="value">{v.battery_pct != null ? v.battery_pct + "%" : "N/A"}</span></div>
-              <div><span className="label">IBI_HR ...... </span><span className="value">{v.ibi_hr_bpm != null ? v.ibi_hr_bpm.toFixed(1) + " BPM" : "N/A"}</span></div>
+              <div><span className="label">IBI_HR ...... </span><span className="value">{v.ibi_hr_bpm != null ? v.ibi_hr_bpm.toFixed(1) + " BPM" : "N/A"}</span>{v.ibi_hr_bpm != null && <span className="telemetry-tag"> [CROSS-CHECK]</span>}</div>
               <div><span className="label">TEMP ........ </span><span className="value">{v.sleep_temp_c != null ? v.sleep_temp_c + "°C" : "N/A"}</span></div>
               <div><span className="label">SPO2 ........ </span><span className="value">{v.spo2_avg_pct != null ? v.spo2_avg_pct + "%" : "N/A"}</span></div>
               <div><span className="label">STEPS ....... </span><span className="value">{v.step_count != null ? v.step_count : "N/A"}</span></div>
@@ -478,7 +479,7 @@ export default function MethuselahFinal() {
   const [briefingOpen,    setBriefingOpen]    = useState(false);
   const [rawTelemetryOpen, setRawTelemetryOpen] = useState(false);
   const [gen3Bridge,      setGen3Bridge]      = useState(null);
-  const [logs,            setLogs]            = useState([{ time: ts(), msg: "BIOLOGICAL SYSTEMS ONLINE // STANDING BY", type: "" }]);
+  const [logs,            setLogs]            = useState([]);
   const logRef = useRef(null);
 
   const addLog = (msg, type = "", color = null) => setLogs(prev => [{ time: ts(), msg, type, color }, ...prev].slice(0, 12));
@@ -741,13 +742,6 @@ export default function MethuselahFinal() {
     }
     localStorage.setItem("lastBridgeHistoryDate", bridgeDate);
   }, [gen3Bridge]);
-
-  useEffect(() => {
-    if (!locked) {
-      addLog("TELEMETRY STREAM ACTIVE", "event");
-      addLog("READY // 4 VECTORS ENGAGED", "event");
-    }
-  }, [locked]);
 
   const logic = evaluateSources(null, gen3Bridge, { glucose: glucoseReading });
   const { hrv, rhr, sleepDurationHrs } = {
