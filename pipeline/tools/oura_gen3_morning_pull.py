@@ -57,7 +57,7 @@ from decoders import (
 )
 
 ADDR        = "71E77907-1EE9-4949-801C-02979071309C"
-AUTH_KEY    = bytes.fromhex("bdc2c37e63ce24c445b7de1eba6e1a65")
+AUTH_KEY    = bytes.fromhex(_os.environ["GEN3_RING_AUTH_KEY"])
 WRITE_CHAR  = "98ed0002-a541-11e4-b6a0-0002a5d5c51b"
 NOTIFY_CHAR = "98ed0003-a541-11e4-b6a0-0002a5d5c51b"
 received = []

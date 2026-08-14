@@ -9,6 +9,7 @@ as-is, not migrated to this module -- that would be unrelated churn on
 working code.
 """
 import asyncio
+import os
 import struct
 import time
 from bleak import BleakClient, BleakScanner
@@ -16,7 +17,10 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
 ADDR = "71E77907-1EE9-4949-801C-02979071309C"
-AUTH_KEY = bytes.fromhex("bdc2c37e63ce24c445b7de1eba6e1a65")
+# 2026-08-13: was hardcoded here (and duplicated in oura_gen3_daily_pull.py /
+# oura_gen3_morning_pull.py) and committed in plaintext to this public repo --
+# same class of exposure as GEN3_BRIDGE_WRITE_SECRET, caught and fixed 07-18.
+AUTH_KEY = bytes.fromhex(os.environ["GEN3_RING_AUTH_KEY"])
 WRITE_CHAR = "98ed0002-a541-11e4-b6a0-0002a5d5c51b"
 NOTIFY_CHAR = "98ed0003-a541-11e4-b6a0-0002a5d5c51b"
 
