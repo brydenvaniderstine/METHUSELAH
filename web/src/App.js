@@ -159,6 +159,15 @@ body::before {
   gap: 2px;
   min-height: 100px;
 }
+/* No reserved floor when there's nothing to show -- a quiet page-load
+   shouldn't hold open a 100px+ region for events that haven't happened
+   yet. Restores itself the moment a real event lands. */
+.sys-log-empty {
+  flex: 0 0 auto;
+  min-height: 0;
+  border-top: none;
+  padding-top: 0;
+}
 .log-line { font-size: 9px; color: var(--text-dim); display: flex; gap: 12px; animation: slideIn 0.25s ease; }
 @keyframes slideIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
@@ -967,7 +976,7 @@ export default function MethuselahFinal() {
             />
           )}
 
-          <div className="sys-log" ref={logRef}>
+          <div className={`sys-log${logs.length === 0 ? " sys-log-empty" : ""}`} ref={logRef}>
             {logs.map((l, i) => (
               <div key={i} className="log-line">
                 <span className="log-time">[{l.time}]</span>
