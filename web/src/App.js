@@ -70,7 +70,6 @@ body::before {
 .live-badge { display: flex; align-items: center; gap: 6px; font-size: 9px; letter-spacing: 2px; }
 .blink { width: 7px; height: 7px; border-radius: 50%; animation: pulse 1.5s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; box-shadow: 0 0 8px currentColor; } 50% { opacity: 0.15; box-shadow: none; } }
-.clock { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; }
 
 .telemetry-grid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -856,7 +855,6 @@ export default function MethuselahFinal() {
                   {badgeLabel}
                 </div>
               </div>
-              <div className="clock">{clock}</div>
             </div>
           </div>
 
