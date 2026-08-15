@@ -794,17 +794,14 @@ export default function MethuselahFinal() {
 
   const handleExecute = () => {
     setExecState("active");
-    addLog(`PROTOCOL EXECUTED // ${logic.name} // ${ts()}`, "event");
   };
 
   const handleComplete = () => {
     setExecState("complete");
-    addLog(`PROTOCOL COMPLETE // RETURNING TO BASELINE // ${ts()}`, "event");
     setTimeout(() => {
       const today = new Date().toLocaleDateString("en-CA");
       localStorage.setItem("protocolExecutedDate", today);
       setExecState("satisfied");
-      addLog(`PROTOCOL SATISFIED // SYSTEM STANDING DOWN // ${ts()}`, "event");
     }, 3000);
   };
 
