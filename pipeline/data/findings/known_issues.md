@@ -8469,3 +8469,58 @@ prior source, two live end-to-end tests via `osascript ... Terminal.app`
 (first attempt: failed, reverted; second: passed), a control test isolating
 the sandboxed-background-signal false negative, live bridge JSON before and
 after restoration. Commit `9b937bf`.*
+
+---
+
+## 2026-08-15 — RESOLVED: `calculateBRI()` scored a total data blackout as 60/"MODERATE SUPPRESSION" (amber), fabricating a biological finding on zero data
+
+**The bug:** `calculateBRI()` gave 15pts to every null vector regardless of
+why it was null. A ring that never synced overnight (glucose pending, hrv/
+rhr/sleepDurationHrs all null) scored 15 x 4 = 60, which `BRI_LEVELS` maps
+to "MODERATE SUPPRESSION" / amber -- the command-panel border rendered a
+missing sync as if it were a real, if middling, biological readiness
+finding. `evaluate()` (same file, ~40 lines above `calculateBRI()`) already
+had the correct pattern for this exact all-null condition -- it returns
+`AWAITING TELEMETRY` instead of guessing -- `calculateBRI()` just never got
+it. Confirmed live in production and locked in by a passing test
+(`index.test.js`, "all-null/pending vectors score 60 (4 x 15)") before this
+fix.
+
+**Provenance, corrected:** this was ruled on by the owner in a live chat
+session on 2026-08-15 (step 2, question 2D of a design walkthrough: "your
+ring dies overnight, zero data -- should METHUSELAH show anything that
+looks worse than yesterday?" -- owner: no, confirmed explicitly, plus in
+his own words that missing data should be a blank space, not a penalty
+score, and that scoring user absence as a finding is fabricated data). That
+ruling existed only as chat state until this entry -- exactly the
+"decisions made in chat that never reach the canonical docs" gap already
+on record elsewhere in this project. Writing it here closes that gap for
+this specific decision.
+
+**Fix:** `calculateBRI()` now short-circuits on the same all-null condition
+`evaluate()` already checks (`glucosePending && hrv === null && rhr ===
+null && sleepDurationHrs === null`) and returns `{ score: null, label:
+"AWAITING TELEMETRY", color: COMMANDS.awaitingTelemetry.border }` instead
+of computing a score. `score: null` (not `0`) so nothing downstream can
+mistake "no data" for a real, computed low score. Reuses
+`COMMANDS.awaitingTelemetry.border` rather than a second hardcoded color,
+same single-source-of-truth discipline already required for threshold text.
+Partial data (1-3 vectors present) is untouched -- only the total-blackout
+case is special-cased; a new test locks in that boundary
+("partial data (three of four vectors present) still scores normally").
+
+**Verified:** full `src/engine` test suite (27 tests) passes, including the
+updated all-null test (now asserts `score: null` / `label: "AWAITING
+TELEMETRY"` instead of `score: 60`) and the new partial-data boundary test.
+Production build compiles clean (+23 B gzipped).
+
+**Scope note:** this fix only addresses the score/color computation. The
+separate question of whether the command-panel border should ever be
+overridden by `execState` (tap-driven, persists green all day via
+`protocolExecutedDate` in localStorage) is a distinct, still-open decision
+-- does not share code with this fix (`calculateBRI()` vs. the JSX
+`borderColor` ternary), sequenced separately on purpose.
+
+*Sources: `engine/index.js`, `engine/thresholds.js`, `engine/index.test.js`
+current + prior source; live chat ruling 2026-08-15 (see provenance above);
+full engine test suite run.*

@@ -93,9 +93,20 @@ describe("calculateBRI()", () => {
     expect(bri.label).toBe(BRI_LEVELS[0].label); // "OPTIMAL"
   });
 
-  test("all-null/pending vectors score 60 (4 x 15)", () => {
+  test("total blackout (all four vectors absent) reports awaiting telemetry, not a fabricated score", () => {
+    // 2026-08-15: previously scored 60 (4 x 15) and landed in "MODERATE
+    // SUPPRESSION" -- a missing sync rendering as a biological finding.
+    // Matches evaluate()'s own AWAITING TELEMETRY branch for the same
+    // all-null condition.
     const bri = calculateBRI({ glucose: null, hrv: null, rhr: null, sleepDurationHrs: null, glucosePending: true });
-    expect(bri.score).toBe(60);
+    expect(bri.score).toBeNull();
+    expect(bri.label).toBe("AWAITING TELEMETRY");
+  });
+
+  test("partial data (three of four vectors present) still scores normally, only the blackout case is special-cased", () => {
+    const bri = calculateBRI({ glucose: 4.0, hrv: 60, rhr: 45, sleepDurationHrs: null, glucosePending: false });
+    expect(bri.score).toBe(90); // 25 + 25 + 25 + 15 (null sleep)
+    expect(bri.label).not.toBe("AWAITING TELEMETRY");
   });
 
   test("all-worst vectors score 0 and land in the bottom band", () => {

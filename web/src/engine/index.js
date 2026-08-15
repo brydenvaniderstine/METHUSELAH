@@ -95,7 +95,19 @@ export function evaluateSources(gen4, gen3, manual = {}) {
 
 // calculateBRI(vectors) — Biological Readiness Index
 // Returns { score, label, color } — identical output to the old inline calculateBRI in App.js.
+//
+// 2026-08-15: brought in line with evaluate()'s existing AWAITING TELEMETRY
+// branch above -- a total blackout (no source for any vector) was scoring
+// 15pts x 4 = 60, landing in "MODERATE SUPPRESSION" (amber). That renders a
+// missing sync as a biological finding, the exact fabricated-data failure
+// mode evaluate() already correctly avoids for the command text 40 lines up.
+// score: null (not 0) so nothing downstream can mistake "no data" for a
+// real, computed low score.
 export function calculateBRI({ glucose, hrv, rhr, sleepDurationHrs, glucosePending }) {
+  if (glucosePending && hrv === null && rhr === null && sleepDurationHrs === null) {
+    return { score: null, label: "AWAITING TELEMETRY", color: COMMANDS.awaitingTelemetry.border };
+  }
+
   let score = 0;
   const b = BRI_BRACKETS;
 
