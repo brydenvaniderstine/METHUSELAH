@@ -8524,3 +8524,79 @@ overridden by `execState` (tap-driven, persists green all day via
 *Sources: `engine/index.js`, `engine/thresholds.js`, `engine/index.test.js`
 current + prior source; live chat ruling 2026-08-15 (see provenance above);
 full engine test suite run.*
+
+---
+
+## 2026-08-16 — RESOLVED: command-panel border scoped as a named exception (tap-driven green kept, scoped + made internally consistent); weekly-pattern content (SpO2/steps/sleep-onset) cut outright
+
+**Context:** the two items parked at the end of the 2026-08-15 BRI entry
+above. Surfaced by a real screenshot review, then re-confirmed live the
+next morning (2026-08-16) when the same contradiction reproduced on a
+second, independent protocol completion — not a stale leftover from the
+day before, `unlock()`'s `protocolExecutedDate === today` check confirmed
+it was a fresh same-day execution.
+
+**The two problems (both live in `App.js`'s `command-wrap`):**
+1. `borderColor: execState === "satisfied" ? "#00ff66" : bri.color` — a tap
+   (completing the recovery protocol) overrides the border's biology-driven
+   color, and persists green until local midnight regardless of what
+   telemetry does afterward (RHR spiking again same-day does not pull the
+   border back). Flagged as a manufactured state-change-from-a-tap, the
+   exact pattern the project's own no-reward-mechanic rule exists to
+   forbid.
+2. While in that same `satisfied` state, the top `cmd-meta` line still
+   printed `{logic.level.toUpperCase()}` (e.g. `WARN`) inside a green
+   frame — two contradictory signals in one panel, a Design Law 4
+   violation independent of whether the green itself was kept.
+3. The `satisfied` state's own content block additionally rendered a
+   `WEEKLY PATTERN // 7-DAY REVIEW` grid — SpO2 average, steps/day, sleep
+   onset — three non-vectors filling the command slot, the single most
+   protected region in the architecture (rule #3: at most 4 primary tiles,
+   command slot holds one command).
+
+**Owner's ruling, explicit, 2026-08-16 (following a multi-turn review with
+a second Claude instance, both instances independently recommending "cut"
+before the owner ruled otherwise on item 1):**
+- Item 1 (border): **scope it, not cut it.** Author's call, explicit
+  override of the reviewers' recommendation. Persistence: **hold green
+  regardless until midnight** — a real breach after completion does NOT
+  pull the border back to `bri.color` the same day. Deliberate, not an
+  oversight.
+- Item 2 (weekly-pattern content): **delete outright**, not relocate.
+
+**Fix, scoped exactly to the ruling above:**
+- `borderColor` ternary: **unchanged** — still `execState === "satisfied"
+  ? "#00ff66" : bri.color`, still persists via the existing
+  `protocolExecutedDate` localStorage check. This is the "hold green
+  regardless" ruling — nothing to change here, only to document as
+  deliberate. A code comment now states the exception's boundary
+  explicitly (covers only this border + its own meta label, not tiles, not
+  the BRI score, not any future element) so a future session finds a
+  documented exception instead of flagging it as an unnoticed violation.
+- `cmd-meta` label: now reads `SATISFIED // {clock}` instead of
+  `{logic.level.toUpperCase()} // {clock}` when `execState === "satisfied"`
+  — resolves the WARN-inside-a-green-frame contradiction. All other
+  `execState` values unchanged.
+- `WEEKLY PATTERN // 7-DAY REVIEW` block removed entirely from the
+  `satisfied` branch — no SpO2/steps/sleep-onset content, no relocation.
+  `PROTOCOL EXECUTED // RETURN TOMORROW` line kept unchanged (the honest,
+  no-color acknowledgment both reviewers agreed survives every option).
+  Reasoning for "cut, don't relocate": this content only ever existed
+  inside the transient post-completion state (3s after tapping PROTOCOL
+  COMPLETE) — never a real standing 7-day surface a user would return to,
+  so there was no stable thing to move. Raw telemetry already separately
+  carries SpO2/steps at their correct weekly-trend tier.
+- Dead code from the removal cleaned up in the same pass: `spo2Avg`/
+  `stepAvg` (only ever consumed by the deleted block; the SpO2/steps 7-day
+  log lines compute their own local average independently) and
+  `trendGlyph()` (only caller was the deleted block) removed; `.weekly-*`
+  CSS rules removed. `spo2Hist`/`stepHist` state itself is untouched —
+  still real, still feeds those log lines and the server-side history sync.
+
+**Verified:** production build compiles clean (-294 B gzipped), zero
+unused-variable warnings after the dead-code cleanup (confirms nothing
+else referenced the removed pieces).
+
+*Sources: `web/src/App.js` current + prior source; live chat ruling
+2026-08-15/16 (screenshot-driven review across two Claude instances,
+owner's explicit ruling on both items); production build output.*

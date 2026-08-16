@@ -140,13 +140,6 @@ body::before {
 .optimal-label { color: var(--accent-green); font-weight: 700; letter-spacing: 3px; font-size: 11px; animation: breathe 3s infinite; }
 @keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-.weekly-grid { width: 100%; display: flex; flex-direction: column; gap: 8px; margin: 10px 0 8px; }
-.weekly-row { display: flex; align-items: baseline; gap: 10px; font-size: 9px; letter-spacing: 1px; }
-.weekly-label { color: var(--text-dim); min-width: 90px; flex-shrink: 0; }
-.weekly-val { color: var(--text-main); font-weight: 700; min-width: 80px; }
-.weekly-trend { color: var(--text-dim); }
-.weekly-caveat { color: var(--text-dim); font-size: 8px; opacity: 0.6; }
-
 .sys-log {
   flex: 1;
   overflow-y: auto;
@@ -278,14 +271,6 @@ const isPlausibleSleepHours = (h) => typeof h === "number" && h > 0 && h <= SLEE
 function avgOf(history) {
   if (!history || history.length === 0) return null;
   return history.reduce((a, b) => a + b, 0) / history.length;
-}
-
-function trendGlyph(history) {
-  const t = getTrend(history);
-  if (t === "trending up")   return "▲";
-  if (t === "trending down") return "▼";
-  if (t === "stable")        return "—";
-  return null;
 }
 
 // Metric — 3-line tile: label / value + context / source + age
@@ -778,8 +763,6 @@ export default function MethuselahFinal() {
   const rhrAvg   = avgOf(rhrHist);
   const sleepAvg = avgOf(sleepHist);
   const glucAvg  = avgOf(glucHist);
-  const spo2Avg  = avgOf(spo2Hist);
-  const stepAvg  = avgOf(stepHist);
 
   // Meta strings — threshold pulled from THRESHOLDS.* so displayed rule always matches engine rule
   function metaParts(threshold, avg, trend) {
@@ -901,10 +884,18 @@ export default function MethuselahFinal() {
             />
           </div>
 
+          {/* 2026-08-15/16: execState-driven green is a scoped, named exception to
+              the project's own no-reward-mechanic rule -- covers ONLY this border
+              and its own meta label below, nothing else (not tiles, not the BRI
+              score, not any future element). Persists until local midnight by
+              design (see unlock()'s protocolExecutedDate check) -- an explicit,
+              deliberate call, not an oversight: a real breach after completion
+              does NOT pull the border back to bri.color same-day. Full reasoning
+              in known_issues.md, 2026-08-15/16 entries. */}
           <div className="command-wrap" style={{ borderColor: execState === "satisfied" ? "#00ff66" : bri.color }}>
             <div className="corner tl" /><div className="corner tr" />
             <div className="corner bl" /><div className="corner br" />
-            <div className="cmd-meta">{logic.level.toUpperCase()} // {clock}</div>
+            <div className="cmd-meta">{execState === "satisfied" ? "SATISFIED" : logic.level.toUpperCase()} // {clock}</div>
             {execState === "idle" ? (
               <>
                 <div
@@ -938,27 +929,14 @@ export default function MethuselahFinal() {
             ) : execState === "complete" ? (
               <div className="cmd-text" style={{ color: logic.color }}>PROTOCOL COMPLETE.</div>
             ) : (
-              <>
-                <div className="cmd-meta">WEEKLY PATTERN // 7-DAY REVIEW</div>
-                <div className="weekly-grid">
-                  <div className="weekly-row">
-                    <span className="weekly-label">SPO2</span>
-                    <span className="weekly-val">{spo2Avg !== null ? `${spo2Avg.toFixed(1)}% AVG` : '--'}</span>
-                    <span className="weekly-trend">{trendGlyph(spo2Hist) || (spo2Hist.length < 2 ? 'BUILDING' : '')}</span>
-                    {spo2Avg !== null && <span className="weekly-caveat">GEN3 ~3-5% LOW</span>}
-                  </div>
-                  <div className="weekly-row">
-                    <span className="weekly-label">STEPS</span>
-                    <span className="weekly-val">{stepAvg !== null ? `${Math.round(stepAvg)}/DAY` : '--'}</span>
-                    <span className="weekly-trend">{trendGlyph(stepHist) || (stepHist.length < 2 ? 'BUILDING' : '')}</span>
-                  </div>
-                  <div className="weekly-row">
-                    <span className="weekly-label">SLEEP ONSET</span>
-                    <span className="weekly-val weekly-caveat">AWAITING DATA</span>
-                  </div>
-                </div>
-                <div className="cmd-rationale" style={{ color: "var(--text-dim)" }}>PROTOCOL EXECUTED // RETURN TOMORROW</div>
-              </>
+              // satisfied -- 2026-08-16: previously also rendered a "WEEKLY
+              // PATTERN // 7-DAY REVIEW" block here (SpO2 avg, steps/day, sleep
+              // onset) -- three non-vectors filling the dashboard's most
+              // protected region. Cut outright, not relocated (see
+              // known_issues.md 2026-08-16): it only ever existed inside this
+              // transient post-completion state, never a real standing 7-day
+              // surface, so there was nothing stable to move.
+              <div className="cmd-rationale" style={{ color: "var(--text-dim)" }}>PROTOCOL EXECUTED // RETURN TOMORROW</div>
             )}
           </div>
 
