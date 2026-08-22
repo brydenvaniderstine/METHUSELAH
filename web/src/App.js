@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { evaluateSources, calculateBRI, THRESHOLDS, SOURCE_GEN4, SOURCE_GEN3 } from "./engine/index.js";
+import { evaluateSources, calculateBRI, THRESHOLDS, THRESHOLD_OPERATORS, SOURCE_GEN4, SOURCE_GEN3 } from "./engine/index.js";
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
@@ -273,8 +273,26 @@ function avgOf(history) {
   return history.reduce((a, b) => a + b, 0) / history.length;
 }
 
+// Predicate + meta line — reads THRESHOLDS/THRESHOLD_OPERATORS directly
+// (the same single source of truth engine/index.js's evaluate() reads), so
+// this can never display a rule different from the one that actually fires
+// -- guarded by the THRESHOLD_OPERATORS drift tests in engine/index.test.js.
+// Module scope (not inside MethuselahFinal) so GlucosePanel, a separate
+// component, can build its own predicate from its own already-computed
+// color rather than the parent recomputing glucose's fired state a second
+// time. Predicate is colored to match the tile's own fired/passing color --
+// the same signal the value above it already carries, not a second
+// dim/bright scheme that could ever disagree with it. 2026-08-21.
+function predicateText(label, thresholdKey, unit) {
+  return `${label} ${THRESHOLD_OPERATORS[thresholdKey]} ${THRESHOLDS[thresholdKey]}${unit ? " " + unit : ""}`;
+}
+function metaLine(predicate, color, avg, trend) {
+  const rest = [avg, trend].filter(Boolean).join(" · ");
+  return <><span style={{ color }}>{predicate}</span>{rest ? ` · ${rest}` : ""}</>;
+}
+
 // Metric — 3-line tile: label / value + context / source + age
-// meta: pre-formatted "(optimal X · 7d avg Y · trend)" string
+// meta: pre-built "(<colored predicate> · 7d avg Y · trend)" node, from metaLine()
 // stale: dims tile + shifts source line to amber
 function Metric({ label, val, unit, color, meta, age, stale, source }) {
   const sourceLabel = source === SOURCE_GEN4 ? "OURA LIVE" : source === SOURCE_GEN3 ? "GEN3 BLE" : null;
@@ -294,11 +312,18 @@ function Metric({ label, val, unit, color, meta, age, stale, source }) {
   );
 }
 
-function GlucosePanel({ reading, entryOpen, inputVal, meta, age, stale, onTap, onBLERead, onInputChange, onKeyDown, onSubmit }) {
+function GlucosePanel({ reading, entryOpen, inputVal, avg, trend, age, stale, onTap, onBLERead, onInputChange, onKeyDown, onSubmit }) {
   const hasReading = reading !== null;
   const isElevated = hasReading && reading > THRESHOLDS.glucose;
   const color = !hasReading ? "var(--accent-amber)" : isElevated ? "var(--accent-red)" : "var(--accent-green)";
   const sourceColor = stale ? "var(--accent-amber)" : "var(--accent-blue)";
+  // Predicate built here (not passed down as a pre-assembled string) so it
+  // can reuse this component's own already-computed `color` -- the exact
+  // fired/passing state -- instead of a second, independent read of
+  // THRESHOLDS.glucose in the parent that could in principle disagree.
+  const meta = hasReading
+    ? metaLine(predicateText("GLUCOSE", "glucose", "mmol/l"), color, avg !== null ? `7d avg ${avg.toFixed(1)}` : null, trend)
+    : null;
 
   return (
     <div
@@ -764,14 +789,19 @@ export default function MethuselahFinal() {
   const sleepAvg = avgOf(sleepHist);
   const glucAvg  = avgOf(glucHist);
 
-  // Meta strings — threshold pulled from THRESHOLDS.* so displayed rule always matches engine rule
-  function metaParts(threshold, avg, trend) {
-    return [threshold, avg, trend].filter(Boolean).join(" · ");
-  }
-  const hrvMeta   = hrv              !== null ? metaParts(`optimal ≥ ${THRESHOLDS.hrv}ms`,            hrvAvg   !== null ? `7d avg ${Math.round(hrvAvg)}ms`  : null, getTrend(hrvHist))   : null;
-  const rhrMeta   = rhr              !== null ? metaParts(`optimal < ${THRESHOLDS.rhr}bpm`,            rhrAvg   !== null ? `7d avg ${Math.round(rhrAvg)}bpm` : null, getTrend(rhrHist))   : null;
-  const sleepMeta = sleepDurationHrs !== null ? metaParts(`optimal ≥ ${THRESHOLDS.sleepDurationWarn}h`, sleepAvg !== null ? `7d avg ${sleepAvg.toFixed(1)}h`  : null, getTrend(sleepHist)) : null;
-  const glucMeta  = glucoseReading   !== null ? metaParts(`optimal < ${THRESHOLDS.glucose}`,           glucAvg  !== null ? `7d avg ${glucAvg.toFixed(1)}`    : null, getTrend(glucHist))  : null;
+  const hrvColor = hrv === null ? "var(--text-dim)" : hrv < THRESHOLDS.hrv ? "var(--accent-amber)" : "var(--accent-green)";
+  const rhrColor = rhr === null ? "var(--text-dim)" : rhr > THRESHOLDS.rhr ? "var(--accent-amber)" : "var(--accent-green)";
+  const sleepColor = sleepDurationHrs === null ? "var(--text-dim)" : sleepDurationHrs < THRESHOLDS.sleepDurationCritical ? "var(--accent-red)" : sleepDurationHrs < THRESHOLDS.sleepDurationWarn ? "var(--accent-amber)" : "var(--accent-green)";
+  // Sleep carries two thresholds (Warn/Critical), one tile. Show whichever
+  // is currently firing; default to Warn when passing -- the first line
+  // actually crossed coming down from optimal, not the rarer Critical case.
+  // Explicit ruling, not a guess: 2026-08-21, see known_issues.md.
+  const sleepThresholdKey = sleepDurationHrs !== null && sleepDurationHrs < THRESHOLDS.sleepDurationCritical
+    ? "sleepDurationCritical" : "sleepDurationWarn";
+
+  const hrvMeta   = hrv              !== null ? metaLine(predicateText("HRV", "hrv", "ms"), hrvColor, hrvAvg !== null ? `7d avg ${Math.round(hrvAvg)}ms` : null, getTrend(hrvHist)) : null;
+  const rhrMeta   = rhr              !== null ? metaLine(predicateText("RHR", "rhr", "bpm"), rhrColor, rhrAvg !== null ? `7d avg ${Math.round(rhrAvg)}bpm` : null, getTrend(rhrHist)) : null;
+  const sleepMeta = sleepDurationHrs !== null ? metaLine(predicateText("SLEEP", sleepThresholdKey, "h"), sleepColor, sleepAvg !== null ? `7d avg ${sleepAvg.toFixed(1)}h` : null, getTrend(sleepHist)) : null;
 
   const bri = calculateBRI({ glucose: glucoseReading, hrv, rhr, sleepDurationHrs, glucosePending: glucoseReading === null });
 
@@ -843,7 +873,8 @@ export default function MethuselahFinal() {
               reading={glucoseReading}
               entryOpen={glucoseEntryOpen}
               inputVal={glucoseInput}
-              meta={glucMeta}
+              avg={glucAvg}
+              trend={getTrend(glucHist)}
               age={formatAge(glucoseTimestamp)}
               stale={isStale(glucoseTimestamp)}
               onTap={() => setGlucoseEntryOpen(true)}
@@ -856,7 +887,7 @@ export default function MethuselahFinal() {
               label="HRV"
               val={hrv !== null ? Math.round(hrv) : "--"}
               unit="ms"
-              color={hrv === null ? "var(--text-dim)" : hrv < THRESHOLDS.hrv ? "var(--accent-amber)" : "var(--accent-green)"}
+              color={hrvColor}
               meta={hrvMeta}
               age={formatAge(hrvTs)}
               stale={isStale(hrvTs)}
@@ -866,7 +897,7 @@ export default function MethuselahFinal() {
               label="CARDIAC LOAD"
               val={rhr !== null ? rhr : "--"}
               unit="bpm"
-              color={rhr === null ? "var(--text-dim)" : rhr > THRESHOLDS.rhr ? "var(--accent-amber)" : "var(--accent-green)"}
+              color={rhrColor}
               meta={rhrMeta}
               age={formatAge(rhrTs)}
               stale={isStale(rhrTs)}
@@ -876,7 +907,7 @@ export default function MethuselahFinal() {
               label="SLEEP DURATION"
               val={sleepDurationHrs !== null ? `${sleepIsEstimate ? "~" : ""}${sleepDurationHrs.toFixed(1)}` : "--"}
               unit={sleepEstimateMethod === "stage_sum" ? "hrs (stage sum)" : sleepEstimateMethod === "bout_tail" ? "hrs (est.)" : "hrs"}
-              color={sleepDurationHrs === null ? "var(--text-dim)" : sleepDurationHrs < THRESHOLDS.sleepDurationCritical ? "var(--accent-red)" : sleepDurationHrs < THRESHOLDS.sleepDurationWarn ? "var(--accent-amber)" : "var(--accent-green)"}
+              color={sleepColor}
               meta={sleepMeta}
               age={formatAge(sleepTs)}
               stale={isStale(sleepTs)}

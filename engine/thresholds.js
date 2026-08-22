@@ -18,6 +18,21 @@ export const BRI_BRACKETS = {
   sleepDuration: { optimal: 7,   nominal: 4   },  // >= 7h → 25pts (green), >= 4h → 15pts (yellow), < 4h → 0pts (red)
 };
 
+// Comparison direction for each threshold above -- a separate, small table,
+// not a reshape of THRESHOLDS itself. THRESHOLDS.rhr etc. are read as plain
+// numbers in ~29 places across engine/index.js, its own tests, and
+// web/src/App.js; reshaping to {value, operator} would touch every one of
+// them. This adds the one new fact (direction) the UI needs to render the
+// literal predicate ("RHR > 63") without touching anything that already
+// works. 2026-08-21.
+export const THRESHOLD_OPERATORS = {
+  glucose:               ">",
+  hrv:                   "<",
+  rhr:                   ">",
+  sleepDurationWarn:     "<",
+  sleepDurationCritical: "<",
+};
+
 // BRI score → label + color mapping
 export const BRI_LEVELS = [
   { min: 85, label: "OPTIMAL",                color: "#00aaff" },

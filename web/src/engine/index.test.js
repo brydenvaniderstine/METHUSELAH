@@ -8,7 +8,7 @@
 // Run: cd web && CI=true npx react-scripts test src/engine --watchAll=false
 // (after the sync step has copied this file into src/engine/).
 
-import { evaluate, calculateBRI, THRESHOLDS, BRI_LEVELS } from "./index.js";
+import { evaluate, calculateBRI, THRESHOLDS, THRESHOLD_OPERATORS, BRI_LEVELS } from "./index.js";
 
 const OK = { glucose: 4.0, hrv: 50, rhr: 55, sleepDurationHrs: 8.0 };
 
@@ -128,5 +128,44 @@ describe("calculateBRI()", () => {
     const a = calculateBRI({ glucose: 4.0, hrv: 50, rhr: 55, sleepDurationHrs: 8, glucosePending: false });
     const b = calculateBRI({ glucose: 4.0, hrv: 50, rhr: 55, sleepDurationHrs: 8, glucosePending: false });
     expect(a).toEqual(b);
+  });
+});
+
+// 2026-08-21: THRESHOLD_OPERATORS drives a UI predicate ("RHR > 63") shown
+// directly on each tile. Nothing enforces that its claimed direction is the
+// same direction evaluate() actually fires on -- flip a comparison in
+// evaluate() later without updating THRESHOLD_OPERATORS (or vice versa) and
+// the UI would display a predicate that isn't the one that ran, exactly the
+// transparency failure this whole feature exists to prevent. Reuses the
+// same boundary-value pattern (THRESHOLDS.x +/- 1) already used above.
+describe("THRESHOLD_OPERATORS direction matches what evaluate() actually fires on", () => {
+  test("glucose: '>' fires above threshold, not below", () => {
+    expect(THRESHOLD_OPERATORS.glucose).toBe(">");
+    expect(evaluate({ ...OK, glucose: THRESHOLDS.glucose + 1 }).name).toBe("24-HOUR WATER FAST");
+    expect(evaluate({ ...OK, glucose: THRESHOLDS.glucose - 1 }).name).not.toBe("24-HOUR WATER FAST");
+  });
+
+  test("hrv: '<' fires below threshold, not above", () => {
+    expect(THRESHOLD_OPERATORS.hrv).toBe("<");
+    expect(evaluate({ ...OK, hrv: THRESHOLDS.hrv - 1 }).name).toBe("ZONE 2 OUTPUT");
+    expect(evaluate({ ...OK, hrv: THRESHOLDS.hrv + 1 }).name).not.toBe("ZONE 2 OUTPUT");
+  });
+
+  test("rhr: '>' fires above threshold, not below", () => {
+    expect(THRESHOLD_OPERATORS.rhr).toBe(">");
+    expect(evaluate({ ...OK, rhr: THRESHOLDS.rhr + 1 }).name).toBe("ACTIVE RECOVERY PROTOCOL");
+    expect(evaluate({ ...OK, rhr: THRESHOLDS.rhr - 1 }).name).not.toBe("ACTIVE RECOVERY PROTOCOL");
+  });
+
+  test("sleepDurationWarn/Critical: '<' fires below each threshold, not above", () => {
+    expect(THRESHOLD_OPERATORS.sleepDurationWarn).toBe("<");
+    expect(THRESHOLD_OPERATORS.sleepDurationCritical).toBe("<");
+    const warnFires = evaluate({ ...OK, sleepDurationHrs: THRESHOLDS.sleepDurationWarn - 0.5 });
+    const criticalFires = evaluate({ ...OK, sleepDurationHrs: THRESHOLDS.sleepDurationCritical - 0.5 });
+    const doesNotFire = evaluate({ ...OK, sleepDurationHrs: THRESHOLDS.sleepDurationWarn + 1 });
+    expect(warnFires.name).toBe("SLEEP PROTOCOL");
+    expect(criticalFires.name).toBe("SLEEP PROTOCOL");
+    expect(criticalFires.level).toBe("critical");
+    expect(doesNotFire.name).not.toBe("SLEEP PROTOCOL");
   });
 });

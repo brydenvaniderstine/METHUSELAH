@@ -7,11 +7,11 @@
 // To change priority, reorder the if-blocks below. Do not add
 // a multi-command output without a v3 architecture discussion first.
 
-import { THRESHOLDS, BRI_BRACKETS, BRI_LEVELS } from "./thresholds.js";
+import { THRESHOLDS, THRESHOLD_OPERATORS, BRI_BRACKETS, BRI_LEVELS } from "./thresholds.js";
 import { COMMANDS } from "./commands.js";
 import { resolveVectors, SOURCE_GEN4, SOURCE_GEN3, SOURCE_MANUAL } from "./sources.js";
 
-export { THRESHOLDS, BRI_BRACKETS, BRI_LEVELS, COMMANDS, resolveVectors, SOURCE_GEN4, SOURCE_GEN3, SOURCE_MANUAL };
+export { THRESHOLDS, THRESHOLD_OPERATORS, BRI_BRACKETS, BRI_LEVELS, COMMANDS, resolveVectors, SOURCE_GEN4, SOURCE_GEN3, SOURCE_MANUAL };
 
 // evaluate(vectors) — main entry point for web/src/App.js
 // vectors: { glucose, hrv, rhr, sleepDurationHrs }
