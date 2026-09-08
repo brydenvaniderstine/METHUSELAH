@@ -35,13 +35,21 @@ def build_bridge_data(pull_class, pull_file, priority_event_count,
                        hr_avgs=None, ibi_hr_bpm=None, temps=None,
                        spo2_avgs=None, fuel_gauge_pct=None,
                        step_count=None, cadence_spm=None,
-                       deep_sleep_pct=None, hrv_ms=None,
+                       deep_sleep_pct=None, hrv_ms=None, hrv_n=None,
                        sleep_duration_hrs=None, sleep_stages=None,
                        sleep_duration_estimate_hrs=None,
                        sleep_duration_estimate_info=None):
     """Build the bridge JSON dict in the exact shape api/gen3-bridge.js
     and App.js expect. All vector args are optional accumulator lists
     (averaged here) or precomputed scalars -- caller decides what it has.
+
+    hrv_n: sample count behind hrv_ms (total IBI values), for provenance
+    (hrv_n/hrv_agg in vectors below). Unlike hr_avgs/spo2_avgs, hrv_ms
+    arrives here already reduced to a scalar -- the count doesn't cross
+    this boundary on its own, so callers that don't have it handy (or
+    haven't been updated yet) just omit it and hrv_n is None. rhr_n/spo2_n
+    need no equivalent param: they're computed below directly from
+    hr_avgs/spo2_avgs, which every caller already passes as full lists.
 
     sleep_stages: dict from 0x4C decode, shape:
       { wake_min, light_min, rem_min, deep_min, source_tag }
@@ -80,17 +88,25 @@ def build_bridge_data(pull_class, pull_file, priority_event_count,
         "classifier": pull_class,
         "vectors": {
             "hrv_ms": hrv_ms,
+            "hrv_n": hrv_n,
+            "hrv_agg": "session_mean",
             "rhr_bpm": round(sum(hr_avgs) / len(hr_avgs), 1) if hr_avgs else None,
+            "rhr_n": len(hr_avgs) if hr_avgs else None,
+            "rhr_agg": "session_mean",
             "ibi_hr_bpm": ibi_hr_bpm,
             "sleep_duration_hrs": sleep_duration_hrs,
             "sleep_duration_estimate_hrs": sleep_duration_estimate_hrs,
             "sleep_duration_estimate_info": sleep_duration_estimate_info,
+            "sleep_duration_agg": "onboard_summary",
             "deep_sleep_pct": deep_sleep_pct,
             "sleep_stages": sleep_stages,
             "sleep_temp_c": round(sum(temps) / len(temps), 2) if temps else None,
             "spo2_avg_pct": round(sum(spo2_avgs) / len(spo2_avgs), 1) if spo2_avgs else None,
+            "spo2_n": len(spo2_avgs) if spo2_avgs else None,
+            "spo2_agg": "session_mean",
             "battery_pct": fuel_gauge_pct,
             "step_count": step_count,
+            "step_agg": "snapshot",
             "cadence_spm": cadence_spm,
         },
         "raw_sample_count": priority_event_count,

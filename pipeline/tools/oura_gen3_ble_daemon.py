@@ -916,6 +916,11 @@ async def main():
                         step_count=accum["step_count"],
                         cadence_spm=accum["cadence_spm"],
                         hrv_ms=hrv_for_bridge,
+                        # Total individual IBI values behind hrv_for_bridge, not packet count --
+                        # same definition recompute_bridge_from_daemon.py already prints locally
+                        # (sum(len(p) for p in ibi_packets_all)), just not threaded to the bridge
+                        # there yet. None whenever hrv_for_bridge itself is None (same gate).
+                        hrv_n=sum(len(p) for p in ibi_packets_all) if hrv_for_bridge is not None else None,
                         sleep_duration_hrs=None,  # 0x6A-derived duration is unreliable (undercounts --
                         # ring stops emitting 0x6A before sleep ends -- AND the live per-cycle packet-count
                         # x60s-per-packet assumption previously here was also wrong by roughly an order of
