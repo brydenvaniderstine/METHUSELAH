@@ -376,6 +376,17 @@ function GlucosePanel({ reading, entryOpen, inputVal, avg, trend, age, stale, on
 // grid instead of one long `//`-separated line. No new data, no new
 // primary tile -- just surfacing already-decoded fields more readably.
 function RawTelemetryPanel({ bridge, open, onToggle, stale }) {
+  // v reads bridge.vectors directly, not logic.vectors -- deliberately, not
+  // an unclosed seam. logic.vectors goes through resolveVectors()'s 24h
+  // freshness gate (sources.js), which exists to protect command/BRI
+  // decisions from acting on stale data. This panel's job is the opposite:
+  // show the actual stored value, with staleness flagged via `stale` above
+  // (STALE_HRS, 12h), never suppressed. Routing this through resolveVectors()
+  // would silently blank real values past 24h instead of showing them
+  // flagged -- tested against a synthetic >24h bridge 2026-09, confirmed.
+  // battery_pct/ibi_hr_bpm/sleep_temp_c/sleep_stages have no resolveVectors()
+  // equivalent at all; the rest (rhr/spo2/step_count/sleep tiers) could be
+  // added but were deliberately left ungated for the same reason above.
   const v = bridge.vectors;
   const stages = v.sleep_stages;
   const time = new Date(bridge.timestamp).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -709,6 +720,13 @@ export default function MethuselahFinal() {
   // mount effect above. The server write is a same-date merge (see
   // api/vector-history.js), so multiple devices recording "today" is
   // harmless, not duplicated.
+  //
+  // v reads gen3Bridge.vectors directly, same deliberate ungating as
+  // RawTelemetryPanel above, same reason: logic.vectors goes through
+  // resolveVectors()'s 24h freshness gate, and a 7-day trend that goes
+  // blank at 24h (instead of just not adding today's point) would be
+  // actively misleading right next to the command it sits beside. This
+  // effect also runs before `logic` exists in this component's render order.
   useEffect(() => {
     if (!gen3Bridge?.vectors || !gen3Bridge.timestamp) return;
     const bridgeDate = new Date(gen3Bridge.timestamp).toLocaleDateString("en-CA");
