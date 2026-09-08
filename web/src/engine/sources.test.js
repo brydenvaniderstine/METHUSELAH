@@ -100,6 +100,57 @@ describe("resolveVectors() -- glucose has no wearable source on either generatio
   });
 });
 
+describe("resolveVectors() -- n/agg provenance pass-through (Task 1b fields)", () => {
+  test("rhr/hrv carry n and agg through from the bridge when both are present", () => {
+    const v = resolveVectors(null, gen3({
+      rhr_bpm: 62, rhr_n: 489, rhr_agg: "session_mean",
+      hrv_ms: 48.7, hrv_n: 25320, hrv_agg: "session_mean",
+    }), {});
+    expect(v.rhr.n).toBe(489);
+    expect(v.rhr.agg).toBe("session_mean");
+    expect(v.hrv.n).toBe(25320);
+    expect(v.hrv.agg).toBe("session_mean");
+  });
+
+  test("n and agg default to null independently when the bridge omits either", () => {
+    // rhr_n present, rhr_agg absent -- and the reverse for hrv -- to prove
+    // neither field's absence drags the other one to null with it.
+    const v = resolveVectors(null, gen3({
+      rhr_bpm: 62, rhr_n: 489,
+      hrv_ms: 48.7, hrv_agg: "session_mean",
+    }), {});
+    expect(v.rhr.n).toBe(489);
+    expect(v.rhr.agg).toBeNull();
+    expect(v.hrv.n).toBeNull();
+    expect(v.hrv.agg).toBe("session_mean");
+  });
+
+  test("a bridge that predates Task 1b (no n/agg fields at all) resolves both to null", () => {
+    const v = resolveVectors(null, gen3({ rhr_bpm: 62, hrv_ms: 48.7 }), {});
+    expect(v.rhr.n).toBeNull();
+    expect(v.rhr.agg).toBeNull();
+    expect(v.hrv.n).toBeNull();
+    expect(v.hrv.agg).toBeNull();
+  });
+
+  test("sleepDurationHrs carries agg (no n -- nothing to count) regardless of which tier wins", () => {
+    const v = resolveVectors(null, gen3({
+      sleep_duration_hrs: 7.5, sleep_duration_agg: "onboard_summary",
+    }, { sleep_data_ts: NOW }), {});
+    expect(v.sleepDurationHrs.agg).toBe("onboard_summary");
+    expect(v.sleepDurationHrs.n).toBeUndefined();
+  });
+
+  test("a stale (>24h) bridge resolves n/agg to null along with value, not independently fresh", () => {
+    const veryOld = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
+    const v = resolveVectors(null, gen3({ rhr_bpm: 62, rhr_n: 489, rhr_agg: "session_mean" },
+      { timestamp: veryOld }), {});
+    expect(v.rhr.value).toBeNull();
+    expect(v.rhr.n).toBeNull();
+    expect(v.rhr.agg).toBeNull();
+  });
+});
+
 describe("resolveVector() -- priority-ordered candidate array", () => {
   test("first non-null candidate wins, regardless of array length", () => {
     const v = resolveVector([

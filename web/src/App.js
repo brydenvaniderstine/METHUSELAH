@@ -294,9 +294,21 @@ function metaLine(predicate, color, avg, trend) {
 // Metric — 3-line tile: label / value + context / source + age
 // meta: pre-built "(<colored predicate> · 7d avg Y · trend)" node, from metaLine()
 // stale: dims tile + shifts source line to amber
-function Metric({ label, val, unit, color, meta, age, stale, source }) {
+// n/agg -- sample count + aggregation kind (Task 1b's bridge provenance
+// fields). Independently nullable: n omitted with no data to count (sleep
+// duration), agg omitted on a bridge that predates Task 1b. Neither is a
+// placeholder -- absent means nothing is appended, not "N=?" or "--".
+function nAggSuffix(n, agg) {
+  const parts = [];
+  if (n != null) parts.push(`N=${n.toLocaleString()}`);
+  if (agg != null) parts.push(agg.toUpperCase().replace(/_/g, " "));
+  return parts.length ? parts.join(" ") : null;
+}
+
+function Metric({ label, val, unit, color, meta, age, stale, source, n, agg }) {
   const sourceLabel = source === SOURCE_GEN4 ? "OURA LIVE" : source === SOURCE_GEN3 ? "GEN3 BLE" : null;
   const sourceColor = stale ? "var(--accent-amber)" : source === SOURCE_GEN3 ? "cyan" : "var(--accent-blue)";
+  const nAgg = nAggSuffix(n, agg);
   return (
     <div className={`tel-block${stale ? " tel-stale" : ""}`}>
       <div className="tel-label">{label}</div>
@@ -305,7 +317,7 @@ function Metric({ label, val, unit, color, meta, age, stale, source }) {
       </div>
       {meta && <div className="tel-meta">({meta})</div>}
       {sourceLabel
-        ? <div className="tel-source" style={{ color: sourceColor }}>● {sourceLabel} · {age || "?"}{stale ? "  [flag: stale]" : ""}</div>
+        ? <div className="tel-source" style={{ color: sourceColor }}>● {sourceLabel} · {age || "?"}{nAgg ? ` · ${nAgg}` : ""}{stale ? "  [flag: stale]" : ""}</div>
         : <div className="tel-source" style={{ color: "var(--text-dim)" }}>AWAITING DATA</div>
       }
     </div>
@@ -910,6 +922,8 @@ export default function MethuselahFinal() {
               age={formatAge(hrvTs)}
               stale={isStale(hrvTs)}
               source={logic.vectors.hrv.source}
+              n={logic.vectors.hrv.n}
+              agg={logic.vectors.hrv.agg}
             />
             <Metric
               label="CARDIAC LOAD"
@@ -920,6 +934,8 @@ export default function MethuselahFinal() {
               age={formatAge(rhrTs)}
               stale={isStale(rhrTs)}
               source={logic.vectors.rhr.source}
+              n={logic.vectors.rhr.n}
+              agg={logic.vectors.rhr.agg}
             />
             <Metric
               label="SLEEP DURATION"
@@ -930,6 +946,7 @@ export default function MethuselahFinal() {
               age={formatAge(sleepTs)}
               stale={isStale(sleepTs)}
               source={logic.vectors.sleepDurationHrs.source}
+              agg={logic.vectors.sleepDurationHrs.agg}
             />
           </div>
 

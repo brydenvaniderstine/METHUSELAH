@@ -68,11 +68,19 @@ export function resolveVectors(gen4, gen3, manual = {}) {
   const gen3Fresh = gen3 && isFresh(gen3.timestamp) ? gen3 : null;
 
   return {
-    rhr: resolveVector([
-      { value: gen4Fresh?.rhr ?? null, source: SOURCE_GEN4 },
-      { value: gen3Fresh?.vectors?.rhr_bpm ?? null, source: SOURCE_GEN3 },
-      { value: null, source: SOURCE_MANUAL },
-    ]),
+    // n/agg: sample count + aggregation kind from Task 1b's bridge provenance
+    // fields (gen3_bridge.py) -- gen3-only, no Gen4 equivalent exists (Gen4
+    // is permanently dead; Task 1b never touched it). Null when the bridge
+    // predates Task 1b or has no data this pull -- same ?. cascade as value.
+    rhr: {
+      ...resolveVector([
+        { value: gen4Fresh?.rhr ?? null, source: SOURCE_GEN4 },
+        { value: gen3Fresh?.vectors?.rhr_bpm ?? null, source: SOURCE_GEN3 },
+        { value: null, source: SOURCE_MANUAL },
+      ]),
+      n: gen3Fresh?.vectors?.rhr_n ?? null,
+      agg: gen3Fresh?.vectors?.rhr_agg ?? null,
+    },
 
     // Telemetry only — not a THRESHOLDS/COMMANDS vector, doesn't drive evaluate()
     spo2: resolveVector([
@@ -82,11 +90,15 @@ export function resolveVectors(gen4, gen3, manual = {}) {
     ]),
 
     // Gen3: RMSSD computed from 0x6E/0x80 IBI streams, sleep-window only
-    hrv: resolveVector([
-      { value: gen4Fresh?.hrv ?? null, source: SOURCE_GEN4 },
-      { value: gen3Fresh?.vectors?.hrv_ms ?? null, source: SOURCE_GEN3 },
-      { value: null, source: SOURCE_MANUAL },
-    ]),
+    hrv: {
+      ...resolveVector([
+        { value: gen4Fresh?.hrv ?? null, source: SOURCE_GEN4 },
+        { value: gen3Fresh?.vectors?.hrv_ms ?? null, source: SOURCE_GEN3 },
+        { value: null, source: SOURCE_MANUAL },
+      ]),
+      n: gen3Fresh?.vectors?.hrv_n ?? null,
+      agg: gen3Fresh?.vectors?.hrv_agg ?? null,
+    },
 
     // Gen4: total_sleep_duration from Oura API. Gen3: sleep_duration_hrs (0x4C,
     // authoritative) if present, else sleep_duration_estimate_hrs (bout-tail
@@ -102,28 +114,33 @@ export function resolveVectors(gen4, gen3, manual = {}) {
     // show as stale even while HRV/RHR are refreshing live every cycle.
     sleepDurationHrs: (() => {
       const measuredAt = gen3Fresh?.sleep_data_ts ?? null;
+      // No n -- the ring's own firmware computes this, there's nothing to
+      // count (see Task 1b, gen3_bridge.py). agg is present regardless of
+      // which tier wins, or whether any tier has a value at all -- same
+      // reasoning as estimateMethod/measuredAt below.
+      const agg = gen3Fresh?.vectors?.sleep_duration_agg ?? null;
       const strict = resolveVector([
         { value: gen4Fresh?.totalSleepHrs ?? null, source: SOURCE_GEN4 },
         { value: gen3Fresh?.vectors?.sleep_duration_hrs ?? null, source: SOURCE_GEN3 },
         { value: null, source: SOURCE_MANUAL },
       ]);
       if (strict.value != null) {
-        return { ...strict, estimateMethod: null, measuredAt: strict.source === SOURCE_GEN3 ? measuredAt : null };
+        return { ...strict, estimateMethod: null, measuredAt: strict.source === SOURCE_GEN3 ? measuredAt : null, agg };
       }
 
       const boutTailHrs = gen3Fresh?.vectors?.sleep_duration_estimate_hrs ?? null;
       if (boutTailHrs != null) {
-        return { value: boutTailHrs, source: SOURCE_GEN3, ready: true, estimateMethod: "bout_tail", measuredAt };
+        return { value: boutTailHrs, source: SOURCE_GEN3, ready: true, estimateMethod: "bout_tail", measuredAt, agg };
       }
 
       if (STAGE_SUM_FALLBACK_ENABLED) {
         const stageSumHrs = gen3Fresh?.vectors?.sleep_duration_stage_sum_hrs ?? null;
         if (stageSumHrs != null) {
-          return { value: stageSumHrs, source: SOURCE_GEN3, ready: true, estimateMethod: "stage_sum", measuredAt };
+          return { value: stageSumHrs, source: SOURCE_GEN3, ready: true, estimateMethod: "stage_sum", measuredAt, agg };
         }
       }
 
-      return { ...strict, estimateMethod: null, measuredAt: null };
+      return { ...strict, estimateMethod: null, measuredAt: null, agg };
     })(),
 
     // No wearable source on either generation
