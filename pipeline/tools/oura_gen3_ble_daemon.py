@@ -635,6 +635,12 @@ async def main():
     # file from scratch regardless of how many process restarts occurred,
     # so this is a minor live-view-only gap, not a data-correctness issue.
     ibi_packets_all: list = []
+    # Same treatment as ibi_packets_all above -- session-scoped, never reset,
+    # so RHR/SpO2 stop being a single ~5s cycle's arbitrary sample and become
+    # a real nightly mean. Separate accumulators, not merged with each other
+    # or with ibi_packets_all.
+    hr_avgs_all: list = []
+    spo2_avgs_all: list = []
     recent_tags: set = set()    # tags seen in the last two cycles; used to classify disconnects
     disconnected = asyncio.Event()
 
@@ -879,6 +885,10 @@ async def main():
                     # Accumulate IBI across all sleep cycles for nightly RMSSD.
                     # Per-cycle window (~5s) has too few pairs for calculate_rmssd's min_pairs=10.
                     ibi_packets_all.extend(accum["ibi_packets"])
+                    # Same reasoning as IBI above -- a single cycle's hr_avgs/spo2_avgs
+                    # is an arbitrary ~5s sample, not a nightly reading.
+                    hr_avgs_all.extend(accum["hr_avgs"])
+                    spo2_avgs_all.extend(accum["spo2_avgs"])
 
                 priority_data_present = any([
                     accum["hr_avgs"], accum["spo2_avgs"], accum["temps"],
@@ -890,14 +900,18 @@ async def main():
                     # successive-difference pairs. Only push in sleep context.
                     nightly_hrv = calculate_rmssd(ibi_packets_all) if ibi_packets_all else None
                     hrv_for_bridge = nightly_hrv if pull_class == "SLEEP WINDOW" else None
+                    # RHR/SpO2: same nightly-accumulation + sleep-gate pattern as HRV above,
+                    # not the raw per-cycle accum -- see hr_avgs_all/spo2_avgs_all above.
+                    hr_avgs_for_bridge = hr_avgs_all if pull_class == "SLEEP WINDOW" else []
+                    spo2_avgs_for_bridge = spo2_avgs_all if pull_class == "SLEEP WINDOW" else []
                     bridge_data = build_bridge_data(
                         pull_class=pull_class,
                         pull_file=_os.path.basename(log_path),
                         priority_event_count=len(parsed),
-                        hr_avgs=accum["hr_avgs"],
+                        hr_avgs=hr_avgs_for_bridge,
                         ibi_hr_bpm=accum["ibi_hr_bpm"],
                         temps=accum["temps"],
-                        spo2_avgs=accum["spo2_avgs"],
+                        spo2_avgs=spo2_avgs_for_bridge,
                         fuel_gauge_pct=accum["fuel_gauge_pct"],
                         step_count=accum["step_count"],
                         cadence_spm=accum["cadence_spm"],
