@@ -5,7 +5,7 @@
 // Synced into web/src/engine/ by the same cp step as the file under test --
 // see index.test.js's header comment for why.
 
-import { resolveVectors, STAGE_SUM_FALLBACK_ENABLED, SOURCE_GEN4 } from "./sources.js";
+import { resolveVectors, resolveVector, STAGE_SUM_FALLBACK_ENABLED, SOURCE_GEN4 } from "./sources.js";
 
 const NOW = new Date().toISOString();
 const OLD = "2026-08-09T05:33:24.579623"; // > 24h before "now" in any real run of this suite
@@ -97,5 +97,38 @@ describe("resolveVectors() -- glucose has no wearable source on either generatio
     const v = resolveVectors(gen4, gen3({ hrv_ms: 50 }, { sleep_data_ts: NOW }), { glucose: 4.2 });
     expect(v.glucose.value).toBe(4.2);
     expect(v.glucose.source).toBe("manual");
+  });
+});
+
+describe("resolveVector() -- priority-ordered candidate array", () => {
+  test("first non-null candidate wins, regardless of array length", () => {
+    const v = resolveVector([
+      { value: null, source: "a" },
+      { value: null, source: "b" },
+      { value: 42, source: "c" },
+      { value: 99, source: "d" },
+    ]);
+    expect(v).toEqual({ value: 42, source: "c", ready: true });
+  });
+
+  test("a fourth candidate slots in ahead of existing ones without touching resolveVector itself", () => {
+    // Simulates adding a new instrument with higher priority than gen4/gen3/manual --
+    // the function takes whatever array it's given; this only changes at the call site.
+    const v = resolveVector([
+      { value: 7.1, source: "new_instrument" },
+      { value: 50, source: SOURCE_GEN4 },
+      { value: 48, source: "gen3_ble" },
+      { value: 45, source: "manual" },
+    ]);
+    expect(v).toEqual({ value: 7.1, source: "new_instrument", ready: true });
+  });
+
+  test("all-null candidates resolve to a clean null vector, not an error", () => {
+    const v = resolveVector([{ value: null, source: "a" }, { value: null, source: "b" }]);
+    expect(v).toEqual({ value: null, source: null, ready: false });
+  });
+
+  test("empty candidate array resolves to a clean null vector", () => {
+    expect(resolveVector([])).toEqual({ value: null, source: null, ready: false });
   });
 });

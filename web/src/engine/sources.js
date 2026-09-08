@@ -44,10 +44,14 @@ function isFresh(timestamp) {
   return age >= 0 && age < FRESHNESS_WINDOW_MS;
 }
 
-function resolveVector(gen4Value, gen3Value, manualValue) {
-  if (gen4Value != null) return { value: gen4Value, source: SOURCE_GEN4, ready: true };
-  if (gen3Value != null) return { value: gen3Value, source: SOURCE_GEN3, ready: true };
-  if (manualValue != null) return { value: manualValue, source: SOURCE_MANUAL, ready: true };
+// candidates: priority-ordered [{ value, source }, ...] -- first non-null
+// value wins. Array shape (rather than fixed positional args) so a fourth
+// source (e.g. a future instrument) can be added by extending the caller's
+// array, not by changing this function's signature.
+export function resolveVector(candidates) {
+  for (const { value, source } of candidates) {
+    if (value != null) return { value, source, ready: true };
+  }
   return { value: null, source: null, ready: false };
 }
 
@@ -64,21 +68,25 @@ export function resolveVectors(gen4, gen3, manual = {}) {
   const gen3Fresh = gen3 && isFresh(gen3.timestamp) ? gen3 : null;
 
   return {
-    rhr: resolveVector(
-      gen4Fresh?.rhr ?? null,
-      gen3Fresh?.vectors?.rhr_bpm ?? null,
-      null
-    ),
+    rhr: resolveVector([
+      { value: gen4Fresh?.rhr ?? null, source: SOURCE_GEN4 },
+      { value: gen3Fresh?.vectors?.rhr_bpm ?? null, source: SOURCE_GEN3 },
+      { value: null, source: SOURCE_MANUAL },
+    ]),
 
     // Telemetry only — not a THRESHOLDS/COMMANDS vector, doesn't drive evaluate()
-    spo2: resolveVector(
-      gen4Fresh?.spo2 ?? null,
-      gen3Fresh?.vectors?.spo2_avg_pct ?? null,
-      null
-    ),
+    spo2: resolveVector([
+      { value: gen4Fresh?.spo2 ?? null, source: SOURCE_GEN4 },
+      { value: gen3Fresh?.vectors?.spo2_avg_pct ?? null, source: SOURCE_GEN3 },
+      { value: null, source: SOURCE_MANUAL },
+    ]),
 
     // Gen3: RMSSD computed from 0x6E/0x80 IBI streams, sleep-window only
-    hrv: resolveVector(gen4Fresh?.hrv ?? null, gen3Fresh?.vectors?.hrv_ms ?? null, null),
+    hrv: resolveVector([
+      { value: gen4Fresh?.hrv ?? null, source: SOURCE_GEN4 },
+      { value: gen3Fresh?.vectors?.hrv_ms ?? null, source: SOURCE_GEN3 },
+      { value: null, source: SOURCE_MANUAL },
+    ]),
 
     // Gen4: total_sleep_duration from Oura API. Gen3: sleep_duration_hrs (0x4C,
     // authoritative) if present, else sleep_duration_estimate_hrs (bout-tail
@@ -94,11 +102,11 @@ export function resolveVectors(gen4, gen3, manual = {}) {
     // show as stale even while HRV/RHR are refreshing live every cycle.
     sleepDurationHrs: (() => {
       const measuredAt = gen3Fresh?.sleep_data_ts ?? null;
-      const strict = resolveVector(
-        gen4Fresh?.totalSleepHrs ?? null,
-        gen3Fresh?.vectors?.sleep_duration_hrs ?? null,
-        null
-      );
+      const strict = resolveVector([
+        { value: gen4Fresh?.totalSleepHrs ?? null, source: SOURCE_GEN4 },
+        { value: gen3Fresh?.vectors?.sleep_duration_hrs ?? null, source: SOURCE_GEN3 },
+        { value: null, source: SOURCE_MANUAL },
+      ]);
       if (strict.value != null) {
         return { ...strict, estimateMethod: null, measuredAt: strict.source === SOURCE_GEN3 ? measuredAt : null };
       }
@@ -119,6 +127,10 @@ export function resolveVectors(gen4, gen3, manual = {}) {
     })(),
 
     // No wearable source on either generation
-    glucose: resolveVector(null, null, manual?.glucose ?? null),
+    glucose: resolveVector([
+      { value: null, source: SOURCE_GEN4 },
+      { value: null, source: SOURCE_GEN3 },
+      { value: manual?.glucose ?? null, source: SOURCE_MANUAL },
+    ]),
   };
 }
