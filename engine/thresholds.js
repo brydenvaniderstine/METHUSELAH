@@ -5,7 +5,9 @@
 export const THRESHOLDS = {
   glucose:   5.8,  // mmol/L — fast if above
   hrv:       25,   // ms — personal baseline −1SD (355-night avg 29.3ms); personalised to this user
-  rhr:       63,   // bpm — active recovery if above
+  rhr: 63, // bpm — clinical default, not personalized; no baseline exists for
+           // this instrument. Do not treat as validated. Recalibrate from >=30
+           // sleep-gated gen3 nights after the Task 1a fix.
   sleepDurationWarn: 7,     // hrs — below this: yellow (sleep protocol tonight)
   sleepDurationCritical: 4, // hrs — below this: red (acute deficit)
 };
