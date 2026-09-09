@@ -8782,7 +8782,18 @@ always labeled sleep."
 real segmentation logic, not a gate (there's no existing `classify()` call in
 `recompute_bridge_from_daemon.py` to simply consult, the way the morning_pull
 fix could), and there is no live data to test against right now regardless
-(daemon hasn't found the ring since 2026-08-24). Two shapes were weighed:
+(daemon hasn't found the ring since 2026-08-24).
+
+**Ordering, made explicit after a follow-up review of this same entry**: "no
+live data to test against" is a reason this can wait *now*, not a reason it
+can wait *until the ring reconnects*. The ring reconnecting is this
+blocker's deadline, not its trigger — whichever night comes back first gets
+collected through the exact ungated path this entry describes unless the
+fix has already landed. Sequence is fix, then reconnect-and-collect; not
+reconnect, then fix, then test against that first night — that first night
+is the thing the fix exists to protect. See the 🚨 item in
+`SESSION_HANDOFF.md`'s Next Session Priority, which states this ordering as
+the section header for exactly this reason. Two shapes were weighed:
 
 - **Cheap, rejected:** have the daemon pass its own single observed
   `pull_class` through to recompute instead of recompute assuming one. Fixes

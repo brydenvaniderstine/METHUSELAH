@@ -655,8 +655,11 @@ B condition #1, tuned sleep-duration thresholds:**
 
 ## Next session priority
 
-0. **🚨 BLOCKER on RHR recalibration, HARD DEADLINE before the ring reconnects —
-   2026-09-08: Task 1a's sleep-gate is currently a no-op in production.** The daemon
+0. **🚨 BLOCKER on RHR recalibration — FIX BEFORE THE RING RECONNECTS, not after.
+   2026-09-08: Task 1a's sleep-gate is currently a no-op in production.** Do not treat
+   "the ring is back" as the trigger to start this fix — treat it as the deadline it
+   was due by. The first night back is collected through the broken path unless this
+   already landed. The daemon
    gates RHR/SpO2 correctly during the night (`cfbc4ad`) — but at the end of every
    session it unconditionally runs `recompute_bridge_from_daemon.py <log> --push`
    (`oura_gen3_ble_daemon.py:991-999`, comment: "Always recompute..."), which hardcodes
@@ -681,15 +684,28 @@ B condition #1, tuned sleep-duration thresholds:**
    treat any RHR reading collected between now and the fix as sleep-gated, even though
    `rhr_agg` will say `"session_mean"` and look identical to a real one.**
 
-   **Fix decided, not yet written — do before the ring reconnects, not urgently
-   otherwise** (no live data exists to test against right now regardless): port real
-   per-packet/per-segment filtering on the `sleep_state` field already present in each
-   0x6A payload into `recompute_bridge_from_daemon.py`, rather than passing the
-   daemon's own single observed `pull_class` through as a session-wide label. The
-   cheaper option (pass one label) was considered and rejected — it only fixes a
-   session entirely within one window, and gets the exact cases already seen in this
-   repo's own logs wrong: a 04:25 daemon start, or a watchdog restart running past
-   10am, both span awake→sleep or sleep→awake within one log. A system whose whole
+   **Ordering, explicit, because two true things pull in opposite directions here:**
+   this fix has no live data to test against right now (daemon hasn't found the ring
+   since 2026-08-24), which argues for waiting. But the moment the ring reconnects is
+   also the moment this blocker starts actually costing something — whichever night
+   comes back first gets collected through the exact ungated path this blocker exists
+   to warn about, unless the fix has already landed. **The sequence is: fix first,
+   then let the ring reconnect and start collecting — not "wait for a real night,
+   then fix, then test."** There is no version of "test the fix against the first
+   real night back" that doesn't also mean that first night was the thing needing
+   the fix. Write and land this fix (untested against live data, necessarily — that's
+   fine, it's a mechanical port of logic that already exists and works elsewhere,
+   `classify()`/the daemon's own `sleep_state` handling) *before* checking whether the
+   ring has reconnected, not after.
+
+   **The fix itself:** port real per-packet/per-segment filtering on the `sleep_state`
+   field already present in each 0x6A payload into `recompute_bridge_from_daemon.py`,
+   rather than passing the daemon's own single observed `pull_class` through as a
+   session-wide label. The cheaper option (pass one label) was considered and
+   rejected — it only fixes a session entirely within one window, and gets the exact
+   cases already seen in this repo's own logs wrong: a 04:25 daemon start, or a
+   watchdog restart running past 10am, both span awake→sleep or sleep→awake within
+   one log. A system whose whole
    recent direction has been refusing to average across things that aren't the same
    shouldn't reintroduce a single-label assumption here.
 
