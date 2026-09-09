@@ -8719,3 +8719,95 @@ size/shape, naming, documentation debt) that surfaced item 7; direct
 execution of `recompute_bridge_from_daemon.py` against real logs, `npm test`
 (40/40 passing after item 6), and `git log -S`/`diff` verification throughout
 rather than reading claims at face value.*
+
+---
+
+## 2026-09-08 (same day, follow-up) — CORRECTION: item 1 above (the RHR/SpO2
+## sleep-gate) is a no-op in production. recompute_bridge_from_daemon.py
+## overwrites it, unconditionally, every single night.
+
+**This corrects the previous entry's own framing of item 1's sleep-gate as
+"unverified" — it's worse than unverified. It's neutralized, and the previous
+entry's own verification step for item 1 (replaying logs through
+`recompute_bridge_from_daemon.py`) was exercising the exact code path that
+does the neutralizing, without either the review or this session noticing
+that's what it was doing.**
+
+**The mechanism, verified line by line, not inferred:**
+
+1. During the night, the daemon's live per-cycle push correctly gates RHR/
+   SpO2 to `pull_class == "SLEEP WINDOW"` (item 1, `cfbc4ad`) and calls
+   `merge_with_existing_bridge()` before writing (`oura_gen3_ble_daemon.py:936`)
+   — properly protected, a `None` this cycle never overwrites a real prior
+   value.
+2. At the end of every session, nominal-end or interrupted, the daemon
+   **unconditionally** runs `recompute_bridge_from_daemon.py <log> --push`
+   (`oura_gen3_ble_daemon.py:991-999`, comment: "Always recompute the final
+   bridge from the complete daemon log").
+3. `recompute_bridge_from_daemon.py:271` hardcodes `pull_class='SLEEP WINDOW'`
+   for the entire log — it never calls `classify()`, and confirmed by direct
+   read (`:176-179`): `hr_avgs.append(d['average_hr'])` fires for every 0x6A
+   packet in the file with **no filter on that packet's own `sleep_state`
+   field**, despite the field being right there in the same decoded struct.
+4. Confirmed via its import line (`recompute_bridge_from_daemon.py:27`:
+   `build_bridge_data, write_local_bridge_file, push_bridge_json` — no
+   `merge_with_existing_bridge`) that this final write is a **complete,
+   unmerged replacement**, not a backfill. Whatever the night's correctly-
+   gated live pushes established is gone the moment this runs, and this is
+   the last write of the night, every time, by design.
+
+**Net effect, stated plainly:** the sleep-gate changes what the dashboard
+shows *during* the night, if anyone happens to look. It changes nothing
+about what it shows the next morning — the one time anyone actually looks —
+because the morning-visible value is always this unconditional whole-log
+mean, labeled `rhr_agg: "session_mean"` identically to a real sleep-gated
+reading, indistinguishable from one without reading this entry.
+
+**Why this blocks the `rhr:63` recalibration specifically** (`thresholds.js:8`
+wants ≥30 sleep-gated nights): every night's *countable* final state is the
+contaminated one. Collecting nights toward the 30 right now would recalibrate
+the threshold against exactly the contamination the whole sleep-gate sequence
+existed to remove. **Hard rule: no nights count toward the 30 until this is
+fixed.** Logged as a blocker in `SESSION_HANDOFF.md`, not just as a bug.
+
+**`oura_gen3_morning_pull.py`'s own fix (item 7, `f08fa57`) has a narrower
+version of the same exposure**: its `pull_class` is at least computed
+correctly via a real `classify()` call and only mis-applied per-window, not
+assumed for an entire log the way recompute's is — a session that spans
+awake→sleep within one narrow pull would still average across both, but
+this is a smaller blast radius than recompute's "always the whole night,
+always labeled sleep."
+
+**Fix decided, deliberately not written tonight** — two reasons: it needs
+real segmentation logic, not a gate (there's no existing `classify()` call in
+`recompute_bridge_from_daemon.py` to simply consult, the way the morning_pull
+fix could), and there is no live data to test against right now regardless
+(daemon hasn't found the ring since 2026-08-24). Two shapes were weighed:
+
+- **Cheap, rejected:** have the daemon pass its own single observed
+  `pull_class` through to recompute instead of recompute assuming one. Fixes
+  the common case (a session entirely within one window) but gets exactly
+  the shape of session already seen in this repo's own logs wrong — a 04:25
+  start, or a watchdog restart running past 10am, both plausibly span
+  awake→sleep or sleep→awake within one log, which a single session-wide
+  label still can't represent.
+- **Correct, chosen:** per-packet or per-segment filtering on the
+  `sleep_state` field already present in every 0x6A payload, ported into
+  `recompute_bridge_from_daemon.py`'s own reduction loop. Handles the
+  awake→sleep-spanning case the cheap version can't. Consistent with this
+  project's whole recent direction (item 1, item 7) of refusing to average
+  across things that aren't the same — a single label for a mixed session
+  would be a regression in kind, not just an incomplete fix.
+
+**`sleep_temp_c`/`ibi_hr_bpm`: confirmed same ungated-accumulation shape in
+all three producers, left alone deliberately.** Both are already tiered
+below same-day decisions (skill's own data-trust tiering: sleep temp is
+weekly-trend-only; `ibi_hr_bpm` is always labeled `[CROSS-CHECK]`, never
+`[AUTHORITATIVE]`) — the lack of gating here isn't a new problem the RHR/SpO2
+fix needs to also solve, just a pre-existing, already-priced-in property of
+a lower-trust field.
+
+*Sources: `oura_gen3_ble_daemon.py:936,991-999`, `recompute_bridge_from_daemon.py
+:27,176-179,271,290,294` — read directly, not summarized from memory;
+confirmed via grep that `merge_with_existing_bridge` is absent from
+recompute's imports entirely, not just unused nearby.*

@@ -45,7 +45,12 @@ review that found and fixed a real live bug the six fixes had exposed)
   source is being wired in.
 - **RHR/SpO2 daemon session-buffer + sleep-gate** (commit `cfbc4ad`) — mirrors HRV's
   existing pattern in `oura_gen3_ble_daemon.py`. Accumulation half verified by replay
-  (489-packet mean); sleep-gate half could not be replay-verified (needs a live night).
+  (489-packet mean). Sleep-gate half: **found the same day, in a follow-up, to be a
+  no-op in production** — `recompute_bridge_from_daemon.py` runs unconditionally after
+  every session and overwrites the gate's suppression with an unmerged, un-gated,
+  whole-log mean labeled identically. See the "🚨 BLOCKER" item at the top of Next
+  Session Priority below and `known_issues.md`'s same-day follow-up entry — this is
+  not "needs a live night to verify," it needs a real fix first.
 - **`resolveVector()` generalized to a candidate array** (`bec3716`) — was fixed at 3
   positional args, now takes priority-ordered `[{value, source}, ...]`, same shape,
   same precedence, 5 call sites.
@@ -650,16 +655,47 @@ B condition #1, tuned sleep-duration thresholds:**
 
 ## Next session priority
 
-0. **NEW 2026-09-08 — RHR recalibration count is zero; the sleep-gate itself is still
-   unverified live.** `engine/thresholds.js:8` says `rhr:63` needs ≥30 sleep-gated gen3
-   nights before it's treated as validated. The gate went live in the daemon 2026-09-07
-   and in `oura_gen3_morning_pull.py` 2026-09-08 (commits `cfbc4ad`, `f08fa57`) — neither
-   has ever been exercised by a real night yet, and separately, the daemon hasn't found
-   the ring at all since 2026-08-24 (unrelated connectivity issue, parked, not addressed
-   2026-09-07/08). Both counts — the 30 nights, and "does the gate actually null RHR/SpO2
-   outside SLEEP WINDOW in a real run" — start from zero the moment the ring reconnects,
-   not before. Check `track_b_streak_counter.py` and the daemon log's classification
-   lines on the next real night rather than assuming either is further along.
+0. **🚨 BLOCKER on RHR recalibration, HARD DEADLINE before the ring reconnects —
+   2026-09-08: Task 1a's sleep-gate is currently a no-op in production.** The daemon
+   gates RHR/SpO2 correctly during the night (`cfbc4ad`) — but at the end of every
+   session it unconditionally runs `recompute_bridge_from_daemon.py <log> --push`
+   (`oura_gen3_ble_daemon.py:991-999`, comment: "Always recompute..."), which hardcodes
+   `pull_class='SLEEP WINDOW'` for the *entire* log regardless of what actually happened
+   (`recompute_bridge_from_daemon.py:271`, never calls `classify()`, no per-packet
+   `sleep_state` filter either), and **writes/pushes the result as a complete
+   replacement — confirmed it doesn't even import `merge_with_existing_bridge`**
+   (its import line has `build_bridge_data, write_local_bridge_file, push_bridge_json`
+   only). The gated live pushes during the night are correctly merge-protected; this
+   final one isn't, and it runs last, every time. Net effect: **the gate changes what
+   the dashboard shows during the night, if anyone looks — it changes nothing about
+   what it shows the next morning**, which is the only time anyone actually does.
+   `oura_gen3_morning_pull.py`'s own fix (`f08fa57`) has the same exposure if a narrow
+   pull's own window spans awake→sleep, though its `pull_class` is at least computed
+   correctly and only mis-applied, not assumed.
+
+   **Why this blocks recalibration specifically:** `thresholds.js:8`'s ≥30-sleep-gated-
+   nights requirement for `rhr:63` is meaningless while this holds — every night's
+   *final* bridge state (the one that would get counted) is actually the unconditional,
+   un-gated, whole-log mean, i.e. exactly the contamination the sleep-gate sequence
+   existed to remove. **Do not start counting nights toward recalibration, and do not
+   treat any RHR reading collected between now and the fix as sleep-gated, even though
+   `rhr_agg` will say `"session_mean"` and look identical to a real one.**
+
+   **Fix decided, not yet written — do before the ring reconnects, not urgently
+   otherwise** (no live data exists to test against right now regardless): port real
+   per-packet/per-segment filtering on the `sleep_state` field already present in each
+   0x6A payload into `recompute_bridge_from_daemon.py`, rather than passing the
+   daemon's own single observed `pull_class` through as a session-wide label. The
+   cheaper option (pass one label) was considered and rejected — it only fixes a
+   session entirely within one window, and gets the exact cases already seen in this
+   repo's own logs wrong: a 04:25 daemon start, or a watchdog restart running past
+   10am, both span awake→sleep or sleep→awake within one log. A system whose whole
+   recent direction has been refusing to average across things that aren't the same
+   shouldn't reintroduce a single-label assumption here.
+
+   Separately, unrelated: the daemon hasn't found the ring at all since 2026-08-24
+   (connectivity issue, parked). Full detail and verification trail: `known_issues.md`
+   2026-09-08.
 0. **NEW 2026-09-08 — `engine/README.md` is comprehensively stale, not urgent.** Its
    "Planned files"/"Current violations" tables describe `thresholds.js`/`commands.js` as
    "Not built" — both have existed for months — and `sources.js`, the file most of
