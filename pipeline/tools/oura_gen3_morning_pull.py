@@ -855,18 +855,34 @@ async def main():
             except Exception as _e:
                 print(f"[BRIDGE] Could not read existing bridge for downgrade check: {_e}")
 
+        # RHR/SpO2/HRV: same nightly-accumulation + sleep-gate reasoning as
+        # oura_gen3_ble_daemon.py's Task 1a fix (hr_avgs_all/spo2_avgs_all/
+        # ibi_packets_all there) -- hr_avgs/spo2_avgs/hrv_rmssd_ms above were
+        # accumulated unconditionally from whatever 0x6A/0x6F/0x6E packets
+        # this pull found, with no gate on pull_class. That fix only ever
+        # touched the daemon; this script has the identical defect and no
+        # protection against it -- an ACTIVE WINDOW or (uncovered by the
+        # downgrade guard above) MIXED WINDOW pull would otherwise push a
+        # real, "session_mean"-labeled RHR/SpO2/HRV built from awake-
+        # contaminated data. None here doesn't need a separate downgrade
+        # guard of its own: merge_with_existing_bridge() below already
+        # backfills any None field from the existing bridge's last real
+        # (properly sleep-gated) value, for every pull_class uniformly.
+        hr_avgs_for_bridge = hr_avgs if pull_class == "SLEEP WINDOW" else []
+        spo2_avgs_for_bridge = spo2_avgs if pull_class == "SLEEP WINDOW" else []
+        hrv_ms_for_bridge = hrv_rmssd_ms if pull_class == "SLEEP WINDOW" else None
         bridge_data = build_bridge_data(
             pull_class=pull_class,
             pull_file=_os.path.basename(dest_path),
             priority_event_count=len(priority_events),
-            hr_avgs=hr_avgs,
+            hr_avgs=hr_avgs_for_bridge,
             ibi_hr_bpm=ibi6e_hr_mean,
             temps=temps,
-            spo2_avgs=spo2_avgs,
+            spo2_avgs=spo2_avgs_for_bridge,
             fuel_gauge_pct=fuel_gauge_pct,
             step_count=step_count_bridge,
             cadence_spm=cadence_spm_bridge,
-            hrv_ms=hrv_rmssd_ms,
+            hrv_ms=hrv_ms_for_bridge,
             sleep_duration_hrs=sleep_duration_bridge,
             sleep_stages=sleep_stages_bridge,
             sleep_duration_estimate_hrs=merged_estimate_hrs,
