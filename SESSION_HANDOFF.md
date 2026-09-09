@@ -33,6 +33,48 @@ conflict, this file takes precedence — it is version-controlled.
 
 ## Last session summary
 
+**Date:** 2026-09-08 (session — audited a proposed `engine/ontology.js` layer, shipped
+six smaller fixes instead per the audit's verdict, then ran a read-only codebase health
+review that found and fixed a real live bug the six fixes had exposed)
+
+- **Ontology-layer audit (read-only, file:line evidence): BUILD SMALLER.** Every concrete
+  problem the ontology proposal cited (RHR's missing sleep-gate, the App.js/`sources.js`
+  seam, `rhr:63`'s missing provenance) had a same-day fix already sitting next to it —
+  no new architectural layer needed at 1378 lines of real logic and 2 real sources
+  (Gen4 permanently dead). Revisit only once a real (not hypothetical) third data
+  source is being wired in.
+- **RHR/SpO2 daemon session-buffer + sleep-gate** (commit `cfbc4ad`) — mirrors HRV's
+  existing pattern in `oura_gen3_ble_daemon.py`. Accumulation half verified by replay
+  (489-packet mean); sleep-gate half could not be replay-verified (needs a live night).
+- **`resolveVector()` generalized to a candidate array** (`bec3716`) — was fixed at 3
+  positional args, now takes priority-ordered `[{value, source}, ...]`, same shape,
+  same precedence, 5 call sites.
+- **Raw-telemetry/history seam: investigated, deliberately NOT collapsed** (`8c1ee11`)
+  — `resolveVectors()`'s 24h freshness gate would have silently blanked real stale data
+  a display panel is supposed to show flagged, not suppressed. Documented, not fixed,
+  because it wasn't broken.
+- **`rhr:63` documented as unvalidated** (`35f69a8`) — value unchanged, comment now says
+  so plainly; recalibrate from ≥30 sleep-gated nights (currently **zero**, see below).
+- **Bridge provenance fields** (`21d6d19`) — `rhr_n`/`spo2_n`/`hrv_n` + per-vector `_agg`
+  labels (`session_mean`/`snapshot`/`onboard_summary`) added to `gen3_bridge.py`.
+- **n/agg surfaced on the primary tiles** (`e3d965e`) — finishes Design Law 4. Verified
+  the render logic directly (`nAggSuffix()` standalone); could not verify in a live
+  browser (`.env.local` has no `DASHBOARD_ACCESS_KEY`, `setupProxy.js` doesn't mock
+  `/api/auth`).
+- **Health review found a live bug, fixed same session** (`f08fa57`) — the RHR/SpO2/HRV
+  sleep-gate above only ever touched the daemon. `oura_gen3_morning_pull.py`, which
+  fires automatically after every daemon session, had the identical unconditional-
+  accumulation defect with no protection (the existing ACTIVE-WINDOW downgrade guard
+  doesn't cover MIXED WINDOW or a first-of-day pull). This was the exact defect the
+  daemon fix existed to prevent, still live daily via a sibling path — and the n/agg
+  tile work made a contaminated reading look more trustworthy than before it shipped,
+  not less. Fixed by mirroring the daemon's exact gate; also caught the same defect in
+  this file's own HRV computation, not just RHR/SpO2 as first suspected.
+- Full detail on all seven, each with its own evidence and sourcing: `known_issues.md`
+  2026-09-08.
+
+---
+
 **Date:** 2026-08-09/10 (session — confirmed boot_ts tick rate independently; implemented
 the sidelined TST stage-sum estimator for real, then gave it full command authority on the
 owner's explicit override of his own validation gate ("Door B"); found and fixed a real
@@ -608,6 +650,22 @@ B condition #1, tuned sleep-duration thresholds:**
 
 ## Next session priority
 
+0. **NEW 2026-09-08 — RHR recalibration count is zero; the sleep-gate itself is still
+   unverified live.** `engine/thresholds.js:8` says `rhr:63` needs ≥30 sleep-gated gen3
+   nights before it's treated as validated. The gate went live in the daemon 2026-09-07
+   and in `oura_gen3_morning_pull.py` 2026-09-08 (commits `cfbc4ad`, `f08fa57`) — neither
+   has ever been exercised by a real night yet, and separately, the daemon hasn't found
+   the ring at all since 2026-08-24 (unrelated connectivity issue, parked, not addressed
+   2026-09-07/08). Both counts — the 30 nights, and "does the gate actually null RHR/SpO2
+   outside SLEEP WINDOW in a real run" — start from zero the moment the ring reconnects,
+   not before. Check `track_b_streak_counter.py` and the daemon log's classification
+   lines on the next real night rather than assuming either is further along.
+0. **NEW 2026-09-08 — `engine/README.md` is comprehensively stale, not urgent.** Its
+   "Planned files"/"Current violations" tables describe `thresholds.js`/`commands.js` as
+   "Not built" — both have existed for months — and `sources.js`, the file most of
+   2026-09-08's work touched, isn't mentioned anywhere in it. Deferred (a "spare twenty
+   minutes" task per the owner, not this session) — full detail in the 2026-09-08
+   codebase health review referenced in `known_issues.md`.
 0. **RESOLVED/SUPERSEDED — the two items formerly here** (review tonight's 08-08 queued
    items; revisit the sidelined `tst_from_stages.py`) are both done. See the 2026-08-09/10
    "Last session summary" entry above and `known_issues.md` same date: the estimator is

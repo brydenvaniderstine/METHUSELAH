@@ -8600,3 +8600,122 @@ else referenced the removed pieces).
 *Sources: `web/src/App.js` current + prior source; live chat ruling
 2026-08-15/16 (screenshot-driven review across two Claude instances,
 owner's explicit ruling on both items); production build output.*
+
+---
+
+## 2026-09-08 — RHR/SpO2/HRV daemon fix, five follow-on tasks, and one live bug found and fixed by a codebase health review
+
+**Context:** an ontology-layer proposal for `engine/ontology.js` was audited first
+(read-only, file:line evidence) — verdict BUILD SMALLER: the codebase's real
+problems (RHR's missing sleep-gate, the raw-telemetry/App.js seam, the
+undocumented `rhr:63` threshold) each had a same-day fix already sitting next
+to them, no new architectural layer needed. Six pieces of work shipped from
+that verdict, each its own commit, each reviewed before being written:
+
+1. **RHR/SpO2 session-buffer + sleep-gate, daemon only** (`cfbc4ad`,
+   `pipeline/tools/oura_gen3_ble_daemon.py`). `decode_cycle_events()` reset
+   `hr_avgs`/`spo2_avgs` every ~5s cycle, so the live bridge push was
+   effectively one arbitrary sample, not a nightly mean. Mirrored HRV's
+   existing `ibi_packets_all` pattern: `hr_avgs_all`/`spo2_avgs_all`,
+   session-scoped, gated to push only on `pull_class == "SLEEP WINDOW"`.
+   Accumulation half verified by replay against `gen3_daemon_20260824_220000.txt`
+   (489-packet mean = 62.0bpm vs a single-packet 64.0bpm). Sleep-gate half
+   **could not be verified by replay** — `recompute_bridge_from_daemon.py:271`
+   hardcodes `pull_class='SLEEP WINDOW'` and never calls `classify()` — and
+   was still unverified as of this entry (see item 7 below for why that
+   mattered).
+
+2. **`resolveVector()` generalized to a priority-ordered candidate array**
+   (`bec3716`, `engine/sources.js`). Was fixed at three positional args
+   (gen4/gen3/manual); a fourth source couldn't be added without touching
+   every call site. Same returned shape, same precedence, five call sites
+   updated, exported for direct testing (not re-exported from `index.js`).
+
+3. **The raw-telemetry/history seam: investigated, NOT collapsed, documented
+   as deliberate** (`8c1ee11`, `web/src/App.js`). The plan was routing
+   `App.js`'s raw `v.<field>` reads through `resolveVectors()`'s
+   `logic.vectors.x` — but `resolveVectors()` gates everything on a 24h
+   freshness window, which exists to protect `evaluate()`/`calculateBRI()`
+   from stale data. The raw telemetry panel and 7-day history log have the
+   opposite job: show the actual stored value with staleness flagged
+   (`STALE_HRS`, 12h), never suppressed. Confirmed empirically against a
+   synthetic >24h bridge that routing would silently blank real values.
+   `steps`/`tiers` were added to `resolveVectors()` in service of this plan,
+   then fully reverted before commit — zero net diff there; cut rather than
+   left as dead exports, per this file's own 2026-08-16 precedent above.
+   Comments added at both raw-read sites explaining the ungating is
+   deliberate. Corrected target: not "0 raw reads," but "0 raw reads feeding
+   the automated decision engine" — already true, unchanged by this commit.
+
+4. **`rhr:63` documented as an unvalidated clinical default** (`35f69a8`,
+   `engine/thresholds.js:8`). `hrv:25` has had a derivation comment since the
+   commit that extracted `thresholds.js`; `rhr:63` never did (confirmed via
+   `git log -S`). Value unchanged; comment now says so isn't personalized,
+   not to be treated as validated, recalibrate from ≥30 sleep-gated nights
+   after item 1's fix.
+
+5. **Bridge provenance fields** (`21d6d19`, `pipeline/tools/gen3_bridge.py`
+   + `oura_gen3_ble_daemon.py`). `rhr_n`/`spo2_n` are free — all three
+   producers already pass `hr_avgs`/`spo2_avgs` as full lists into
+   `build_bridge_data()`, which already reduces them inline; `len()` on what
+   was already there, no caller changes. `hrv_n` is not free — `hrv_ms`
+   arrives pre-reduced to a scalar everywhere, so a new optional param was
+   threaded from the daemon only; `recompute`/`morning_pull` omit it (see
+   item 7 — this asymmetry became relevant sooner than expected). Static
+   per-vector `_agg` labels added: `session_mean` (rhr/spo2/hrv),
+   `snapshot` (steps), `onboard_summary` (sleep duration).
+
+6. **n/agg surfaced on the primary tiles** (`e3d965e`, `engine/sources.js` +
+   `web/src/App.js`). Finishes Design Law 4 — value/threshold/trend/source/
+   age was already inline on every tile; sample count and aggregation kind
+   are the same category of fact and had sat unused in the bridge since
+   item 5. Appended into the existing `tel-source` line, no new element.
+   `n`/`agg` independently nullable (glucose/SpO2 correctly get neither —
+   confirmed no primary-tile call site exists for SpO2, `GlucosePanel` is a
+   separate component from `Metric` and needed zero changes). Could not
+   verify in a live browser — local dev's `setupProxy.js` mocks
+   `/api/gen3-bridge` but not `/api/auth`, and `.env.local` has no
+   `DASHBOARD_ACCESS_KEY`; verified the render logic directly instead
+   (`nAggSuffix()` run standalone against all four formatting cases).
+
+7. **Codebase health review found a live bug, fixed same session**
+   (`f08fa57`, `pipeline/tools/oura_gen3_morning_pull.py`). A read-only
+   review asked directly: "item 1 changed only the daemon — did that create
+   a divergence?" Yes. `oura_gen3_morning_pull.py` — which fires
+   automatically after every daemon session — accumulated
+   `hr_avgs`/`spo2_avgs`/`hrv_rmssd_ms` unconditionally, with no gate on
+   `pull_class`, and nothing protected it: the existing ACTIVE-WINDOW
+   downgrade guard only covers `ACTIVE WINDOW` (skip the push if a recent
+   real SLEEP WINDOW bridge exists), not `MIXED WINDOW` (sleep and activity
+   tags both present — `classify()`'s own definition of the most
+   contaminated case) or a first-of-day pull with nothing to protect against.
+   This was the exact defect item 1 existed to fix, still live daily via a
+   sibling path — and item 6 made its consequence look worse than before:
+   a contaminated reading now renders as `N=<count> SESSION MEAN` on the
+   primary tile itself, a label whose whole job is to signal "trust this."
+   Fixed by mirroring item 1's exact gate (`hr_avgs`/`spo2_avgs`/`hrv_ms` →
+   empty/`None` unless `pull_class == "SLEEP WINDOW"`); also found the same
+   ungated defect in this file's own HRV computation, not just RHR/SpO2 as
+   first suspected — fixed all three together. No downgrade-guard extension
+   needed: `merge_with_existing_bridge()`'s backfill loop has no
+   `pull_class` branching, so once these three correctly report `None`,
+   the existing bridge's last real sleep-gated value is restored for free.
+
+**Standing, not yet done:** `engine/README.md` is comprehensively stale (its
+"Planned files" table lists `thresholds.js`/`commands.js` as "Not built" —
+both have existed for months; `sources.js`, the file most of this entry is
+about, isn't mentioned in it anywhere) — deferred, not urgent, see the full
+health review for detail. RHR recalibration (item 4) still has **zero**
+valid nights — item 1's sleep-gate went live 2026-09-07/08 in the daemon and
+today in `morning_pull`, and separately, the daemon hasn't found the ring in
+any night since 2026-08-24 (unrelated connectivity issue, parked, not
+addressed this session). The 30-night count starts whenever the ring
+reconnects, not before.
+
+*Sources: commits `cfbc4ad`, `bec3716`, `8c1ee11`, `35f69a8`, `21d6d19`,
+`e3d965e`, `f08fa57` on `main`; a full read-only codebase health review
+(7 sections: dead code, duplication/drift, stale comments, test coverage,
+size/shape, naming, documentation debt) that surfaced item 7; direct
+execution of `recompute_bridge_from_daemon.py` against real logs, `npm test`
+(40/40 passing after item 6), and `git log -S`/`diff` verification throughout
+rather than reading claims at face value.*
