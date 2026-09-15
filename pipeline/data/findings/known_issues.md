@@ -8910,14 +8910,18 @@ The last real full-night capture on disk is **2026-08-21**
   it's 2 nights the daemon process merely *started*. The real current
   streak, by nights with actual captured data, is **0**, and has been
   since 2026-08-24/27.
-- This is a BLE reconnection failure (see the project's own known
-  irreversible constraint: macOS/CoreBluetooth can block indefinitely on
-  bonded-peripheral `connect()`), not investigated further this session —
-  flagging it, not fixing it. `track_b_streak_counter.py`'s file-existence-
-  only check is a separate, real bug in the counting tool itself and
-  should be fixed to check for real packet content (e.g. file size above
-  some real-night floor, or a minimum decoded-entry count) before it can
-  be trusted again.
+- **Correction (owner, 2026-09-15, same day): this is not a BLE
+  reconnection bug.** The ring has been deliberately powered down since
+  ~2026-08-24 so attention could go to other parts of the project — not
+  an unexplained connectivity failure to investigate. Do not propose
+  debugging BLE reconnection until the owner says the ring is back on;
+  every empty daemon log in this window is expected, not a symptom.
+  `track_b_streak_counter.py`'s file-existence-only check is still a
+  real, separate bug in the counting tool itself (it would make the same
+  file-exists-but-empty mistake the next time a real reconnection issue
+  *does* happen) and should still be fixed to check for real packet
+  content before its output can be trusted — that part of this finding
+  stands regardless of why the ring is currently off.
 
 **Status:** the sleep-gate fix (Part 1) is implemented and verified
 against the best available real data, but has never run against a night

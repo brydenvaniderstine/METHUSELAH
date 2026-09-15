@@ -262,9 +262,13 @@ going forward; both drift.**
    of 2 nights, but 2026-09-15 found `track_b_streak_counter.py` only
    checks that a dated log file exists, not that it has real content —
    every log from 2026-08-27 through 2026-09-15 is a 71-byte header-only
-   file (daemon never found the ring). The real current streak is **0**,
-   continuously since 2026-08-24/27, and the counter script itself needs
-   a content check before its output can be trusted again. See
+   file. The real current streak is **0**, continuously since 2026-08-24/27
+   — **deliberately: the ring has been powered down on purpose since then
+   so attention could go elsewhere in the project, not a connectivity bug**.
+   The counter script's file-existence-only check is still a real, separate
+   bug that should be fixed (check real packet content, not just that a
+   dated file exists) before its output can be trusted whenever the ring
+   is back on. See
    known_issues.md, 2026-09-14 and 2026-09-15 entries.
 
 Track B overall: **not closed** — conditions #1, #2, and #5 are all open.
