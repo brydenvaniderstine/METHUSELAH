@@ -9,6 +9,8 @@
 // Requires one env var set in the Vercel project (Settings -> Environment
 // Variables), not committed anywhere: DASHBOARD_ACCESS_KEY.
 
+import { timingSafeEqualStr } from "./_authCheck.js";
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -20,7 +22,9 @@ export default async function handler(req, res) {
   }
 
   const { key } = req.body || {};
-  if (!key || key !== real) {
+  // Plain `!==` used to short-circuit on the first wrong byte -- a timing
+  // side-channel on the password. See _authCheck.js's timingSafeEqualStr.
+  if (!key || !timingSafeEqualStr(key, real)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 

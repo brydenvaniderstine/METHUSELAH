@@ -17,10 +17,34 @@
 // own separate GEN3_BRIDGE_WRITE_SECRET. Different actor, different
 // credential, intentionally untouched by this helper.
 
+import crypto from "crypto";
+
+// Plain `===` short-circuits on the first mismatched byte, so how long the
+// comparison takes leaks how many leading characters of a guess were
+// correct -- a timing side-channel against DASHBOARD_ACCESS_KEY. Pad both
+// sides to the same length before the constant-time compare so a wrong
+// length can never return early either; timingSafeEqual itself throws on
+// mismatched buffer lengths rather than just returning false.
+export function timingSafeEqualStr(a, b) {
+  const bufA = Buffer.from(String(a ?? ""));
+  const bufB = Buffer.from(String(b ?? ""));
+  const len = Math.max(bufA.length, bufB.length, 1);
+  const paddedA = Buffer.alloc(len);
+  const paddedB = Buffer.alloc(len);
+  bufA.copy(paddedA);
+  bufB.copy(paddedB);
+  // Compute both before combining -- `lengthsMatch && timingSafeEqual(...)`
+  // would skip the crypto call entirely on a length mismatch, leaking length
+  // through timing the same way the `===` this replaces did.
+  const paddedEqual = crypto.timingSafeEqual(paddedA, paddedB);
+  const lengthsMatch = bufA.length === bufB.length;
+  return paddedEqual && lengthsMatch;
+}
+
 export function requireDashboardKey(req, res) {
   const real = process.env.DASHBOARD_ACCESS_KEY;
   const provided = req.headers["x-dashboard-key"];
-  if (!real || !provided || provided !== real) {
+  if (!real || !provided || !timingSafeEqualStr(provided, real)) {
     res.status(401).json({ error: "Unauthorized" });
     return false;
   }

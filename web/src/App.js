@@ -68,6 +68,21 @@ body::before {
 .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .header-top-row { display: flex; gap: 12px; align-items: center; }
 .live-badge { display: flex; align-items: center; gap: 6px; font-size: 9px; letter-spacing: 2px; }
+.btn-signout {
+  background: transparent; border: 1px solid var(--line-bright); color: var(--text-dim);
+  font-family: var(--font-mono); font-size: 8px; letter-spacing: 1px; padding: 6px 14px;
+  cursor: pointer; text-transform: uppercase;
+  /* Fitt's law: text/border stay small on purpose (rare, low-stakes action,
+     tucked in a corner of a deliberately compact header) but the hit area
+     itself is padded well past the visible box -- min-height/min-width give
+     a ~36px tall, 64px wide tap target on touch instead of the ~14x30px box
+     the padding alone implied. Not the full 44px HIG minimum -- this is a
+     single-user app, not a public product, and 44px here would visually
+     dominate a header everything else in it keeps deliberately tiny. */
+  min-height: 36px; min-width: 64px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.btn-signout:hover { color: var(--text-main); border-color: var(--text-main); }
 .blink { width: 7px; height: 7px; border-radius: 50%; animation: pulse 1.5s infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; box-shadow: 0 0 8px currentColor; } 50% { opacity: 0.15; box-shadow: none; } }
 
@@ -551,6 +566,18 @@ export default function MethuselahFinal() {
     }
   };
 
+  // There's no server-side session to invalidate -- authedFetch resends the
+  // raw DASHBOARD_ACCESS_KEY on every call, it's never exchanged for a
+  // server-issued token (see api/_authCheck.js). Signing out just forgets
+  // this browser's copy of the key; it does not and cannot revoke the key
+  // itself -- that only happens by rotating DASHBOARD_ACCESS_KEY in Vercel.
+  const signOut = () => {
+    sessionStorage.removeItem("dashboardKey");
+    setLocked(true);
+    setInput("");
+    setAuthError(null);
+  };
+
   const unlock = () => {
     setLocked(false);
     setAuthError(null);
@@ -894,6 +921,7 @@ export default function MethuselahFinal() {
                   <div className="blink" style={{ background: badgeColor }} />
                   {badgeLabel}
                 </div>
+                <button className="btn-signout" onClick={signOut}>SIGN OUT</button>
               </div>
             </div>
           </div>
