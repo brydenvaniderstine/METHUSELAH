@@ -231,12 +231,34 @@ When all five conditions are met, Track B is closed and v2 parser work
 begins. This definition can be revised -- but only in a dedicated session
 with an explicit reason for changing the bar.
 
-**Current status (2026-07-18):**
+**Current status (2026-07-18), superseded in part below:**
 1. sleep_state (0x6A) — full-night timeline confirmed (248 samples, real oscillations). 0x6A is 2-state only (0/1). Full REM/Light/Deep requires 0x5A cluster overlay on a daemon night. PARTIAL.
 2. HRV (0x5D) fires in 3 evening activity pulls — 1/3 confirmed (redefined 2026-07-07). Needs 2 more: owner must run evening pull after physical activity.
 3. SpO2 (0x6F) cross-validation — **CLOSED** (3/3 nights passed 2026-07-08)
 4. Sleep cluster decoders (0x49/0x4C/0x4F/0x58/0x5A) — 0x4C CONFIRMED (cross-validated vs 0x5A), plumbed to bridge JSON + App.js. 0x5A 0xFF ambiguity documented. 0x49/0x4F/0x58 decoded but field meanings unconfirmed (n=1). PARTIAL.
 5. Comparison dataset — **REDEFINED** (Gen3-only, 14 consecutive SLEEP WINDOW nights) — 4/14, streak 2026-07-15→2026-07-18, broke at 2026-07-14 (MIXED)
+
+**Refreshed status (2026-09-14) — this section, not the 07-18 one above, is
+current. Re-verify #1/#2 against `known_issues.md` and re-run
+`track_b_streak_counter.py` for #5 rather than trusting either number here
+going forward; both drift.**
+1. sleep_state (0x6A) vs 0x5A — still **OPEN**. Per known_issues.md
+   2026-08-09: boot_ts tick rate confirmed at 10.0/sec via the 0x42
+   time-sync payload, but a new blocker was identified attempting the
+   cross-reference. Blocked on calibration work, not data availability.
+2. HRV (0x5D) in evening activity pulls — still **1/3**, no further
+   confirmed pulls found in known_issues.md since 2026-07-02. Needs owner
+   action (2 more evening pulls after physical activity).
+3. SpO2 (0x6F) cross-validation — unchanged, **CLOSED** (2026-07-08).
+4. Sleep cluster decoders — unchanged from above, **PARTIAL**.
+5. Comparison dataset (14 consecutive Gen3 SLEEP WINDOW nights) —
+   **REOPENED, not closed.** Briefly reached 25/14 (streak 07-15→08-08,
+   noted CLOSED at the time) but has since broken on 2026-08-27, 09-01,
+   09-06, and 09-13 — a "closed" streak condition doesn't stay closed
+   through a later gap. Live re-run on 2026-09-14 showed a current streak
+   of only 2 nights. See known_issues.md, 2026-09-14 entry.
+
+Track B overall: **not closed** — conditions #1, #2, and #5 are all open.
 
 ---
 

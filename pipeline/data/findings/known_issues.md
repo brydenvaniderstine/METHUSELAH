@@ -8822,3 +8822,34 @@ a lower-trust field.
 :27,176-179,271,290,294` — read directly, not summarized from memory;
 confirmed via grep that `merge_with_existing_bridge` is absent from
 recompute's imports entirely, not just unused nearby.*
+
+## 2026-09-14 — Track B condition #5 has regressed since the 2026-08-08 "CLOSED" note; it is not currently closed
+
+A session-start Discover pass (a security/UX review, not decoder work) re-ran
+`pipeline/tools/track_b_streak_counter.py` per its own stated instruction to
+never trust a cached count. The methuselah skill's memory carried "Condition
+#5: CLOSED as of 2026-08-08 (25 consecutive nights, 07-15 through 08-08)."
+
+Live re-run today shows a **current streak of 2 nights** (2026-09-14 →
+2026-09-15), with streak-breaking gaps (no pull file at all) on 2026-08-27,
+2026-09-01, 2026-09-06, and 2026-09-13. The condition requires 14
+*consecutive* nights; hitting 25 once on 2026-08-08 does not make it
+permanently satisfied — a gap at any later date reopens it, and four such
+gaps have happened since.
+
+No entry in this file marked the regression when it happened, so the
+"CLOSED" claim sat uncorrected in the skill's memory for over a month. The
+2026-09-08 entry above (daemon hadn't found the ring since 2026-08-24) is
+plausibly related to the 08-27/09-01/09-06 gaps, but that connection is not
+independently confirmed here — flagging the correlation, not asserting the
+cause, per this project's real-data-only discipline.
+
+**Status: Condition #5 is OPEN, not closed.** Streak needs 14 consecutive
+nights from whatever night it next starts; re-run
+`track_b_streak_counter.py` for the live count rather than trusting any
+cached number, including this one, going forward. ARCHITECTURE.md and the
+methuselah skill's Track B section have been updated to stop asserting a
+permanent close on this condition.
+
+*Source: `python3 pipeline/tools/track_b_streak_counter.py` output, run
+2026-09-14 — read directly, not inferred from a prior session's summary.*
