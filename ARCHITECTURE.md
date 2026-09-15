@@ -61,14 +61,17 @@ component — only on the *interface* that component exposes.
 
 ---
 
-## Build status
+## Build status (refreshed 2026-09-14 — the table below was still claiming
+`engine/` extraction as "pending" as late as 2026-07-24's Fable master
+audit, nearly two months after the extraction below was actually done;
+see `engine/README.md` and known_issues.md 2026-09-14)
 
 | Layer | Status | Notes |
 |---|---|---|
-| `web/` | **Built** | React PWA live at methuselah.ca. Capacitor iOS wrapper exists. Business logic not yet extracted to `engine/` — violations documented in `web/README.md`. |
-| `pipeline/` | **In progress** | 34 Gen3 pulls captured. 9 decoders validated, 14 partial. Decoder functions currently inline in `tools/oura_gen3_morning_pull.py` — migration to `pipeline/decoders/` is pending. |
-| `parsers/` | **Future** | Directory skeleton exists. No parsers built. Targets: LifeLabs PDF, SiPhox CSV, InsideTracker CSV. |
-| `engine/` | **Future** | Directory exists. Logic currently lives in `src/App.js` — extraction pending. |
+| `web/` | **Built** | React PWA live at methuselah.ca. Capacitor iOS wrapper exists. Business logic lives in `engine/` — `App.js` imports `evaluateSources`/`calculateBRI`/`THRESHOLDS`/etc. from `./engine/index.js` (`web/src/App.js:2`). |
+| `pipeline/` | **In progress** | Decoders live in `pipeline/decoders/`, one file per tag (not inline). Corpus has grown well past the 34-pull snapshot this row used to cite. `pipeline/data/findings/open_ring_roadmap.md` has the per-tag breakdown but is itself stale (last touched 2026-07-24) — cross-check against `known_issues.md`'s later dated entries for anything decoder work has settled since, don't treat the roadmap alone as current. |
+| `parsers/` | **Future** | Directory skeleton exists. No parsers built, no real source file on disk for any of the three targets (LifeLabs PDF, SiPhox CSV, InsideTracker CSV). `engine/schema.py` (the declared parser contract) also does not exist yet — that's the actual next unblocked step, not parser code itself. |
+| `engine/` | **Built** | `thresholds.js`, `index.js` (`evaluate()` + `calculateBRI()`), `commands.js`, `sources.js` all exist and are what `web/` actually imports. `schema.py` (Python-side biomarker schema for `parsers/`) is the one file in this directory still not built. |
 | `firmware/` | **In progress** | XIAO ESP32S3 PlatformIO project exists. BLE bridge functional. |
 
 ---

@@ -40,17 +40,18 @@ If `engine/` itself needs to be replaced (e.g. server-side logic instead of clie
 `web/` only needs to update its import target. `pipeline/`, `parsers/`, and `firmware/`
 are unaffected.
 
-## Planned files
+## Files (updated 2026-09-14 — this table said "Not built" for all of these
+## as late as 2026-07-24's Fable master audit, nearly two months after the
+## extraction below was actually completed; see known_issues.md 2026-09-14)
 | File | Purpose | Status |
 |---|---|---|
-| `thresholds.js` | Numeric cutoffs per biomarker. Single place to tune. | Not built — logic in `src/App.js` L637–655 |
-| `scoring.js` | Readiness and suppression tier calculation. | Not built — logic in `src/App.js` L275–291 |
-| `commands.js` | Command string generation from scored state. | Not built — logic in `src/App.js` L481–522 |
-| `schema.py` | Canonical biomarker key list. Parsers import this. | Not built |
+| `thresholds.js` | Numeric cutoffs per biomarker. | **Built.** |
+| `index.js` | `evaluate()` command logic + `calculateBRI()` — scoring lives here, there is no separate `scoring.js`. | **Built.** |
+| `commands.js` | Command string generation from scored state. | **Built.** |
+| `sources.js` | Gen4/Gen3 source resolution per vector (`evaluateSources()`). | **Built.** |
+| `schema.py` | Canonical biomarker key list. Parsers import this. | Not built — the one real remaining gap, blocks the Calibration Layer (`parsers/`). |
 
-## Current violations (to fix by extracting from src/App.js)
-| Source file | Lines | What to move | Destination |
-|---|---|---|---|
-| `src/App.js` | 275–291 | HRV/RHR/deep-sleep thresholds + scoring ladder | `engine/thresholds.js` + `engine/scoring.js` |
-| `src/App.js` | 481–522 | Command strings and warn-level logic | `engine/commands.js` |
-| `src/App.js` | 637–655 | Status label ternaries inline in JSX | `engine/thresholds.js` (exported functions) |
+`src/App.js` now imports all scoring/threshold/command logic from this
+directory (`web/src/App.js:2`) — the "Current violations" table that used
+to live here described an extraction that has since been completed and was
+removed rather than left stale a third time.
