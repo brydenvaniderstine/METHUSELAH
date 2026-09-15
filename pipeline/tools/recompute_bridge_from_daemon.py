@@ -4,8 +4,15 @@
 Use this when the daemon's final bridge push was overwritten by an
 ACTIVE WINDOW morning pull. Reads the daemon log, computes:
   - sleep_duration_hrs from state=1 0x6A spans × tick rate
-  - hrv_ms (RMSSD) from ALL 0x6E IBI events across the full night
-  - rhr_bpm, spo2_avg_pct, sleep_temp_c, battery_pct (averaged)
+  - hrv_ms (RMSSD), rhr_bpm, spo2_avg_pct from 0x6E/0x6A/0x6F events, each
+    restricted to periods where the most recently seen 0x6A sleep_state
+    was 1 (asleep) -- see current_sleep_state below. Fixed 2026-09-15;
+    previously these three were averaged across the entire log including
+    pre-sleep wake time, which known_issues.md's 2026-09-08 entry confirmed
+    inflated all three (rhr:63 recalibration was blocked on exactly this).
+  - sleep_temp_c, battery_pct (averaged, still whole-log -- both are
+    weekly-trend/cross-check tier, not primary vectors, left ungated
+    deliberately per the same 2026-09-08 entry)
   - sleep_stages from 0x4C if the cluster fired
 
 Usage:
@@ -168,6 +175,21 @@ def main(log_path, do_push=False):
     last_6a_ts = None
     decode_fail_counts = {}
 
+    # Sleep-state gate for HR/SpO2/HRV, fixing the defect known_issues.md's
+    # 2026-09-08 correction entry diagnosed and deliberately left unwritten
+    # (no live data to test against at the time). Verified 2026-09-15
+    # against the last real full-night log on disk (2026-08-21) -- the
+    # daemon has not captured a real night since (see known_issues.md,
+    # 2026-09-15), so this could not be verified against fresher data.
+    # Every 0x6A packet carries its own sleep_state directly; 0x6E/0x6F
+    # packets don't,
+    # so `current_sleep_state` tracks the most recently seen 0x6A state as
+    # `entries` is walked in real chronological (log) order -- by the time
+    # a 0x6E/0x6F entry is reached, this is the state that was active when
+    # it fired. None (before the first 0x6A packet of the log) excludes
+    # those entries rather than guessing.
+    current_sleep_state = None
+
     for e in entries:
         name = e['tag_name']
         if name not in DECODE_TAG_NAMES:
@@ -175,8 +197,10 @@ def main(log_path, do_push=False):
         try:
             if name == EVENT_TAGS[0x6A]:
                 d = decode_sleep_period_info_2(e['payload'])
-                hr_avgs.append(d['average_hr'])
                 s = d['sleep_state']
+                current_sleep_state = s
+                if s == 1:
+                    hr_avgs.append(d['average_hr'])
                 bt = e['boot_ts']
                 last_6a_ts = bt
                 if s != prev_state:
@@ -186,10 +210,11 @@ def main(log_path, do_push=False):
                     prev_ts = bt
             elif name == EVENT_TAGS[0x6E]:
                 d = decode_spo2_ibi_amplitude(e['payload'])
-                ibi_packets_all.append(d['ibi_ms'])
+                if current_sleep_state == 1:
+                    ibi_packets_all.append(d['ibi_ms'])
             elif name == EVENT_TAGS[0x6F]:
                 d = decode_spo2_event(e['payload'])
-                if d['spo2_percent']:
+                if current_sleep_state == 1 and d['spo2_percent']:
                     spo2_avgs.append(sum(d['spo2_percent']) / len(d['spo2_percent']))
             elif name == EVENT_TAGS[0x75]:
                 d = decode_sleep_temp_event(e['payload'])
@@ -244,10 +269,10 @@ def main(log_path, do_push=False):
     }
     save_bout_checkpoint(prior_bout_totals, entries)
 
-    # HRV from all night's IBI
+    # HRV from sleep-state-gated IBI only (see current_sleep_state above)
     hrv_ms = calculate_rmssd(ibi_packets_all) if ibi_packets_all else None
 
-    # HR average
+    # HR average, same sleep-state gate
     rhr_bpm = round(sum(hr_avgs) / len(hr_avgs), 1) if hr_avgs else None
     spo2 = round(sum(spo2_avgs) / len(spo2_avgs), 1) if spo2_avgs else None
     temp = round(sum(temps) / len(temps), 2) if temps else None
@@ -258,9 +283,9 @@ def main(log_path, do_push=False):
     print(f"Results:")
     print(f"  sleep_duration_hrs: {sleep_duration_hrs}  (from 0x4C only — not derived from 0x6A)")
     print(f"  sleep_duration_estimate_hrs: {sleep_duration_estimate_hrs}  (PROVISIONAL — {sleep_estimate_result['reason']})")
-    print(f"  hrv_ms (RMSSD):     {hrv_ms}  (from {sum(len(p) for p in ibi_packets_all)} IBI values)")
-    print(f"  rhr_bpm:            {rhr_bpm}")
-    print(f"  spo2_avg_pct:       {spo2}")
+    print(f"  hrv_ms (RMSSD):     {hrv_ms}  (from {sum(len(p) for p in ibi_packets_all)} sleep-gated IBI values)")
+    print(f"  rhr_bpm:            {rhr_bpm}  (sleep-gated, {len(hr_avgs)} samples)")
+    print(f"  spo2_avg_pct:       {spo2}  (sleep-gated, {len(spo2_avgs)} samples)")
     print(f"  sleep_temp_c:       {temp}")
     print(f"  battery_pct:        {fuel_gauge_pct}")
     print(f"  sleep_stages:       {sleep_stages_bridge}")

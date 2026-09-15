@@ -8853,3 +8853,80 @@ permanent close on this condition.
 
 *Source: `python3 pipeline/tools/track_b_streak_counter.py` output, run
 2026-09-14 — read directly, not inferred from a prior session's summary.*
+
+## 2026-09-15 — Implemented the HRV/RHR/SpO2 sleep-state gate in recompute_bridge_from_daemon.py; separately found the daemon has captured zero real data since 2026-08-24
+
+**Part 1 — the fix.** The 2026-09-08 correction entry above diagnosed
+`recompute_bridge_from_daemon.py` computing `hrv_ms`/`rhr_bpm`/`spo2_avg_pct`
+from the *entire* log (including pre-sleep wake time), with the real fix
+("per-packet or per-segment filtering on the `sleep_state` field already
+present in every 0x6A payload") deliberately left unwritten because there
+was no live data to test against. Implemented today:
+
+- Every 0x6A packet carries its own `sleep_state` directly — `hr_avgs` now
+  only appends when `sleep_state == 1` (asleep).
+- 0x6E (IBI, feeds `hrv_ms`) and 0x6F (SpO2) packets don't carry
+  `sleep_state` themselves, so a `current_sleep_state` variable tracks the
+  most recently seen 0x6A state as `entries` is walked in real chronological
+  order — by the time a 0x6E/0x6F packet is reached, that's the state that
+  was active when it fired. Packets before the first 0x6A of the log are
+  excluded (state unknown) rather than guessed.
+- `sleep_temp_c`/`battery_pct` left untouched, deliberately, per the same
+  2026-09-08 entry's ruling (lower-trust/weekly-trend tier, not worth the
+  same engineering effort). `ibi_hr_bpm` (the `[CROSS-CHECK]` field) is
+  fed by the same now-filtered `ibi_packets_all` list, so it becomes
+  sleep-gated too, for free, as a side effect — not itself a goal, but
+  consistent with, not contradicting, that ruling.
+
+**Verified against real data** (no fresher log exists — see Part 2): ran
+old vs. new code back-to-back against the last real full-night log on
+disk, `gen3_daemon_20260821_221354.txt` (`git stash`/`stash pop` to swap
+implementations without touching anything else). IBI count feeding HRV
+dropped from 459,685 (old, whole-log) to 312,210 (new, sleep-gated only) —
+a real ~32% exclusion, confirming the filter is actually active, not a
+no-op. `hrv_ms` moved 45.6ms → 41.8ms; `rhr_bpm` 68.7 → 68.6; `spo2_avg_pct`
+92.6 → 92.5 (RHR/SpO2 barely moved — physiologically plausible for this
+specific night, since the excluded ~90min WAKE segment per 0x4C was
+quiet in-bed time, not up-and-moving activity, which affects HRV's
+sympathetic-tone signal more than resting heart rate or SpO2). No crash,
+no exceptions, `sleep_stages`/`sleep_duration_estimate` output unchanged
+(neither reads `hr_avgs`/`ibi_packets_all`/`spo2_avgs`).
+
+**Part 2 — separate discovery made while looking for a fresher night to
+verify against.** Every daemon log filename from 2026-08-27 through
+today (2026-09-15) is 71 bytes — a header line only, zero real packets.
+The last real full-night capture on disk is **2026-08-21**
+(`gen3_daemon_20260821_221354.txt`, ~32MB). This means:
+
+- The "daemon hasn't found the ring since 2026-08-24" note in the
+  2026-09-08 entry above was not a resolved-then-recurring issue — it
+  has been continuously true for **three-plus weeks straight**, through
+  today, not intermittent.
+- **`track_b_streak_counter.py` does not check file size or content,
+  only that a dated file exists** — it credited 2026-09-10 through
+  2026-09-15 as real "DAEMON ✓" nights in yesterday's (2026-09-14) Track
+  B condition #5 review, when every one of those files is header-only.
+  The "2-night streak" reported yesterday is not 2 real nights of data;
+  it's 2 nights the daemon process merely *started*. The real current
+  streak, by nights with actual captured data, is **0**, and has been
+  since 2026-08-24/27.
+- This is a BLE reconnection failure (see the project's own known
+  irreversible constraint: macOS/CoreBluetooth can block indefinitely on
+  bonded-peripheral `connect()`), not investigated further this session —
+  flagging it, not fixing it. `track_b_streak_counter.py`'s file-existence-
+  only check is a separate, real bug in the counting tool itself and
+  should be fixed to check for real packet content (e.g. file size above
+  some real-night floor, or a minimum decoded-entry count) before it can
+  be trusted again.
+
+**Status:** the sleep-gate fix (Part 1) is implemented and verified
+against the best available real data, but has never run against a night
+newer than 2026-08-21 and cannot be re-verified against fresher data
+until the BLE reconnection issue (Part 2) is fixed. Both are logged here
+rather than only in a chat summary, per this file's own convention.
+
+*Sources: `git diff`/`git stash` A-B run of
+`pipeline/tools/recompute_bridge_from_daemon.py` against
+`gen3_daemon_20260821_221354.txt`; `ls -la`/`stat -f%z` over every file in
+`pipeline/data/raw_pulls/gen3_daemon/` — read directly, not inferred from
+the streak counter's own report.*

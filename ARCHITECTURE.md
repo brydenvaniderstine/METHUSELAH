@@ -258,8 +258,14 @@ going forward; both drift.**
    **REOPENED, not closed.** Briefly reached 25/14 (streak 07-15→08-08,
    noted CLOSED at the time) but has since broken on 2026-08-27, 09-01,
    09-06, and 09-13 — a "closed" streak condition doesn't stay closed
-   through a later gap. Live re-run on 2026-09-14 showed a current streak
-   of only 2 nights. See known_issues.md, 2026-09-14 entry.
+   through a later gap. A 2026-09-14 live re-run reported a current streak
+   of 2 nights, but 2026-09-15 found `track_b_streak_counter.py` only
+   checks that a dated log file exists, not that it has real content —
+   every log from 2026-08-27 through 2026-09-15 is a 71-byte header-only
+   file (daemon never found the ring). The real current streak is **0**,
+   continuously since 2026-08-24/27, and the counter script itself needs
+   a content check before its output can be trusted again. See
+   known_issues.md, 2026-09-14 and 2026-09-15 entries.
 
 Track B overall: **not closed** — conditions #1, #2, and #5 are all open.
 
