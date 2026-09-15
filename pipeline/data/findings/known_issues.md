@@ -8985,3 +8985,24 @@ Gen4 just never fires it now that the API is dead.
 clean. Cosmetic text-only change, no logic touched.
 
 *Source: `web/src/App.js` badge label/color logic — read directly.*
+
+## 2026-09-15 (same day) — CORRECTION: badge label reverted "GEN3 LIVE"/"GEN3" → "OURA LIVE"/"OURA"; the B9 fix above got the fix backwards
+
+Owner correction, from a screenshot review: the top badge names the
+*physical device* — an Oura ring, whichever generation — not the
+protocol/connection method feeding it. Gen1 through Gen4 are all still
+"an Oura ring"; the badge was never wrong to say "OURA," and B9's
+"implies the dead official API" reasoning conflated the brand name with
+the (separate, and yes dead) cloud-API connection. Reverted the label
+back to "OURA LIVE"/"OURA"/"OFFLINE". The dot color (blue=live,
+amber=present-but-stale, dim=offline) was correct in both versions and
+untouched by either change — only the text was ever in question.
+
+Standing lesson for future sessions: a two-month-old third-party audit
+flagging something as "worth a look, owner preference" (B9 was
+explicitly marked LOW/cosmetic/owner-preference in the original audit)
+is not the same as the owner having agreed with its proposed direction —
+verify a cosmetic call with the person who owns the product before
+implementing the audit's specific suggestion, not just before shipping.
+
+*Source: direct owner correction in conversation, 2026-09-15.*

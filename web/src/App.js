@@ -876,15 +876,16 @@ export default function MethuselahFinal() {
   const gen3Live = gen3Bridge?.timestamp && !isStale(gen3Bridge.timestamp);
   const gen3Present = !!gen3Bridge?.timestamp;
   const badgeColor = gen3Live ? "var(--accent-blue)" : gen3Present ? "var(--accent-amber)" : "var(--text-dim)";
-  // "OURA LIVE"/"OURA" until 2026-09-15 (fable_master_audit_2026-07-24.md,
-  // item B9) -- this badge is driven purely by gen3Bridge freshness, so it
-  // was implying the official Oura API/app connection this dashboard no
-  // longer has (permanently, per the methuselah skill's ground-truth
-  // status) rather than the Gen3 BLE bridge that actually backs it. The
-  // per-tile source label below (SOURCE_GEN4 vs SOURCE_GEN3, ~line 324)
-  // is untouched -- that logic is correct as written and Gen4 simply never
-  // fires it anymore.
-  const badgeLabel = gen3Live ? "GEN3 LIVE" : gen3Present ? "GEN3" : "OFFLINE";
+  // Briefly changed to "GEN3 LIVE"/"GEN3" on 2026-09-15 (fable_master_audit
+  // _2026-07-24.md item B9's suggestion) on the theory that this implied a
+  // live official Oura API connection. Reverted same day, owner correction:
+  // the badge names the physical device (an Oura ring, whichever
+  // generation), not the protocol/connection method -- Gen1 through Gen4
+  // are all still "an Oura ring." "OURA" stays correct regardless of which
+  // generation's BLE/API path is actually feeding it. Only the dot color
+  // (blue=live, amber=present-but-stale, dim=offline) needed to communicate
+  // connection freshness, and that logic was never touched by either change.
+  const badgeLabel = gen3Live ? "OURA LIVE" : gen3Present ? "OURA" : "OFFLINE";
 
   return (
     <>
