@@ -8930,3 +8930,54 @@ rather than only in a chat summary, per this file's own convention.
 `gen3_daemon_20260821_221354.txt`; `ls -la`/`stat -f%z` over every file in
 `pipeline/data/raw_pulls/gen3_daemon/` — read directly, not inferred from
 the streak counter's own report.*
+
+## 2026-09-15 — Command-panel border switched from composite BRI to logic.border (fable audit B3)
+
+`fable_master_audit_2026-07-24.md` item B3 flagged that `App.js`'s command
+panel showed command **text** driven by the single-vector cascade
+(`logic`/`evaluate()`) but the panel's **border color** driven by the
+composite `bri.color` (`calculateBRI()`) — two independent calculations on
+the same element, able to disagree (amber warning text inside a green
+BRI-driven border). Design rule #1 requires a composite score never touch
+a primary surface, staying a log line next to its raw inputs only.
+
+**Fix:** `web/src/App.js`'s `command-wrap` `borderColor` now reads
+`logic.border` instead of `bri.color`. `logic.border` already existed in
+`engine/commands.js` — one per command, paired with (but distinct from)
+`logic.color` — and was simply unused; no new field needed. The
+`execState === "satisfied"` green override (a separately-scoped, named
+exception logged 2026-08-15/16) is unchanged.
+
+Removing the border's only use of the render-scope `bri` variable made it
+fully dead code (BRI is still correctly logged as a log line in two other
+places: after a BLE glucose read and after manual glucose submit, both
+independent of this one) — deleted rather than left unused.
+
+**Verified:** `npm test` (40/40 passing, unchanged), `react-scripts build`
+compiles clean. Not verified in a live browser — same constraint noted in
+the 2026-09-08 entry above (local dev has no `DASHBOARD_ACCESS_KEY`) — the
+`commands.js` color/border/level pairings were read directly instead to
+confirm every command state maps to a sensible border (e.g. `warn`:
+text `var(--text-main)`, border `var(--accent-amber)`; `critical`: both
+`var(--accent-red)`; `awaitingTelemetry`: both `var(--text-dim)`).
+
+*Sources: `web/src/App.js` (command-wrap style, `bri` grep confirming no
+other use), `engine/commands.js` (color/border/level fields per command) —
+read directly.*
+
+## 2026-09-15 — Top badge relabeled GEN3 LIVE/GEN3, not OURA LIVE/OURA (fable audit B9)
+
+`fable_master_audit_2026-07-24.md` item B9 (cosmetic, owner-preference)
+flagged that the top-right status badge is driven purely by
+`gen3Bridge` freshness but labeled "OURA LIVE"/"OURA" — implying the
+official Oura API/app connection this project's ground-truth status
+says is permanently gone. Relabeled to "GEN3 LIVE"/"GEN3"/"OFFLINE" to
+match the per-tile source label's own "GEN3 BLE" wording. The per-tile
+source label logic itself (`SOURCE_GEN4` → "OURA LIVE", `SOURCE_GEN3` →
+"GEN3 BLE", `App.js` ~line 324) is untouched — it's correct as written,
+Gen4 just never fires it now that the API is dead.
+
+**Verified:** `npm test` (40/40 passing), `react-scripts build` compiles
+clean. Cosmetic text-only change, no logic touched.
+
+*Source: `web/src/App.js` badge label/color logic — read directly.*

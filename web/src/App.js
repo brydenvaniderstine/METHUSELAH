@@ -860,8 +860,6 @@ export default function MethuselahFinal() {
   const rhrMeta   = rhr              !== null ? metaLine(predicateText("RHR", "rhr", "bpm"), rhrColor, rhrAvg !== null ? `7d avg ${Math.round(rhrAvg)}bpm` : null, getTrend(rhrHist)) : null;
   const sleepMeta = sleepDurationHrs !== null ? metaLine(predicateText("SLEEP", sleepThresholdKey, "h"), sleepColor, sleepAvg !== null ? `7d avg ${sleepAvg.toFixed(1)}h` : null, getTrend(sleepHist)) : null;
 
-  const bri = calculateBRI({ glucose: glucoseReading, hrv, rhr, sleepDurationHrs, glucosePending: glucoseReading === null });
-
   const handleExecute = () => {
     setExecState("active");
   };
@@ -878,7 +876,15 @@ export default function MethuselahFinal() {
   const gen3Live = gen3Bridge?.timestamp && !isStale(gen3Bridge.timestamp);
   const gen3Present = !!gen3Bridge?.timestamp;
   const badgeColor = gen3Live ? "var(--accent-blue)" : gen3Present ? "var(--accent-amber)" : "var(--text-dim)";
-  const badgeLabel = gen3Live ? "OURA LIVE" : gen3Present ? "OURA" : "OFFLINE";
+  // "OURA LIVE"/"OURA" until 2026-09-15 (fable_master_audit_2026-07-24.md,
+  // item B9) -- this badge is driven purely by gen3Bridge freshness, so it
+  // was implying the official Oura API/app connection this dashboard no
+  // longer has (permanently, per the methuselah skill's ground-truth
+  // status) rather than the Gen3 BLE bridge that actually backs it. The
+  // per-tile source label below (SOURCE_GEN4 vs SOURCE_GEN3, ~line 324)
+  // is untouched -- that logic is correct as written and Gen4 simply never
+  // fires it anymore.
+  const badgeLabel = gen3Live ? "GEN3 LIVE" : gen3Present ? "GEN3" : "OFFLINE";
 
   return (
     <>
@@ -984,9 +990,20 @@ export default function MethuselahFinal() {
               score, not any future element). Persists until local midnight by
               design (see unlock()'s protocolExecutedDate check) -- an explicit,
               deliberate call, not an oversight: a real breach after completion
-              does NOT pull the border back to bri.color same-day. Full reasoning
-              in known_issues.md, 2026-08-15/16 entries. */}
-          <div className="command-wrap" style={{ borderColor: execState === "satisfied" ? "#00ff66" : bri.color }}>
+              does NOT pull the border back to logic.border same-day. Full
+              reasoning in known_issues.md, 2026-08-15/16 entries.
+
+              2026-09-15: border was bri.color (the composite BRI score) until
+              today -- the command TEXT already came from logic (the single-
+              vector cascade), so the panel could show amber command text next
+              to a green BRI-driven border, two disagreeing signals on the same
+              element. logic.border already existed for exactly this (commands.js,
+              one per command, paired with but distinct from logic.color) and was
+              simply unused. Swapped in -- border and text now always agree,
+              and BRI stays exactly where design rule #1 puts it: a log line only.
+              See known_issues.md, 2026-09-15 (fable_master_audit_2026-07-24.md,
+              item B3, flagged this same drift two months ago). */}
+          <div className="command-wrap" style={{ borderColor: execState === "satisfied" ? "#00ff66" : logic.border }}>
             <div className="corner tl" /><div className="corner tr" />
             <div className="corner bl" /><div className="corner br" />
             <div className="cmd-meta">{execState === "satisfied" ? "SATISFIED" : logic.level.toUpperCase()} // {clock}</div>
